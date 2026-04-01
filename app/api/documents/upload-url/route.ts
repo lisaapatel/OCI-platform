@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET ?? "documents";
+const STORAGE_FILE_SIZE_LIMIT =
+  process.env.SUPABASE_STORAGE_FILE_SIZE_LIMIT ?? "500MB";
 
 function sanitizeFileName(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -10,7 +12,10 @@ function sanitizeFileName(name: string) {
 
 async function ensureBucketExists() {
   const { error } = await supabaseAdmin.storage.getBucket(STORAGE_BUCKET);
-  if (!error) return;
+  if (!error) {
+    return;
+  }
+
   const message = error.message.toLowerCase();
   if (!message.includes("not found")) throw error;
 
@@ -18,7 +23,7 @@ async function ensureBucketExists() {
     STORAGE_BUCKET,
     {
       public: true,
-      fileSizeLimit: "100MB",
+      fileSizeLimit: STORAGE_FILE_SIZE_LIMIT,
     }
   );
   if (createError && !createError.message.toLowerCase().includes("already exists")) {
@@ -68,6 +73,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         bucket: STORAGE_BUCKET,
+        file_size_limit: STORAGE_FILE_SIZE_LIMIT,
         path: objectPath,
         token: data.token,
       },
