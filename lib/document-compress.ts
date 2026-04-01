@@ -72,6 +72,29 @@ async function rasterizePdfToJpegPdfWithSharp(
 /** Avoid huge canvases (memory / timeouts) on large or high-DPI pages. */
 const PDFJS_MAX_RASTER_EDGE_PX = 2400;
 
+type PdfjsGlobal = typeof globalThis & {
+  pdfjsWorker?: { WorkerMessageHandler: unknown };
+};
+
+/**
+ * pdf.js in Node uses a "fake worker" that dynamic-imports `./pdf.worker.mjs` relative to
+ * `pdf.mjs`. That breaks on Lambda / standalone when the subpath is missing or not resolvable.
+ * Registering `WorkerMessageHandler` on `globalThis.pdfjsWorker` skips that import (see pdf.js
+ * `PDFWorker._setupFakeWorkerGlobal`).
+ */
+async function ensurePdfjsMainThreadWorker(): Promise<void> {
+  const g = globalThis as PdfjsGlobal;
+  if (g.pdfjsWorker?.WorkerMessageHandler) return;
+
+  const workerMod = (await import(
+    "pdfjs-dist/legacy/build/pdf.worker.mjs"
+  )) as { WorkerMessageHandler: unknown };
+  if (!workerMod.WorkerMessageHandler) {
+    throw new Error("pdf.worker.mjs did not export WorkerMessageHandler.");
+  }
+  g.pdfjsWorker = { WorkerMessageHandler: workerMod.WorkerMessageHandler };
+}
+
 /**
  * pdf.js + Skia canvas — works when Sharp is built without PDF/Poppler (default on many installs).
  */
@@ -80,6 +103,8 @@ async function rasterizePdfToJpegPdfWithPdfJs(
   density: number,
   jpegQuality: number
 ): Promise<Buffer> {
+  await ensurePdfjsMainThreadWorker();
+
   const [{ getDocument }, { createCanvas }] = await Promise.all([
     import("pdfjs-dist/legacy/build/pdf.mjs"),
     import("@napi-rs/canvas"),
