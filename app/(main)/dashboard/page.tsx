@@ -162,6 +162,15 @@ export default function DashboardPage() {
           <p className="mt-1 text-sm text-[#64748b]">
             Review and manage all applications.
           </p>
+          <p className="mt-2 max-w-xl text-xs text-[#64748b]">
+            Before uploading on{" "}
+            <span className="font-medium text-[#1e293b]">ociservices.gov.in</span>
+            , open each application and confirm{" "}
+            <span className="font-medium text-[#1e293b]">
+              Govt portal readiness
+            </span>{" "}
+            (PDFs, photo, signature) is complete.
+          </p>
         </div>
         <Link
           href="/applications/new"

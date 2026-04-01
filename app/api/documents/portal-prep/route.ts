@@ -1,23 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getDriveFileMetadata } from "@/lib/google-drive";
-import { PORTAL_MAX_BYTES } from "@/lib/portal-constants";
+import { documentPdfReadyForPortal } from "@/lib/portal-readiness";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
-
-function isReadyForPortal(row: {
-  size_bytes: number | null;
-  compressed_size_bytes: number | null;
-}): boolean {
-  if (row.size_bytes != null && row.size_bytes <= PORTAL_MAX_BYTES) return true;
-  if (
-    row.compressed_size_bytes != null &&
-    row.compressed_size_bytes <= PORTAL_MAX_BYTES
-  )
-    return true;
-  return false;
-}
 
 export async function GET(req: Request) {
   try {
@@ -59,7 +46,7 @@ export async function GET(req: Request) {
           const meta = await getDriveFileMetadata(driveFileId);
           const size_bytes = meta.size;
           const mime_type = meta.mimeType;
-          const ready_for_portal = isReadyForPortal({
+          const ready_for_portal = documentPdfReadyForPortal({
             size_bytes,
             compressed_size_bytes:
               row.compressed_size_bytes != null

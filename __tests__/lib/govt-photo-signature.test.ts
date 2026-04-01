@@ -10,7 +10,7 @@ import {
 } from "../../lib/govt-photo-signature";
 
 describe("govt-photo-signature validateGovtImage", () => {
-  test("accepts valid square JPEG photo under 30KB", async () => {
+  test("accepts valid square JPEG photo under portal limit", async () => {
     const buf = await sharp({
       create: {
         width: 400,

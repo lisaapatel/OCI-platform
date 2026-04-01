@@ -318,6 +318,12 @@ export function ReviewPageClient({
             but review flagged items before submitting to the portal
           </div>
         ) : null}
+        <div className="no-print rounded-lg border border-white/30 bg-white/10 px-4 py-2 text-xs text-white/95">
+          Before marking ready: on the application page, confirm{" "}
+          <strong>Govt portal readiness</strong> is green (PDFs within limit,
+          photo &amp; signature valid). Missing or oversize uploads on the
+          official portal can cause rejection.
+        </div>
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm text-white/90">
             {flaggedCount === 0

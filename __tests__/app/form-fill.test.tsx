@@ -57,6 +57,16 @@ function buildFields(
   });
 }
 
+const defaultPortalReadiness = {
+  required_docs_complete: true,
+  checklist_pdfs_ready: true,
+  checklist_pdfs_ok: 5,
+  checklist_pdfs_uploaded: 5,
+  applicant_photo_valid: true as boolean | null,
+  applicant_signature_valid: null as boolean | null,
+  all_portal_green: true,
+};
+
 const defaultProps = {
   applicationId: "app-1",
   appNumber: "APP-0001",
@@ -64,6 +74,7 @@ const defaultProps = {
   customerEmail: "priya@example.com",
   customerPhone: "555-0100",
   lastReviewedLabel: "Mar 15, 2026 · 2:30 PM",
+  portalReadiness: defaultPortalReadiness,
 };
 
 describe("Form fill page", () => {

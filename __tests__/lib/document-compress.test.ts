@@ -7,13 +7,13 @@ import {
   compressImageForPortal,
   isPdfBuffer,
 } from "../../lib/document-compress";
-import { PORTAL_MAX_BYTES, PORTAL_MAX_KB } from "../../lib/portal-constants";
+import { PORTAL_PDF_MAX_BYTES, PORTAL_PDF_MAX_KB } from "../../lib/portal-constants";
 import sharp from "sharp";
 
 describe("portal-constants", () => {
-  test("500KB portal limit", () => {
-    expect(PORTAL_MAX_KB).toBe(500);
-    expect(PORTAL_MAX_BYTES).toBe(500 * 1024);
+  test("1000KB PDF portal limit", () => {
+    expect(PORTAL_PDF_MAX_KB).toBe(1000);
+    expect(PORTAL_PDF_MAX_BYTES).toBe(1000 * 1024);
   });
 });
 
@@ -50,8 +50,8 @@ describe("compressImageForPortal", () => {
       .jpeg({ quality: 90 })
       .toBuffer();
 
-    const out = await compressImageForPortal(small, PORTAL_MAX_BYTES);
-    expect(out.length).toBeLessThanOrEqual(PORTAL_MAX_BYTES);
+    const out = await compressImageForPortal(small, PORTAL_PDF_MAX_BYTES);
+    expect(out.length).toBeLessThanOrEqual(PORTAL_PDF_MAX_BYTES);
     expect(out[0]).toBe(0xff);
     expect(out[1]).toBe(0xd8);
   });

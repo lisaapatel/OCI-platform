@@ -6,6 +6,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { buildExtractedFieldLookupMap } from "@/lib/form-fill-sections";
 import {
+  PORTAL_IMAGE_MAX_KB,
+  PORTAL_PDF_MAX_KB,
+} from "@/lib/portal-constants";
+import { OCI_NEW_CHECKLIST } from "@/lib/oci-new-checklist";
+import {
+  isPortalPdfChecklistItem,
+  type PortalReadinessSnapshot,
+} from "@/lib/portal-readiness";
+import {
   buildGivenName,
   buildNativePlace,
   buildPresentAddress,
@@ -218,6 +227,7 @@ export function FormFillPageClient({
   customerPhone,
   lastReviewedLabel,
   initialFields,
+  portalReadiness,
 }: {
   applicationId: string;
   appNumber: string;
@@ -226,6 +236,7 @@ export function FormFillPageClient({
   customerPhone: string;
   lastReviewedLabel: string;
   initialFields: ExtractedField[];
+  portalReadiness: PortalReadinessSnapshot;
 }) {
   const byName = useMemo(
     () => buildExtractedFieldLookupMap(initialFields),
@@ -240,6 +251,7 @@ export function FormFillPageClient({
   const [employerAddress, setEmployerAddress] = useState("");
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [portalPrepOpen, setPortalPrepOpen] = useState(false);
 
   useEffect(() => {
     if (!copiedId) return;
@@ -699,6 +711,112 @@ export function FormFillPageClient({
           </li>
           <li>Note the File Reference Number after submission</li>
         </ol>
+      </div>
+
+      <div
+        className="no-print rounded-xl border border-slate-200 bg-white shadow-sm"
+        data-testid="form-fill-portal-prerequisites"
+      >
+        <button
+          type="button"
+          onClick={() => setPortalPrepOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
+          aria-expanded={portalPrepOpen}
+        >
+          <span>Govt portal prerequisites (live status)</span>
+          <span className="text-slate-500" aria-hidden>
+            {portalPrepOpen ? "▼" : "▶"}
+          </span>
+        </button>
+        {portalPrepOpen ? (
+          <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
+            <p className="text-xs text-slate-600">
+              Have applicant photo &amp; signature JPEGs ready (max{" "}
+              {PORTAL_IMAGE_MAX_KB}
+              KB each). Photo: square {`200×200–1500×1500px`}. Signature: wide
+              strip (~3× width vs height), {`200×67–1500×500px`}. Supporting
+              documents: PDF, max {PORTAL_PDF_MAX_KB}KB each. All required
+              checklist items must be uploaded on the official portal.
+            </p>
+            <p className="text-xs font-medium text-amber-900">
+              NOTE: UPLOADING OF DOCUMENTS IS A MUST. YOUR APPLICATION WILL BE
+              REJECTED AND RETURNED UNPROCESSED, IF YOU DON&apos;T UPLOAD ALL THE
+              REQUIRED DOCUMENTS ON GOVT. PORTAL.
+            </p>
+            <ul className="grid gap-2 text-sm sm:grid-cols-2">
+              <li>
+                <span className="font-medium text-slate-800">Required docs: </span>
+                {portalReadiness.required_docs_complete ? (
+                  <span className="text-green-700">Complete</span>
+                ) : (
+                  <span className="text-amber-800">Incomplete</span>
+                )}
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">PDFs (portal): </span>
+                {portalReadiness.checklist_pdfs_ready ? (
+                  <span className="text-green-700">All within limit</span>
+                ) : (
+                  <span className="text-amber-800">
+                    {portalReadiness.checklist_pdfs_uploaded > 0
+                      ? "Compress or fix on application page"
+                      : "Upload on application page"}
+                  </span>
+                )}
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">Applicant photo: </span>
+                {portalReadiness.applicant_photo_valid == null ? (
+                  <span className="text-slate-500">No file</span>
+                ) : portalReadiness.applicant_photo_valid ? (
+                  <span className="text-green-700">Valid</span>
+                ) : (
+                  <span className="text-amber-800">Fix on application page</span>
+                )}
+              </li>
+              <li>
+                <span className="font-medium text-slate-800">Signature: </span>
+                {portalReadiness.applicant_signature_valid == null ? (
+                  <span className="text-slate-500">Not uploaded (optional)</span>
+                ) : portalReadiness.applicant_signature_valid ? (
+                  <span className="text-green-700">Valid</span>
+                ) : (
+                  <span className="text-amber-800">Fix on application page</span>
+                )}
+              </li>
+            </ul>
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Suggested portal upload order
+              </h4>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-700">
+                {OCI_NEW_CHECKLIST.map((item) => (
+                  <li key={item.doc_type}>
+                    {item.label}
+                    {item.required ? (
+                      <span className="text-red-600"> (required)</span>
+                    ) : (
+                      <span className="text-slate-500"> (optional)</span>
+                    )}
+                    <span className="text-slate-500">
+                      {" "}
+                      ·{" "}
+                      {isPortalPdfChecklistItem(item)
+                        ? `PDF ≤${PORTAL_PDF_MAX_KB}KB`
+                        : `JPEG ≤${PORTAL_IMAGE_MAX_KB}KB`}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <Link
+              href={`/applications/${applicationId}`}
+              className="inline-flex text-sm font-semibold text-blue-700 hover:underline"
+            >
+              Open application → Govt portal readiness
+            </Link>
+          </div>
+        ) : null}
       </div>
 
       <div

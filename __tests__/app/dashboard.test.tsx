@@ -144,6 +144,7 @@ describe("Dashboard", () => {
   test("Test 6: New Application button exists and links to /applications/new", async () => {
     const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
+    await screen.findByText("Priya Sharma");
 
     const link = screen.getByRole("link", { name: "New Application" });
     expect(link).toHaveAttribute("href", "/applications/new");

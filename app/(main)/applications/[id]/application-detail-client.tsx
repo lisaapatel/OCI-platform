@@ -13,7 +13,16 @@ import {
   OCI_NEW_REQUIRED_COUNT,
   shouldSkipAiExtraction,
 } from "@/lib/oci-new-checklist";
-import { PORTAL_MAX_BYTES, PORTAL_MAX_KB } from "@/lib/portal-constants";
+import {
+  PORTAL_IMAGE_MAX_KB,
+  PORTAL_PDF_COMPRESS_TARGET_KB,
+  PORTAL_PDF_MAX_BYTES,
+  PORTAL_PDF_MAX_KB,
+} from "@/lib/portal-constants";
+import {
+  allUploadedChecklistPdfsPortalReady,
+  isPortalPdfChecklistItem,
+} from "@/lib/portal-readiness";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
 function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
@@ -82,10 +91,10 @@ function formatKb(bytes: number | null): string {
 
 function portalNeedsCompress(row: PortalPrepDoc): boolean {
   if (!row.drive_file_id || row.size_bytes == null) return false;
-  if (row.size_bytes <= PORTAL_MAX_BYTES) return false;
+  if (row.size_bytes <= PORTAL_PDF_MAX_BYTES) return false;
   if (
     row.compressed_size_bytes != null &&
-    row.compressed_size_bytes <= PORTAL_MAX_BYTES
+    row.compressed_size_bytes <= PORTAL_PDF_MAX_BYTES
   )
     return false;
   return true;
@@ -222,6 +231,29 @@ export function ApplicationDetailClient({
   const allRequiredUploaded =
     showDocumentChecklist && requiredUploaded >= OCI_NEW_REQUIRED_COUNT;
 
+  const portalPdfClientReady = useMemo(
+    () =>
+      allUploadedChecklistPdfsPortalReady(
+        documents.map((d) => ({ id: d.id, doc_type: d.doc_type })),
+        portalPrep?.documents ?? null
+      ),
+    [documents, portalPrep]
+  );
+
+  const showReadyToSubmitPortalWarning =
+    application.status === "ready_to_submit" &&
+    showDocumentChecklist &&
+    !portalPrepLoading &&
+    !photoValLoading &&
+    !sigValLoading &&
+    !(
+      allRequiredUploaded &&
+      portalPdfClientReady &&
+      photoValResult?.valid === true &&
+      (!docByType.get("applicant_signature") ||
+        sigValResult?.valid === true)
+    );
+
   const showPhotoSigCard =
     showDocumentChecklist ||
     docByType.has("applicant_photo") ||
@@ -290,7 +322,7 @@ export function ApplicationDetailClient({
           body: JSON.stringify({
             application_id: application.id,
             drive_file_id: driveFileId,
-            target_size_kb: 450,
+            target_size_kb: PORTAL_PDF_COMPRESS_TARGET_KB,
           }),
         });
         const data = (await res.json()) as { error?: string };
@@ -920,8 +952,8 @@ export function ApplicationDetailClient({
                 {fixing ? "Fixing…" : "Auto-Fix & Save to Drive"}
               </button>
               <p className="text-[11px] text-[#64748b]">
-                Saves a JPEG under 30KB to Drive → <strong>Fixed</strong>. Then
-                download for portal upload.
+                Saves a portal-ready JPEG (≤{PORTAL_IMAGE_MAX_KB}KB) to Drive →{" "}
+                <strong>Fixed</strong>. Then download for portal upload.
               </p>
               {doc.fixed_drive_url && doc.fixed_drive_file_id ? (
                 <div className="mt-2 space-y-2 border-t border-slate-100 pt-3">
@@ -973,9 +1005,12 @@ export function ApplicationDetailClient({
         <h2 className="mt-5 text-lg font-bold tracking-tight text-[#1e3a5f]">
           Photo &amp; Signature Check
         </h2>
-        <p className="mt-1 text-xs text-[#64748b]">
-          Photo: JPEG only, max 30KB, square {`200–1500px`}. Signature: JPEG,
-          max 30KB, wide ratio ~3:1 (e.g. 600×200), {`200×67–1500×500px`}.
+          <p className="mt-1 text-xs text-[#64748b]">
+          Photo: JPEG only, max {PORTAL_IMAGE_MAX_KB}KB, square {`200–1500px`}
+          (equal width and height). Signature: JPEG, max {PORTAL_IMAGE_MAX_KB}
+          KB; portal wording is 1:3 aspect — here that means a{" "}
+          <strong>wide</strong> image (~3× as wide as tall, e.g. 600×200),{" "}
+          {`200×67–1500×500px`}.
         </p>
         <div className="mt-4 grid gap-6 md:grid-cols-2">
           {renderColumn(
@@ -1006,11 +1041,12 @@ export function ApplicationDetailClient({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
-              Ready for Govt Portal Upload
+              Supporting documents (PDF) for portal
             </h2>
             <p className="mt-1 text-sm text-[#64748b]">
-              The OCI portal accepts PDFs under {PORTAL_MAX_KB}KB. Use
-              compression for oversized scans; copies are saved in Drive →{" "}
+              The OCI portal accepts supporting PDFs up to {PORTAL_PDF_MAX_KB}
+              KB each. Use compression for oversized scans; copies are saved in
+              Drive →{" "}
               <span className="font-medium text-[#1e293b]">Compressed</span>.
             </p>
           </div>
@@ -1119,9 +1155,156 @@ export function ApplicationDetailClient({
     );
   }
 
+  function renderGovtPortalReadinessHub() {
+    if (documents.length === 0) return null;
+
+    const photoOk = photoValResult?.valid === true;
+    const sigOptionalOk =
+      !docByType.get("applicant_signature") ||
+      sigValResult?.valid === true;
+    const imagesLineOk =
+      photoOk &&
+      sigOptionalOk &&
+      !photoValLoading &&
+      !sigValLoading;
+
+    return (
+      <section className="rounded-xl border-2 border-[#c7d2fe] bg-gradient-to-b from-[#eef2ff]/90 to-white p-6 shadow-sm">
+        <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
+          Govt portal readiness
+        </h2>
+        <p className="mt-2 text-sm font-medium text-[#4338ca]">
+          Uploading all required documents on the govt portal is mandatory.
+          Applications can be rejected if anything is missing or out of spec.
+        </p>
+        <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-[#64748b]">
+          <li>
+            Applicant photo &amp; signature: JPEG, max {PORTAL_IMAGE_MAX_KB}KB
+            each. Photo square {`200×200–1500×1500px`}. Signature wide (~3:1
+            width:height), {`200×67–1500×500px`}.
+          </li>
+          <li>
+            Supporting documents: PDF, max {PORTAL_PDF_MAX_KB}KB each, as listed
+            in the checklist below.
+          </li>
+        </ul>
+
+        <div className="mt-4 grid gap-2 rounded-lg border border-[#e0e7ff] bg-white/90 p-4 text-sm sm:grid-cols-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-[#1e293b]">Required docs</span>
+            <span
+              className={clsx(
+                "rounded-full px-2 py-0.5 text-xs font-semibold",
+                allRequiredUploaded
+                  ? "bg-green-100 text-green-800"
+                  : "bg-amber-100 text-amber-900"
+              )}
+            >
+              {requiredUploaded}/{OCI_NEW_REQUIRED_COUNT} uploaded
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-[#1e293b]">PDFs for portal</span>
+            <span
+              className={clsx(
+                "rounded-full px-2 py-0.5 text-xs font-semibold",
+                portalPrepLoading
+                  ? "bg-slate-100 text-slate-600"
+                  : portalPdfClientReady
+                    ? "bg-green-100 text-green-800"
+                    : "bg-amber-100 text-amber-900"
+              )}
+            >
+              {portalPrepLoading
+                ? "Checking…"
+                : portalPdfClientReady
+                  ? "All ready"
+                  : "Fix sizes / compress"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
+            <span className="font-medium text-[#1e293b]">Photo &amp; signature</span>
+            <span
+              className={clsx(
+                "rounded-full px-2 py-0.5 text-xs font-semibold",
+                photoValLoading || sigValLoading
+                  ? "bg-slate-100 text-slate-600"
+                  : imagesLineOk
+                    ? "bg-green-100 text-green-800"
+                    : "bg-amber-100 text-amber-900"
+              )}
+            >
+              {photoValLoading || sigValLoading
+                ? "Checking…"
+                : imagesLineOk
+                  ? "Pass"
+                  : "Validate / fix below"}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold text-[#1e3a5f]">
+            Suggested portal upload order
+          </h3>
+          <p className="mt-1 text-xs text-[#64748b]">
+            Match this order on{" "}
+            <span className="font-medium text-[#1e293b]">ociservices.gov.in</span>{" "}
+            when the portal asks for each document.
+          </p>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-[#1e293b]">
+            {OCI_NEW_CHECKLIST.map((item) => {
+              const doc = docByType.get(item.doc_type);
+              const uploaded = Boolean(doc);
+              const kind = isPortalPdfChecklistItem(item)
+                ? `PDF · ≤${PORTAL_PDF_MAX_KB}KB`
+                : `JPEG · ≤${PORTAL_IMAGE_MAX_KB}KB`;
+              return (
+                <li key={item.doc_type}>
+                  <span className="font-medium">{item.label}</span>
+                  {item.required ? (
+                    <span className="text-red-600"> (required)</span>
+                  ) : (
+                    <span className="text-[#64748b]"> (optional)</span>
+                  )}
+                  <span className="text-[#64748b]"> · {kind}</span>
+                  {" — "}
+                  {uploaded ? (
+                    <span className="font-medium text-green-700">uploaded</span>
+                  ) : (
+                    <span className="text-amber-800">not uploaded</span>
+                  )}
+                  {doc?.drive_view_url ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={doc.drive_view_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-[#2563eb] hover:underline"
+                      >
+                        View in Drive
+                      </a>
+                    </>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+
+        <div className="mt-8 space-y-8 border-t border-[#e0e7ff] pt-8">
+          {renderGovtPortalPrepCard()}
+          {renderPhotoSignatureCheckCard()}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-8 p-6">
-      <div className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link
             href="/dashboard"
@@ -1163,6 +1346,14 @@ export function ApplicationDetailClient({
               Open Google Drive Folder
             </a>
           ) : null}
+          {application.status === "ready_to_submit" ? (
+            <Link
+              href={`/applications/${application.id}/fill`}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#2563eb] bg-[#2563eb] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700"
+            >
+              Govt form (print)
+            </Link>
+          ) : null}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-[#64748b]" htmlFor="status">
               Status
@@ -1183,6 +1374,21 @@ export function ApplicationDetailClient({
             </select>
           </div>
         </div>
+        </div>
+        {showReadyToSubmitPortalWarning ? (
+          <div
+            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="font-semibold">Govt portal checks incomplete</p>
+            <p className="mt-1 text-amber-900/95">
+              Status is <strong>Ready to Submit</strong>, but PDF sizes,
+              applicant photo, or signature may still need work. Review{" "}
+              <strong>Govt portal readiness</strong> below before uploading on
+              the official portal.
+            </p>
+          </div>
+        ) : null}
       </div>
 
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
@@ -1260,8 +1466,7 @@ export function ApplicationDetailClient({
             </div>
           </div>
 
-          {renderGovtPortalPrepCard()}
-          {renderPhotoSignatureCheckCard()}
+          {renderGovtPortalReadinessHub()}
 
           {allRequiredUploaded ? (
             <div className="rounded-xl border border-[#e2e8f0] bg-[#eff6ff] p-4 shadow-sm">
@@ -1324,8 +1529,7 @@ export function ApplicationDetailClient({
             applications. This application uses a different service type; upload
             flows for it are not configured here yet.
           </section>
-          {renderGovtPortalPrepCard()}
-          {renderPhotoSignatureCheckCard()}
+          {renderGovtPortalReadinessHub()}
         </>
       )}
     </div>

@@ -1,7 +1,9 @@
 import sharp from "sharp";
 
-/** Govt portal: photo & signature uploads (strict). */
-export const GOVT_IMAGE_MAX_BYTES = 30 * 1024;
+import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
+
+/** @deprecated Use PORTAL_IMAGE_MAX_BYTES from portal-constants */
+export const GOVT_IMAGE_MAX_BYTES = PORTAL_IMAGE_MAX_BYTES;
 
 export type GovtImageType = "photo" | "signature";
 
@@ -66,9 +68,9 @@ export async function validateGovtImage(
     );
   }
 
-  if (buffer.length > GOVT_IMAGE_MAX_BYTES) {
+  if (buffer.length > PORTAL_IMAGE_MAX_BYTES) {
     issues.push(
-      `File is ${sizeKb}KB; must be under ${kb(GOVT_IMAGE_MAX_BYTES)}KB for govt portal.`
+      `File is ${sizeKb}KB; must be under ${kb(PORTAL_IMAGE_MAX_BYTES)}KB for govt portal.`
     );
   }
 
@@ -141,7 +143,7 @@ async function jpegUnderLimit(
   );
 }
 
-/** Center-crop to square, resize 600×600, JPEG ≤30KB. */
+/** Center-crop to square, resize 600×600, JPEG within portal byte limit. */
 export async function fixGovtPhoto(buffer: Buffer): Promise<{
   buffer: Buffer;
   width: number;
@@ -163,11 +165,11 @@ export async function fixGovtPhoto(buffer: Buffer): Promise<{
         .rotate()
         .extract({ left, top, width: side, height: side })
         .resize(600, 600, { fit: "fill" }),
-    GOVT_IMAGE_MAX_BYTES
+    PORTAL_IMAGE_MAX_BYTES
   );
 }
 
-/** Cover-crop to 600×200 (3:1), JPEG ≤30KB. */
+/** Cover-crop to 600×200 (3:1), JPEG within portal byte limit. */
 export async function fixGovtSignature(buffer: Buffer): Promise<{
   buffer: Buffer;
   width: number;
@@ -178,7 +180,7 @@ export async function fixGovtSignature(buffer: Buffer): Promise<{
       sharp(buffer)
         .rotate()
         .resize(600, 200, { fit: "cover", position: "centre" }),
-    GOVT_IMAGE_MAX_BYTES
+    PORTAL_IMAGE_MAX_BYTES
   );
 }
 

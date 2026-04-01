@@ -6,6 +6,7 @@ import {
   type ExtractedFieldRow,
 } from "@/lib/extracted-fields-dedupe";
 import type { ExtractedField } from "@/lib/types";
+import { getPortalReadinessSnapshot } from "@/lib/portal-readiness-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 import { FormFillPageClient } from "./form-fill-page-client";
@@ -50,6 +51,8 @@ export default async function FormFillPage({
     const t = f.reviewed_at?.trim();
     if (t && (!lastReviewedIso || t > lastReviewedIso)) lastReviewedIso = t;
   }
+
+  const portalReadiness = await getPortalReadinessSnapshot(id);
 
   return (
     <>
@@ -101,6 +104,7 @@ export default async function FormFillPage({
         customerPhone={String(app.customer_phone ?? "")}
         lastReviewedLabel={formatReviewedAt(lastReviewedIso)}
         initialFields={extracted}
+        portalReadiness={portalReadiness}
       />
     </>
   );

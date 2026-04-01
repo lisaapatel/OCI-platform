@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "jest --maxWorkers=1 --forceExit",
     "test:watch": "jest --maxWorkers=1 --forceExit --watch",
-    "test:single": "jest --maxWorkers=1 --forceExit --testPathPatterns"
+    "test:single": "jest --maxWorkers=1 --forceExit --testPathPatterns",
+    "test:ordered": "npm run test:single -- project-structure && npm run test:single -- govt-photo-signature && npm run test:single -- document-compress && npm run test:single -- portal-readiness && npm run test:single -- supabase && npm run test:single -- google-drive && npm run test:single -- extract.test && npm run test:single -- applications.route && npm run test:single -- new-application && npm run test:single -- dashboard && npm run test:single -- application-detail && npm run test:single -- form-fill && npm run test:single -- review",
+    "verify": "next build && npm run test:ordered"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

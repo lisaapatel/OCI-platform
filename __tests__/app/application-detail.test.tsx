@@ -46,8 +46,17 @@ jest.mock("react-dropzone", () => ({
 }));
 
 import React from "react";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+/** Flush effects that await mocked `fetch` (portal-prep, validate-image) so updates run inside `act`. */
+async function renderApplicationDetail(ui: React.ReactElement) {
+  const view = render(ui);
+  await act(async () => {
+    await new Promise<void>((r) => setTimeout(r, 0));
+  });
+  return view;
+}
 
 import type { Application, Document } from "@/lib/types";
 
@@ -81,7 +90,7 @@ describe("Application detail", () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
     );
 
@@ -96,7 +105,7 @@ describe("Application detail", () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
     );
 
@@ -127,19 +136,19 @@ describe("Application detail", () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
     );
 
-    const passportCard = screen.getByText("Current Passport").closest(
-      ".rounded-xl"
-    ) as HTMLElement;
+    const passportCard = screen
+      .getByRole("heading", { name: "Current Passport" })
+      .closest(".rounded-xl") as HTMLElement;
     expect(passportCard).toBeTruthy();
     expect(within(passportCard).getByText(/UPLOADED/i)).toBeInTheDocument();
 
-    const birthCard = screen.getByText("Birth Certificate").closest(
-      ".rounded-xl"
-    ) as HTMLElement;
+    const birthCard = screen
+      .getByRole("heading", { name: "Birth Certificate" })
+      .closest(".rounded-xl") as HTMLElement;
     expect(within(birthCard).getByText(/NOT UPLOADED/i)).toBeInTheDocument();
     expect(
       within(birthCard).getByRole("button", { name: /^upload$/i })
@@ -174,7 +183,7 @@ describe("Application detail", () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
     );
 
@@ -207,7 +216,7 @@ describe("Application detail", () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    const { unmount } = render(
+    const { unmount } = await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
     );
     expect(
@@ -215,7 +224,7 @@ describe("Application detail", () => {
     ).not.toBeInTheDocument();
     unmount();
 
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
     );
     expect(
@@ -229,7 +238,7 @@ describe("Application detail", () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
     );
 
@@ -240,11 +249,37 @@ describe("Application detail", () => {
     );
   });
 
+  test("Test 6b: Govt form (print) link is hidden when status is not Ready to Submit", async () => {
+    const { ApplicationDetailClient } = await import(
+      "../../app/(main)/applications/[id]/application-detail-client"
+    );
+    await renderApplicationDetail(
+      <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
+    );
+    expect(
+      screen.queryByRole("link", { name: /Govt form \(print\)/i })
+    ).not.toBeInTheDocument();
+  });
+
+  test("Test 6c: Govt form (print) links to fill page when status is Ready to Submit", async () => {
+    const { ApplicationDetailClient } = await import(
+      "../../app/(main)/applications/[id]/application-detail-client"
+    );
+    await renderApplicationDetail(
+      <ApplicationDetailClient
+        application={baseApp({ status: "ready_to_submit" })}
+        initialDocuments={[]}
+      />
+    );
+    const fillLink = screen.getByRole("link", { name: /Govt form \(print\)/i });
+    expect(fillLink).toHaveAttribute("href", "/applications/app-1/fill");
+  });
+
   test("Test 7: Status dropdown allows changing status", async () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
-    render(
+    await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
     );
 

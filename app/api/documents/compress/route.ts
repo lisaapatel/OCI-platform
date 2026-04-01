@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { compressForGovtPortal } from "@/lib/document-compress";
-import { PORTAL_MAX_BYTES } from "@/lib/portal-constants";
+import {
+  PORTAL_PDF_COMPRESS_TARGET_KB,
+  PORTAL_PDF_MAX_BYTES,
+  PORTAL_PDF_MAX_KB,
+} from "@/lib/portal-constants";
 import {
   findOrCreateChildFolder,
   getDriveFileMetadata,
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
     const targetBytes =
       Number.isFinite(targetKb) && targetKb > 0
         ? Math.floor(targetKb * 1024)
-        : Math.floor(450 * 1024);
+        : Math.floor(PORTAL_PDF_COMPRESS_TARGET_KB * 1024);
 
     if (!application_id || !drive_file_id) {
       return NextResponse.json(
@@ -82,7 +86,7 @@ export async function POST(req: Request) {
     const meta = await getDriveFileMetadata(drive_file_id);
     const originalSize = meta.size;
 
-    if (originalSize <= PORTAL_MAX_BYTES) {
+    if (originalSize <= PORTAL_PDF_MAX_BYTES) {
       return NextResponse.json(
         {
           ok: true,
@@ -116,10 +120,10 @@ export async function POST(req: Request) {
       targetBytes
     );
 
-    if (output.length > PORTAL_MAX_BYTES) {
+    if (output.length > PORTAL_PDF_MAX_BYTES) {
       return NextResponse.json(
         {
-          error: `Compressed file is still ${kb(output.length)}KB (portal limit 500KB). Try a lower target or split the document.`,
+          error: `Compressed file is still ${kb(output.length)}KB (portal limit ${PORTAL_PDF_MAX_KB}KB). Try a lower target or split the document.`,
         },
         { status: 422 }
       );
