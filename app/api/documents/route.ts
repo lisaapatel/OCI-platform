@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { deleteFile, uploadFileToDrive } from "@/lib/google-drive";
+import {
+  createApplicationFolder,
+  deleteFile,
+  uploadFileToDrive,
+} from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(req: Request) {
@@ -57,7 +61,7 @@ export async function POST(req: Request) {
 
     const { data: app, error: appError } = await supabaseAdmin
       .from("applications")
-      .select("id, drive_folder_id")
+      .select("id, app_number, customer_name, drive_folder_id")
       .eq("id", application_id)
       .single();
 
@@ -68,11 +72,37 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!app.drive_folder_id) {
-      return NextResponse.json(
-        { error: "Application has no Drive folder configured." },
-        { status: 400 }
-      );
+    let driveFolderId = app.drive_folder_id ?? "";
+    if (!driveFolderId) {
+      try {
+        const folder = await createApplicationFolder(
+          String(app.app_number ?? "APP-UNKNOWN"),
+          String(app.customer_name ?? "Customer")
+        );
+        driveFolderId = folder.id;
+
+        const { error: updateError } = await supabaseAdmin
+          .from("applications")
+          .update({
+            drive_folder_id: folder.id,
+            drive_folder_url: folder.url,
+          })
+          .eq("id", application_id);
+
+        if (updateError) {
+          console.error("Created Drive folder but failed to save to application", {
+            application_id,
+            message: updateError.message,
+          });
+        }
+      } catch (folderError) {
+        const message =
+          folderError instanceof Error ? folderError.message : String(folderError);
+        return NextResponse.json(
+          { error: `Application has no Drive folder configured: ${message}` },
+          { status: 500 }
+        );
+      }
     }
 
     const { data: existing } = await supabaseAdmin
@@ -99,7 +129,7 @@ export async function POST(req: Request) {
       buffer,
       file.name,
       mimeType,
-      app.drive_folder_id
+      driveFolderId
     );
 
     const { data: row, error: insertError } = await supabaseAdmin
