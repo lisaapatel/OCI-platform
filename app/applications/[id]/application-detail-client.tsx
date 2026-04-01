@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 
+import { coerceExtractionStatus } from "@/lib/document-utils";
 import { labelForFailureReason } from "@/lib/extraction-failure-reasons";
 import {
   OCI_NEW_CHECKLIST,
@@ -22,7 +23,7 @@ function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
     file_name: String(row.file_name ?? ""),
     drive_file_id: String(row.drive_file_id ?? ""),
     drive_view_url: String(row.drive_view_url ?? ""),
-    extraction_status: row.extraction_status as Document["extraction_status"],
+    extraction_status: coerceExtractionStatus(row.extraction_status),
     failure_reason:
       row.failure_reason == null || row.failure_reason === ""
         ? null
@@ -324,13 +325,25 @@ export function ApplicationDetailClient({
       const toProcess = checklistDocs.filter((d) => d.extraction_status === "pending");
 
       if (toProcess.length === 0) {
-        setIsProcessing(false);
-        setExtractionProgress(null);
         if (checklistDocs.length === 0) {
+          setIsProcessing(false);
+          setExtractionProgress(null);
           alert("No documents to process.");
-        } else {
-          alert("No pending documents to extract.");
+          return;
         }
+        const hasFailed = checklistDocs.some((d) => d.extraction_status === "failed");
+        if (hasFailed) {
+          setPatchError(
+            "No pending documents. Retry failed items with ↺ Retry on each card, or continue to review with the fields you have."
+          );
+        } else {
+          setSkipNotice((prev) =>
+            prev ??
+            "All uploaded documents are already extracted. Continuing to review."
+          );
+        }
+        await patchApplication({ status: "ready_for_review" });
+        router.push(`/applications/${application.id}/review`);
         return;
       }
 

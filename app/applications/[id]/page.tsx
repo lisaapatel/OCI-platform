@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { coerceExtractionStatus } from "@/lib/document-utils";
 import type { Application, Document } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -31,7 +32,7 @@ function mapDocuments(rows: Record<string, unknown>[]): Document[] {
     file_name: String(row.file_name ?? ""),
     drive_file_id: String(row.drive_file_id ?? ""),
     drive_view_url: String(row.drive_view_url ?? ""),
-    extraction_status: row.extraction_status as Document["extraction_status"],
+    extraction_status: coerceExtractionStatus(row.extraction_status),
     failure_reason:
       row.failure_reason == null || row.failure_reason === ""
         ? null
