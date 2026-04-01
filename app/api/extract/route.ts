@@ -4,6 +4,32 @@ import { extractFieldsFromDocument } from "@/lib/claude";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+function parseSupabaseObjectRef(ref: string): { bucket: string; path: string } | null {
+  if (!ref.startsWith("sb:")) return null;
+  const raw = ref.slice(3);
+  const slash = raw.indexOf("/");
+  if (slash <= 0) return null;
+  return {
+    bucket: raw.slice(0, slash),
+    path: raw.slice(slash + 1),
+  };
+}
+
+async function getDocumentAsBase64(ref: string): Promise<string> {
+  const sbRef = parseSupabaseObjectRef(ref);
+  if (!sbRef) return getFileAsBase64(ref);
+
+  const { data, error } = await supabaseAdmin.storage
+    .from(sbRef.bucket)
+    .download(sbRef.path);
+  if (error || !data) {
+    throw new Error(`Failed to download storage object: ${error?.message ?? "Unknown error"}`);
+  }
+
+  const ab = await data.arrayBuffer();
+  return Buffer.from(ab).toString("base64");
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as { application_id?: string };
@@ -39,7 +65,7 @@ export async function POST(req: Request) {
           .update({ extraction_status: "processing" })
           .eq("id", doc.id);
 
-        const b64 = await getFileAsBase64(doc.drive_file_id);
+        const b64 = await getDocumentAsBase64(doc.drive_file_id);
         const mimeType = "application/pdf";
         const extracted = await extractFieldsFromDocument({
           base64: b64,

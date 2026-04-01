@@ -3,6 +3,17 @@ import { NextResponse } from "next/server";
 import { deleteFile } from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+function parseSupabaseObjectRef(ref: string): { bucket: string; path: string } | null {
+  if (!ref.startsWith("sb:")) return null;
+  const raw = ref.slice(3);
+  const slash = raw.indexOf("/");
+  if (slash <= 0) return null;
+  return {
+    bucket: raw.slice(0, slash),
+    path: raw.slice(slash + 1),
+  };
+}
+
 export async function DELETE(
   _req: Request,
   context: { params: Promise<{ id: string }> }
@@ -22,9 +33,14 @@ export async function DELETE(
 
     if (doc.drive_file_id) {
       try {
-        await deleteFile(doc.drive_file_id);
+        const sbRef = parseSupabaseObjectRef(doc.drive_file_id);
+        if (sbRef) {
+          await supabaseAdmin.storage.from(sbRef.bucket).remove([sbRef.path]);
+        } else {
+          await deleteFile(doc.drive_file_id);
+        }
       } catch {
-        // Continue removing DB row even if Drive delete fails (e.g. already gone)
+        // Continue removing DB row even if storage delete fails.
       }
     }
 
