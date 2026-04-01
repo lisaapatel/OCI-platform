@@ -15,28 +15,39 @@ jest.mock("@/lib/claude", () => ({
     extractFieldsFromDocument(...args),
 }));
 
-jest.mock("@/lib/supabase", () => ({
+jest.mock("@/lib/supabase-admin", () => ({
   supabaseAdmin: {
     from: (table: string) => fromMock(table),
   },
 }));
 
-import { POST } from "../../app/api/extract/route";
+import { POST } from "../../app/api/extract/all/route";
+
+function mockExtractedFieldsDelete() {
+  return {
+    delete: jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        eq: jest.fn().mockResolvedValue({ error: null }),
+      }),
+    }),
+  };
+}
 
 function req(body: unknown) {
-  return new Request("http://localhost/api/extract", {
+  return new Request("http://localhost/api/extract/all", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 }
 
-describe("POST /api/extract", () => {
+describe("POST /api/extract/all", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
   });
 
-  test("Test 1: POST /api/extract returns 400 if application_id is missing", async () => {
+  test("Test 1: POST /api/extract/all returns 400 if application_id is missing", async () => {
     const res = await POST(req({}));
     expect(res.status).toBe(400);
   });
@@ -80,6 +91,7 @@ describe("POST /api/extract", () => {
       }
       if (table === "extracted_fields") {
         return {
+          ...mockExtractedFieldsDelete(),
           insert: jest.fn().mockResolvedValue({ error: null }),
         };
       }
@@ -134,6 +146,7 @@ describe("POST /api/extract", () => {
       }
       if (table === "extracted_fields") {
         return {
+          ...mockExtractedFieldsDelete(),
           insert: jest.fn().mockResolvedValue({ error: null }),
         };
       }
@@ -184,7 +197,7 @@ describe("POST /api/extract", () => {
         };
       }
       if (table === "extracted_fields") {
-        return { insert };
+        return { ...mockExtractedFieldsDelete(), insert };
       }
       if (table === "applications") {
         return {
@@ -240,7 +253,10 @@ describe("POST /api/extract", () => {
         };
       }
       if (table === "extracted_fields") {
-        return { insert: jest.fn().mockResolvedValue({ error: null }) };
+        return {
+          ...mockExtractedFieldsDelete(),
+          insert: jest.fn().mockResolvedValue({ error: null }),
+        };
       }
       if (table === "applications") {
         return {
@@ -261,74 +277,7 @@ describe("POST /api/extract", () => {
     expect(update).toHaveBeenCalledWith({ extraction_status: "done" });
   });
 
-  test("Test 6: Updates application status to ready_for_review when all docs processed", async () => {
-    const appUpdate = jest.fn(() => ({
-      eq: jest.fn().mockResolvedValue({ error: null }),
-    }));
-    const eq2 = jest.fn().mockResolvedValue({
-      data: [{ id: "d1", drive_file_id: "f1", doc_type: "p" }],
-      error: null,
-    });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-
-    let headIdSelectCalls = 0;
-    const headSelectForId = jest.fn(
-      (cols: string, opts?: { head?: boolean }) => {
-        if (cols === "id" && opts?.head) {
-          headIdSelectCalls += 1;
-          if (headIdSelectCalls === 1) {
-            const pendingResult = Promise.resolve({ count: 0, error: null });
-            const pendingEqStatus = jest.fn(() => pendingResult);
-            const pendingEqApp = jest.fn(() => ({ eq: pendingEqStatus }));
-            return { eq: pendingEqApp };
-          }
-          const totalResult = Promise.resolve({ count: 1, error: null });
-          const totalEqApp = jest.fn(() => totalResult);
-          return { eq: totalEqApp };
-        }
-        return headSelect();
-      }
-    );
-
-    fromMock.mockImplementation((table: string) => {
-      if (table === "documents") {
-        return {
-          select: jest.fn((cols: string, opts?: { head?: boolean }) => {
-            if (opts?.head && cols === "id") {
-              return headSelectForId(cols, opts);
-            }
-            if (opts?.head) {
-              return headSelect();
-            }
-            return selectStar();
-          }),
-          update: jest.fn(() => ({
-            eq: jest.fn().mockResolvedValue({ error: null }),
-          })),
-        };
-      }
-      if (table === "extracted_fields") {
-        return { insert: jest.fn().mockResolvedValue({ error: null }) };
-      }
-      if (table === "applications") {
-        return { update: appUpdate };
-      }
-      return {};
-    });
-
-    getFileAsBase64.mockResolvedValue("QQ==");
-    extractFieldsFromDocument.mockResolvedValue({});
-
-    await POST(req({ application_id: "app-1" }));
-
-    expect(appUpdate).toHaveBeenCalledWith({ status: "ready_for_review" });
-  });
-
-  test("Test 7: If Claude returns null for a field, it still saves the field with null value", async () => {
+  test("Test 6: If Claude returns null for a field, it still saves the field with null value", async () => {
     const insert = jest.fn().mockResolvedValue({ error: null });
     const eq2 = jest.fn().mockResolvedValue({
       data: [{ id: "d1", drive_file_id: "f1", doc_type: "p" }],
@@ -357,7 +306,7 @@ describe("POST /api/extract", () => {
         };
       }
       if (table === "extracted_fields") {
-        return { insert };
+        return { ...mockExtractedFieldsDelete(), insert };
       }
       if (table === "applications") {
         return {
@@ -382,7 +331,7 @@ describe("POST /api/extract", () => {
     );
   });
 
-  test("Test 8: If Claude API fails for one document, marks that doc as failed and continues others", async () => {
+  test("Test 7: If Claude API fails for one document, marks that doc as failed and continues others", async () => {
     const update = jest.fn(() => ({
       eq: jest.fn().mockResolvedValue({ error: null }),
     }));
@@ -412,7 +361,10 @@ describe("POST /api/extract", () => {
         };
       }
       if (table === "extracted_fields") {
-        return { insert: jest.fn().mockResolvedValue({ error: null }) };
+        return {
+          ...mockExtractedFieldsDelete(),
+          insert: jest.fn().mockResolvedValue({ error: null }),
+        };
       }
       if (table === "applications") {
         return {

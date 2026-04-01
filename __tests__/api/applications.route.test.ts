@@ -10,7 +10,7 @@ jest.mock("@/lib/google-drive", () => ({
     createApplicationFolder(...args),
 }));
 
-jest.mock("@/lib/supabase", () => ({
+jest.mock("@/lib/supabase-admin", () => ({
   supabaseAdmin: {
     from: (...args: unknown[]) => supabaseAdminFrom(...args),
   },
@@ -98,13 +98,19 @@ describe("POST /api/applications", () => {
     expect(body.error).toMatch(/full name is required/i);
   });
 
-  test("returns 500 when Drive folder creation fails", async () => {
+  test("still creates application when Drive folder creation fails", async () => {
     createApplicationFolder.mockRejectedValue(new Error("drive down"));
 
     const countSelect = jest.fn().mockResolvedValue({ count: 0, error: null });
+    const insertSingle = jest
+      .fn()
+      .mockResolvedValue({ data: { id: "app-without-drive" }, error: null });
+    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
+    const insert = jest.fn(() => ({ select: insertSelect }));
+
     supabaseAdminFrom.mockReturnValue({
       select: countSelect,
-      insert: jest.fn(),
+      insert,
     });
 
     const req = new Request("http://localhost/api/applications", {
@@ -117,9 +123,14 @@ describe("POST /api/applications", () => {
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toMatch(/unexpected error creating application/i);
-    expect(body.error).toMatch(/drive down/i);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ id: "app-without-drive" });
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_name: "Raj Patel",
+        drive_folder_id: "",
+        drive_folder_url: "",
+      })
+    );
   });
 });

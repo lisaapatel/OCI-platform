@@ -74,7 +74,7 @@ import userEvent from "@testing-library/user-event";
 
 describe("Dashboard", () => {
   test("Test 1: Dashboard renders the application table", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
 
     expect(await screen.findByText("Priya Sharma")).toBeInTheDocument();
@@ -83,7 +83,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 2: Status badges display correctly", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
 
     await screen.findByText("Priya Sharma");
@@ -96,7 +96,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 3: Stats row shows correct counts", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
 
     await screen.findByText("Priya Sharma");
@@ -114,7 +114,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 4: Search filter works", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
     await screen.findByText("Priya Sharma");
 
@@ -128,7 +128,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 5: Status filter works", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
     await screen.findByText("Priya Sharma");
 
@@ -142,7 +142,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 6: New Application button exists and links to /applications/new", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
 
     const link = screen.getByRole("link", { name: "New Application" });
@@ -150,7 +150,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 7: App numbers display in correct format", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
 
     expect(await screen.findByText("APP-0001")).toBeInTheDocument();
@@ -159,7 +159,7 @@ describe("Dashboard", () => {
   });
 
   test("Test 8: Dates are formatted correctly", async () => {
-    const Dashboard = (await import("../../app/dashboard/page")).default;
+    const Dashboard = (await import("../../app/(main)/dashboard/page")).default;
     render(<Dashboard />);
     await screen.findByText("Priya Sharma");
 

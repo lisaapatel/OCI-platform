@@ -102,11 +102,38 @@ describe("lib/google-drive", () => {
   });
 
   test("Test 5: getFileAsBase64 returns a base64 string", async () => {
-    const { getFileAsBase64 } = await import("../../lib/google-drive");
+    const payload = Buffer.from("fake-drive-bytes");
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => "",
+      arrayBuffer: async () =>
+        payload.buffer.slice(
+          payload.byteOffset,
+          payload.byteOffset + payload.byteLength
+        ),
+    } as Response);
 
-    const b64 = await getFileAsBase64("test-file-id");
-    expect(typeof b64).toBe("string");
-    expect(b64).toMatch(/^[A-Za-z0-9+/=]+$/);
+    try {
+      const { getFileAsBase64 } = await import("../../lib/google-drive");
+      const b64 = await getFileAsBase64("test-file-id");
+      expect(typeof b64).toBe("string");
+      expect(b64).toBe(payload.toString("base64"));
+      expect(b64).toMatch(/^[A-Za-z0-9+/=]+$/);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "googleapis.com/drive/v3/files/test-file-id"
+        ),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: expect.stringMatching(/^Bearer /),
+          }),
+        })
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
 
