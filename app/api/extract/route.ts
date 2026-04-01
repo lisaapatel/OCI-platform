@@ -52,6 +52,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const [{ count: totalDocs }, { count: pendingDocs }] = await Promise.all([
+      supabaseAdmin
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .eq("application_id", application_id),
+      supabaseAdmin
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .eq("application_id", application_id)
+        .eq("extraction_status", "pending"),
+    ]);
+    console.log("Extraction doc counts", {
+      application_id,
+      totalDocs: totalDocs ?? 0,
+      pendingDocs: pendingDocs ?? 0,
+    });
+
     const { data: doc, error: listError } = await supabaseAdmin
       .from("documents")
       .select("*")
@@ -69,9 +86,20 @@ export async function POST(req: Request) {
     }
 
     if (!doc) {
-      return NextResponse.json({ ok: true, processed: 0 }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, docs_processed: 0, fields_extracted: 0 },
+        { status: 200 }
+      );
     }
 
+    console.log("Extracting document", {
+      document_id: doc.id,
+      doc_type: doc.doc_type,
+      drive_file_id: doc.drive_file_id,
+    });
+
+    let docsProcessed = 0;
+    let fieldsExtracted = 0;
     try {
       await supabaseAdmin
         .from("documents")
@@ -79,6 +107,22 @@ export async function POST(req: Request) {
         .eq("id", doc.id);
 
       const b64 = await getDocumentAsBase64(doc.drive_file_id);
+      console.log("Downloaded base64 length", {
+        document_id: doc.id,
+        length: b64?.length ?? 0,
+      });
+      if (!b64 || b64.length === 0) {
+        console.warn("Empty base64; skipping document", { document_id: doc.id });
+        await supabaseAdmin
+          .from("documents")
+          .update({ extraction_status: "failed" })
+          .eq("id", doc.id);
+        return NextResponse.json(
+          { ok: true, docs_processed: 0, fields_extracted: 0 },
+          { status: 200 }
+        );
+      }
+
       const mimeType = "application/pdf";
       const extracted = await extractFieldsFromDocument({
         base64: b64,
@@ -100,12 +144,14 @@ export async function POST(req: Request) {
         if (insErr) {
           throw new Error(insErr.message);
         }
+        fieldsExtracted += 1;
       }
 
       await supabaseAdmin
         .from("documents")
         .update({ extraction_status: "done" })
         .eq("id", doc.id);
+      docsProcessed = 1;
     } catch (docErr) {
       const msg = docErr instanceof Error ? docErr.message : String(docErr);
       console.error("Extraction failed for document", {
@@ -138,7 +184,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { ok: true, processed: 1 },
+      { ok: true, docs_processed: docsProcessed, fields_extracted: fieldsExtracted },
       { status: 200 }
     );
   } catch (err) {

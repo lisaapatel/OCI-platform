@@ -168,16 +168,20 @@ export async function setFilePublicReadable(fileId: string): Promise<void> {
 }
 
 export async function getFileAsBase64(fileId: string): Promise<string> {
-  const drive = getGoogleDriveClient();
-
   try {
-    const res = await drive.files.get(
-      { fileId, alt: "media" },
-      { responseType: "arraybuffer" }
-    );
-
-    const data = res.data as ArrayBuffer;
-    return Buffer.from(data).toString("base64");
+    const accessToken = await getGoogleAccessToken();
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+      fileId
+    )}?alt=media`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`${res.status} ${body || res.statusText}`);
+    }
+    const ab = await res.arrayBuffer();
+    return Buffer.from(ab).toString("base64");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`Failed to download Drive file as base64 (id="${fileId}"): ${message}`);

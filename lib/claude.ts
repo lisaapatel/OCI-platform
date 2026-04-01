@@ -13,24 +13,49 @@ export async function extractFieldsFromDocument(input: {
   docType: string;
 }): Promise<Record<string, string | null>> {
   const client = getAnthropicClient();
+  const mediaType = input.mimeType?.trim() || "application/pdf";
+  const attachmentBlock =
+    mediaType === "application/pdf"
+      ? ({
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: input.base64,
+          },
+        } as any)
+      : ({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: mediaType,
+            data: input.base64,
+          },
+        } as any);
   const res = await client.messages.create({
     model: "claude-3-5-haiku-20241022",
     max_tokens: 4096,
     messages: [
       {
         role: "user",
-        content: `You extract structured data from a document.
+        content: [
+          {
+            type: "text",
+            text: `You extract structured data from a document.
 Document type key: ${input.docType}
-MIME: ${input.mimeType}
-The file content is provided as base64 (${input.base64.length} chars).
+MIME: ${mediaType}
 
 Return ONLY a single JSON object mapping field names to string values or null. No markdown.`,
+          },
+          attachmentBlock,
+        ],
       },
     ],
   });
 
   const block = res.content.find((b) => b.type === "text");
   const text = block?.type === "text" ? block.text : "{}";
+  console.log("Claude raw response text:", text.slice(0, 2000));
   const match = text.match(/\{[\s\S]*\}/);
   const parsed = JSON.parse(match ? match[0] : "{}") as unknown;
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
