@@ -155,88 +155,46 @@ export function ApplicationDetailClient({
       pollRef.current = null;
     }
     try {
-      // Kick off first document extraction (one doc per call).
-      const res = await fetch("/api/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: application.id }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        const msg = typeof data.error === "string" ? data.error : "Unknown error";
-        const full = `Extraction failed: ${msg}`;
-        setPatchError(full);
-        alert(full);
+      const docsToProcess = documents.filter((d) => d.id);
+      const total = docsToProcess.length;
+      if (total === 0) {
+        setProcessingLabel(null);
+        setIsProcessing(false);
+        alert("No documents to process.");
         return;
       }
 
-      // Poll status every 2s, and trigger next doc extraction as needed.
-      pollRef.current = window.setInterval(async () => {
-        try {
-          const statusRes = await fetch(
-            `/api/extract/status?application_id=${encodeURIComponent(application.id)}`,
-            { cache: "no-store" as any }
-          );
-          const statusData = (await statusRes.json().catch(() => ({}))) as any;
-          if (!statusRes.ok) {
-            const msg =
-              typeof statusData.error === "string"
-                ? statusData.error
-                : `Status failed (${statusRes.status}).`;
-            setProcessingLabel(`Extraction status error: ${msg}`);
-            return;
-          }
+      for (let i = 0; i < total; i++) {
+        const doc = docsToProcess[i]!;
+        setProcessingLabel(`Processing ${doc.doc_type} (${i + 1} of ${total})…`);
 
-          const totals = statusData.totals as {
-            total: number;
-            pending: number;
-            processing: number;
-            done: number;
-            failed: number;
-          };
-
-          const completed = (totals.done ?? 0) + (totals.failed ?? 0);
-          const total = totals.total ?? 0;
-          setProcessingLabel(
-            total > 0
-              ? `Processing document ${Math.min(total, completed + 1)} of ${total}…`
-              : "Processing…"
-          );
-
-          if (statusData.application_status === "ready_for_review") {
-            if (pollRef.current != null) {
-              window.clearInterval(pollRef.current);
-              pollRef.current = null;
-            }
-            setIsProcessing(false);
-            setProcessingLabel(null);
-            router.push(`/applications/${application.id}/review`);
-            return;
-          }
-
-          // If nothing is currently processing but we still have pending docs, trigger next one.
-          if ((totals.processing ?? 0) === 0 && (totals.pending ?? 0) > 0) {
-            await fetch("/api/extract", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ application_id: application.id }),
-            }).catch(() => {});
-          }
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          setProcessingLabel(`Extraction error: ${msg}`);
+        const res = await fetch("/api/extract/single", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            application_id: application.id,
+            document_id: doc.id,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          const msg = typeof data.error === "string" ? data.error : "Unknown error";
+          const full = `Extraction failed: ${msg}`;
+          setPatchError(full);
+          alert(full);
+          return;
         }
-      }, 2000);
+      }
+
+      await patchApplication({ status: "ready_for_review" });
+      router.push(`/applications/${application.id}/review`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setPatchError(msg);
       alert(`Extraction failed: ${msg}`);
     } finally {
-      // Keep spinner while polling; stop only on failure or completion.
-      if (pollRef.current == null) {
-        setIsProcessing(false);
-        setProcessingLabel(null);
-      }
+      setIsProcessing(false);
+      setProcessingLabel(null);
     }
   }
 
