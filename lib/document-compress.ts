@@ -28,7 +28,18 @@ export function isLikelyImageBuffer(buf: Buffer, mimeType: string): boolean {
   return false;
 }
 
-async function rasterizePdfToJpegPdf(
+function sharpPdfDecodeLikelyUnsupported(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("unsupported image format") ||
+    m.includes("input buffer contains unsupported") ||
+    m.includes("poppler") ||
+    m.includes("libvips")
+  );
+}
+
+/** Uses libvips PDF support (Poppler). Fast when available. */
+async function rasterizePdfToJpegPdfWithSharp(
   pdfBuffer: Buffer,
   density: number,
   jpegQuality: number
@@ -58,6 +69,130 @@ async function rasterizePdfToJpegPdf(
   return Buffer.from(await outDoc.save({ useObjectStreams: true }));
 }
 
+/** Avoid huge canvases (memory / timeouts) on large or high-DPI pages. */
+const PDFJS_MAX_RASTER_EDGE_PX = 2400;
+
+/**
+ * pdf.js + Skia canvas — works when Sharp is built without PDF/Poppler (default on many installs).
+ */
+async function rasterizePdfToJpegPdfWithPdfJs(
+  pdfBuffer: Buffer,
+  density: number,
+  jpegQuality: number
+): Promise<Buffer> {
+  const [{ getDocument }, { createCanvas }] = await Promise.all([
+    import("pdfjs-dist/legacy/build/pdf.mjs"),
+    import("@napi-rs/canvas"),
+  ]);
+
+  const data = new Uint8Array(pdfBuffer.length);
+  data.set(pdfBuffer);
+
+  const loadingTask = getDocument({
+    data,
+    useSystemFonts: true,
+    verbosity: 0,
+  });
+
+  const outDoc = await PDFDocument.create();
+  let pdf: Awaited<(typeof loadingTask)["promise"]> | null = null;
+
+  try {
+    pdf = await loadingTask.promise;
+    const baseScale = density / 72;
+
+    for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex++) {
+      const page = await pdf.getPage(pageIndex);
+      try {
+        let viewport = page.getViewport({ scale: baseScale });
+        const maxDim = Math.max(viewport.width, viewport.height);
+        if (maxDim > PDFJS_MAX_RASTER_EDGE_PX) {
+          viewport = page.getViewport({
+            scale: (baseScale * PDFJS_MAX_RASTER_EDGE_PX) / maxDim,
+          });
+        }
+
+        const w = Math.max(1, Math.floor(viewport.width));
+        const h = Math.max(1, Math.floor(viewport.height));
+        const canvas = createCanvas(w, h);
+        const ctx = canvas.getContext("2d");
+
+        await page.render({
+          canvasContext: ctx as unknown as CanvasRenderingContext2D,
+          viewport,
+        }).promise;
+
+        // PNG first — @napi-rs/canvas JPEG is not always readable by Sharp/pdf-lib ("SOI not found").
+        const pngBuf = canvas.toBuffer("image/png");
+        const jpegData = await sharp(pngBuf)
+          .jpeg({ quality: jpegQuality, mozjpeg: true })
+          .toBuffer();
+        const meta = await sharp(jpegData).metadata();
+        const pw = meta.width ?? w;
+        const ph = meta.height ?? h;
+        const jpg = await outDoc.embedJpg(jpegData);
+        const outPage = outDoc.addPage([pw, ph]);
+        outPage.drawImage(jpg, { x: 0, y: 0, width: pw, height: ph });
+      } finally {
+        page.cleanup();
+      }
+    }
+
+    return Buffer.from(await outDoc.save({ useObjectStreams: true }));
+  } finally {
+    try {
+      await pdf?.destroy();
+    } catch {
+      /* ignore teardown errors */
+    }
+    try {
+      await loadingTask.destroy();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+type PdfRasterBackendState = { preferPdfJs: boolean };
+
+/**
+ * Rasterize for portal: Sharp when libvips has PDF support, else pdf.js once per compress session.
+ * Updates `state.preferPdfJs` so multi-attempt loops do not re-hit failing Sharp PDF on every iteration.
+ */
+async function rasterizePdfToJpegPdfAdaptive(
+  pdfBuffer: Buffer,
+  density: number,
+  jpegQuality: number,
+  state: PdfRasterBackendState
+): Promise<Buffer> {
+  if (state.preferPdfJs) {
+    return rasterizePdfToJpegPdfWithPdfJs(pdfBuffer, density, jpegQuality);
+  }
+
+  try {
+    return await rasterizePdfToJpegPdfWithSharp(pdfBuffer, density, jpegQuality);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!sharpPdfDecodeLikelyUnsupported(msg)) {
+      throw err;
+    }
+    try {
+      state.preferPdfJs = true;
+      return await rasterizePdfToJpegPdfWithPdfJs(
+        pdfBuffer,
+        density,
+        jpegQuality
+      );
+    } catch (fallbackErr) {
+      const fb =
+        fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      throw new Error(
+        `PDF rasterize failed (Sharp PDF unsupported and pdf.js fallback failed): ${fb}`
+      );
+    }
+  }
+}
+
 export async function compressPdfForPortal(
   pdfBuffer: Buffer,
   maxBytes: number = PORTAL_MAX_BYTES
@@ -65,15 +200,19 @@ export async function compressPdfForPortal(
   let density = 72;
   let quality = 68;
   let last: Buffer | null = null;
+  const rasterState: PdfRasterBackendState = { preferPdfJs: false };
 
   for (let attempt = 0; attempt < 10; attempt++) {
     try {
-      last = await rasterizePdfToJpegPdf(pdfBuffer, density, quality);
+      last = await rasterizePdfToJpegPdfAdaptive(
+        pdfBuffer,
+        density,
+        quality,
+        rasterState
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `PDF rasterize/compress failed (is libvips built with PDF/poppler support?): ${msg}`
-      );
+      throw new Error(`PDF compress failed: ${msg}`);
     }
     if (last.length <= maxBytes) return last;
     quality -= 8;
