@@ -1,27 +1,33 @@
 import Link from "next/link";
 
+import { BrandLogo } from "@/components/brand-logo";
+
 export default function Home() {
   return (
-    <div className="flex min-h-screen flex-1 items-center justify-center bg-[#f8fafc] p-8">
-      <div className="w-full max-w-md space-y-4 rounded-xl border border-[#e2e8f0] bg-white p-8 shadow-sm transition-shadow duration-150 hover:shadow-md">
-        <h1 className="text-xl font-bold text-[#1e3a5f]">OCI Platform</h1>
-        <p className="text-sm text-[#64748b]">
+    <div className="flex min-h-screen flex-1 flex-col items-center justify-center bg-oci-page p-8">
+      <div className="w-full max-w-md space-y-2 rounded-xl border border-oci-border bg-white p-8 shadow-sm transition-shadow duration-150 hover:shadow-md">
+        <BrandLogo variant="card" />
+        <h1 className="text-center text-2xl font-semibold tracking-tight text-brand font-brand-serif">
+          OCI Platform
+        </h1>
+        <p className="text-center text-sm text-oci-muted">
           Start by logging in to access your dashboard.
         </p>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap justify-center gap-3 pt-2">
           <Link
             href="/login"
-            className="inline-flex items-center justify-center rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-blue-700"
+            className="inline-flex items-center justify-center rounded-lg bg-brand-accent px-4 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-brand-accent-hover"
           >
             Go to login
           </Link>
           <Link
             href="/dashboard"
-            className="inline-flex items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-4 py-2 text-sm font-medium text-[#1e293b] transition-colors duration-150 hover:bg-[#eff6ff]"
+            className="inline-flex items-center justify-center rounded-lg border border-oci-border bg-white px-4 py-2 text-sm font-medium text-oci-ink transition-colors duration-150 hover:bg-oci-blue-light"
           >
             Dashboard
           </Link>
         </div>
+        <p className="pt-4 text-center text-xs text-oci-muted">Akshar Travels</p>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
@@ -33,12 +34,13 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#1e3a5f] px-6 py-10">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-brand px-6 py-10">
+      <BrandLogo variant="login" />
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-        <h1 className="text-center text-2xl font-bold text-[#1e3a5f]">
+        <h1 className="text-center text-3xl font-semibold tracking-tight text-brand font-brand-serif">
           OCI Platform
         </h1>
-        <p className="mt-2 text-center text-sm text-[#64748b]">
+        <p className="mt-2 text-center text-sm text-oci-muted">
           Sign in to your account
         </p>
 
@@ -46,7 +48,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="email"
-              className="mb-1 block text-sm font-medium text-[#64748b]"
+              className="mb-1 block text-sm font-medium text-oci-muted"
             >
               Email
             </label>
@@ -57,7 +59,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/30"
+              className="w-full rounded-lg border border-oci-border px-3 py-2 text-sm text-oci-ink outline-none transition-colors duration-150 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
               placeholder="you@example.com"
             />
           </div>
@@ -65,7 +67,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="mb-1 block text-sm font-medium text-[#64748b]"
+              className="mb-1 block text-sm font-medium text-oci-muted"
             >
               Password
             </label>
@@ -76,12 +78,12 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/30"
+              className="w-full rounded-lg border border-oci-border px-3 py-2 text-sm text-oci-ink outline-none transition-colors duration-150 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
             />
           </div>
 
           {error ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-[#dc2626]">
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-oci-danger">
               {error}
             </p>
           ) : null}
@@ -89,12 +91,15 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-[#2563eb] py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg bg-brand-accent py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
       </div>
+      <p className="mt-8 text-center text-xs text-white/60">
+        Akshar Travels
+      </p>
     </main>
   );
 }

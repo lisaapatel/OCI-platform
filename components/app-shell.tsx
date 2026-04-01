@@ -4,6 +4,8 @@ import clsx from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { BrandLogo } from "@/components/brand-logo";
+
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/applications/new", label: "New Application" },
@@ -13,18 +15,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="flex min-h-screen bg-[#f8fafc] text-[#1e293b]">
-      <aside className="flex w-56 shrink-0 flex-col bg-[#1e3a5f] text-white shadow-lg">
-        <div className="border-b border-white/10 px-4 py-5">
+    <div className="flex min-h-screen bg-oci-page text-oci-ink">
+      <aside className="flex w-56 shrink-0 flex-col bg-brand text-white shadow-lg">
+        <div className="border-b border-white/10 px-3 py-4">
           <Link
             href="/dashboard"
-            className="text-lg font-bold tracking-tight text-white transition-colors duration-150 hover:text-white/90"
+            className="block outline-none ring-offset-2 ring-offset-brand focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-white/80"
           >
-            OCI Platform
+            <BrandLogo variant="sidebar" />
           </Link>
-          <p className="mt-1 text-xs text-white/60">Application helper</p>
+          <p className="mt-3 px-1 text-xs leading-snug text-white/70">
+            OCI application helper
+          </p>
         </div>
-        <nav className="flex flex-col gap-0.5 p-3">
+        <nav className="flex flex-col gap-1 p-3">
           {navItems.map((item) => {
             const active =
               item.href === "/dashboard"
@@ -37,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className={clsx(
                   "rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150",
                   active
-                    ? "bg-[#2563eb] text-white shadow-sm"
+                    ? "bg-white/10 text-white shadow-sm ring-1 ring-white/20"
                     : "text-white/85 hover:bg-white/10 hover:text-white"
                 )}
               >

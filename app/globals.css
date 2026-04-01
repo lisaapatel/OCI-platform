@@ -1,10 +1,18 @@
 @import "tailwindcss";
 
+/*
+  Akshar Travels brand: surface sampled from akshar-logo-banner.png; accent is a
+  lighter sibling hue for buttons, links, and focus on light backgrounds.
+*/
 :root {
   --background: #f8fafc;
   --foreground: #1e293b;
-  --oci-navy: #1e3a5f;
-  --oci-blue: #2563eb;
+  --brand-primary: #1b2f99;
+  --brand-accent: #3d5fc9;
+  --brand-accent-hover: #324fad;
+  --brand-muted: rgba(255, 255, 255, 0.1);
+  --oci-navy: var(--brand-primary);
+  --oci-blue: var(--brand-accent);
   --oci-blue-light: #eff6ff;
   --oci-border: #e2e8f0;
   --oci-muted: #64748b;
@@ -15,8 +23,11 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-oci-navy: #1e3a5f;
-  --color-oci-blue: #2563eb;
+  --color-brand: var(--brand-primary);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-hover: var(--brand-accent-hover);
+  --color-oci-navy: var(--brand-primary);
+  --color-oci-blue: var(--brand-accent);
   --color-oci-blue-light: #eff6ff;
   --color-oci-page: #f8fafc;
   --color-oci-ink: #1e293b;
@@ -31,4 +42,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.font-brand-serif {
+  font-family: var(--font-brand-serif), "Georgia", serif;
 }
