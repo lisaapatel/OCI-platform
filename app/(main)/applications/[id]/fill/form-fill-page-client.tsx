@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  buildExtractedFieldLookupMap,
   FORM_FILL_ALL_FIELDS,
   FORM_FILL_SECTIONS,
   resolveFormFillField,
@@ -27,13 +28,10 @@ export function FormFillPageClient({
   lastReviewedLabel: string;
   initialFields: ExtractedField[];
 }) {
-  const byName = useMemo(() => {
-    const m = new Map<string, ExtractedField>();
-    for (const f of initialFields) {
-      m.set(f.field_name, f);
-    }
-    return m;
-  }, [initialFields]);
+  const byName = useMemo(
+    () => buildExtractedFieldLookupMap(initialFields),
+    [initialFields]
+  );
 
   const totalFields = FORM_FILL_ALL_FIELDS.length;
 

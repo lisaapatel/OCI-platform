@@ -141,7 +141,7 @@ describe("Form fill page", () => {
     );
 
     const banner = screen.getByText(/Verify spelling/i);
-    expect(banner.closest(".bg-amber-50")).toBeTruthy();
+    expect(banner.closest(".bg-yellow-50")).toBeTruthy();
   });
 
   test("Test 5: Empty/null fields show — Not found — in red", async () => {
@@ -158,7 +158,7 @@ describe("Form fill page", () => {
 
     const notFound = screen.getAllByText("— Not found —");
     expect(notFound.length).toBeGreaterThanOrEqual(1);
-    expect(notFound[0]).toHaveClass("text-red-600");
+    expect(notFound[0]).toHaveClass("text-[#dc2626]");
   });
 
   test("Test 6: Summary box shows correct counts and last reviewed", async () => {

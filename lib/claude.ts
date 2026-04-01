@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+import { CLAUDE_EXTRACTION_KEY_INSTRUCTIONS } from "@/lib/form-fill-sections";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 
 export function getAnthropicClient() {
@@ -46,6 +47,8 @@ export async function callClaudeExtractFieldsRaw(input: {
             text: `You extract structured data from a document.
 Document type key: ${input.docType}
 MIME: ${mediaType}
+
+${CLAUDE_EXTRACTION_KEY_INSTRUCTIONS}
 
 Return ONLY a single JSON object mapping field names to string values or null. No markdown.`,
           },
