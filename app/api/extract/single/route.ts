@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { extractFieldsFromDocument } from "@/lib/claude";
 import { getFileAsBase64 } from "@/lib/google-drive";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
     }
 
-    if (doc.doc_type === "photo") {
+    if (shouldSkipAiExtraction(doc.doc_type)) {
       await supabaseAdmin
         .from("documents")
         .update({ extraction_status: "done" })

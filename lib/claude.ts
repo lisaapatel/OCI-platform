@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+
 export function getAnthropicClient() {
   return new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY ?? "",
@@ -12,7 +14,7 @@ export async function extractFieldsFromDocument(input: {
   mimeType: string;
   docType: string;
 }): Promise<Record<string, string | null>> {
-  if (input.docType?.trim() === "photo") {
+  if (shouldSkipAiExtraction(input.docType)) {
     return {};
   }
   const client = getAnthropicClient();

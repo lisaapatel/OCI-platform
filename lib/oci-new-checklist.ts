@@ -27,3 +27,10 @@ export const OCI_NEW_CHECKLIST: ChecklistItem[] = [
 
 export const OCI_NEW_REQUIRED_COUNT = OCI_NEW_CHECKLIST.filter((i) => i.required)
   .length;
+
+const SKIP_AI_EXTRACTION_DOC_TYPES = new Set(["applicant_photo", "photo"]);
+
+/** Image-only uploads: no Claude extraction (would be sent as invalid PDF). */
+export function shouldSkipAiExtraction(docType: unknown): boolean {
+  return SKIP_AI_EXTRACTION_DOC_TYPES.has(String(docType ?? "").trim());
+}
