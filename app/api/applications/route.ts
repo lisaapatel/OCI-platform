@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createApplicationFolder } from "@/lib/google-drive";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function toAppNumber(n: number) {
   return `APP-${String(n).padStart(4, "0")}`;

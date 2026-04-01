@@ -2,7 +2,7 @@ import { format, isValid, parseISO } from "date-fns";
 import { notFound } from "next/navigation";
 
 import type { ExtractedField } from "@/lib/types";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 import { FormFillPageClient } from "./form-fill-page-client";
 

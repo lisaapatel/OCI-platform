@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteFile } from "@/lib/google-drive";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function DELETE(
   _req: Request,

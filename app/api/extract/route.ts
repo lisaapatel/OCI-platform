@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { extractFieldsFromDocument } from "@/lib/claude";
 import { getFileAsBase64 } from "@/lib/google-drive";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function POST(req: Request) {
   try {

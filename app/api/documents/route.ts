@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteFile, uploadFileToDrive } from "@/lib/google-drive";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(req: Request) {
   try {
