@@ -100,6 +100,7 @@ export async function POST(req: Request) {
           .eq("source_doc_type", doc.doc_type);
         if (delErr) throw new Error(delErr.message);
 
+        // is_flagged is never set from AI — team flags only via review UI.
         for (const [field_name, field_value] of Object.entries(extracted)) {
           const { error: insErr } = await supabaseAdmin
             .from("extracted_fields")

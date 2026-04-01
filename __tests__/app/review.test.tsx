@@ -195,7 +195,7 @@ describe("Review page", () => {
     ).toBeInTheDocument();
   });
 
-  test("Test 6: Mark as Ready to Submit button is disabled when any fields are flagged", async () => {
+  test("Test 6: Mark as Ready to Submit stays enabled when fields are flagged; shows warning banner", async () => {
     const flagged = [
       { ...baseFields[0], is_flagged: true, flag_note: "check" },
       baseFields[1],
@@ -213,7 +213,9 @@ describe("Review page", () => {
 
     expect(
       screen.getByRole("button", { name: /Mark as Ready to Submit/i })
-    ).toBeDisabled();
+    ).not.toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(/flagged/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/still proceed/i);
   });
 
   test("Test 7: Mark as Ready to Submit button is enabled when zero fields are flagged", async () => {

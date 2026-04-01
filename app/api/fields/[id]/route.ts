@@ -16,6 +16,7 @@ export async function PATCH(
 
     const patch: Record<string, unknown> = {};
     if (body.field_value !== undefined) patch.field_value = body.field_value;
+    // is_flagged / flag_note: only updated when the client sends them (manual 🚩 on review).
     if (body.is_flagged !== undefined) patch.is_flagged = body.is_flagged;
     if (body.flag_note !== undefined) patch.flag_note = body.flag_note;
 

@@ -85,8 +85,6 @@ export function ReviewPageClient({
     return map;
   }, [visibleFields]);
 
-  const anyFlagged = flaggedCount > 0;
-
   async function saveField(
     id: string,
     partial: { field_value?: string; is_flagged?: boolean; flag_note?: string }
@@ -309,20 +307,31 @@ export function ReviewPageClient({
         </main>
       </div>
 
-      <div className="fixed bottom-0 left-56 right-0 z-20 flex items-center justify-between gap-4 border-t border-[#e2e8f0] bg-[#1e3a5f] px-6 py-4 text-white shadow-[0_-4px_12px_rgba(0,0,0,0.12)]">
-        <p className="text-sm text-white/90">
-          {flaggedCount === 0
-            ? "No fields flagged"
-            : `${flaggedCount} field${flaggedCount === 1 ? "" : "s"} flagged`}
-        </p>
-        <button
-          type="button"
-          disabled={anyFlagged}
-          onClick={() => void markReadyToSubmit()}
-          className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-[#2563eb] px-5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Mark as Ready to Submit
-        </button>
+      <div className="fixed bottom-0 left-56 right-0 z-20 flex flex-col gap-3 border-t border-[#e2e8f0] bg-[#1e3a5f] px-6 py-4 text-white shadow-[0_-4px_12px_rgba(0,0,0,0.12)]">
+        {flaggedCount > 0 ? (
+          <div
+            className="no-print rounded-lg border border-yellow-400 bg-yellow-50 px-4 py-3 text-sm font-medium text-yellow-800"
+            role="status"
+          >
+            ⚠️ {flaggedCount} field{flaggedCount === 1 ? "" : "s"}{" "}
+            {flaggedCount === 1 ? "is" : "are"} flagged — you can still proceed
+            but review flagged items before submitting to the portal
+          </div>
+        ) : null}
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-white/90">
+            {flaggedCount === 0
+              ? "No fields flagged"
+              : `${flaggedCount} field${flaggedCount === 1 ? "" : "s"} flagged`}
+          </p>
+          <button
+            type="button"
+            onClick={() => void markReadyToSubmit()}
+            className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-[#2563eb] px-5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-blue-700"
+          >
+            Mark as Ready to Submit
+          </button>
+        </div>
       </div>
     </div>
   );

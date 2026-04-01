@@ -211,6 +211,7 @@ async function runExtraction(args: {
       .eq("source_doc_type", docType);
     if (delErr) throw new Error(delErr.message);
 
+    // is_flagged is never derived from extraction — only manual 🚩 on review page.
     for (const [field_name, field_value] of entries) {
       const { error: insErr } = await supabaseAdmin.from("extracted_fields").insert({
         application_id,
