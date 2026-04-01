@@ -150,6 +150,7 @@ export function ApplicationDetailClient({
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const uploadSessionId = `${Date.now()}_${application.id}`;
       let uploadUrl = "";
+      let finished = false;
 
       for (let i = 0; i < totalChunks; i++) {
         const start = i * CHUNK_SIZE;
@@ -197,18 +198,33 @@ export function ApplicationDetailClient({
             ...prev.filter((d) => d.doc_type !== docType),
             data.document!,
           ]);
+          finished = true;
         }
       }
-      const listRes = await fetch(
-        `/api/documents?application_id=${encodeURIComponent(application.id)}`
-      );
-      if (listRes.ok) {
-        const list = (await listRes.json()) as { documents?: Document[] };
-        if (list.documents) setDocuments(list.documents);
+
+      // Ensure UI reflects new doc immediately (server + client state).
+      if (finished) {
+        const listRes = await fetch(
+          `/api/documents?application_id=${encodeURIComponent(application.id)}`
+        );
+        if (listRes.ok) {
+          const list = (await listRes.json()) as { documents?: Document[] };
+          if (list.documents) setDocuments(list.documents);
+        }
+        refresh();
       } else {
+        // Fallback refresh in case server didn't return the final document payload.
+        const listRes = await fetch(
+          `/api/documents?application_id=${encodeURIComponent(application.id)}`
+        );
+        if (listRes.ok) {
+          const list = (await listRes.json()) as { documents?: Document[] };
+          if (list.documents) setDocuments(list.documents);
+        } else {
+          refresh();
+        }
         refresh();
       }
-      refresh();
     } finally {
       setUploadingDocType(null);
       setUploadProgress((p) => {
@@ -495,14 +511,16 @@ function DocumentChecklistCard({
               {removingId === document.id ? "Removing…" : "Remove"}
             </button>
           ) : null}
-          <button
-            type="button"
-            disabled={uploading}
-            onClick={() => open()}
-            className="inline-flex h-9 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white hover:bg-black/90 disabled:opacity-50"
-          >
-            {uploading ? "Uploading…" : "Upload"}
-          </button>
+          {!uploaded ? (
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => open()}
+              className="inline-flex h-9 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white hover:bg-black/90 disabled:opacity-50"
+            >
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+          ) : null}
         </div>
       </div>
       <div
