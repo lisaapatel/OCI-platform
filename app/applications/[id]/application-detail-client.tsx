@@ -142,16 +142,66 @@ export function ApplicationDetailClient({
     setUploadingDocType(docType);
     setPatchError(null);
     try {
-      const fd = new FormData();
-      fd.set("application_id", application.id);
-      fd.set("doc_type", docType);
-      fd.set("file", file);
-      const res = await fetch("/api/documents", { method: "POST", body: fd });
-      const data = (await res.json().catch(() => ({}))) as {
+      const sessionRes = await fetch("/api/documents/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_id: application.id,
+          doc_type: docType,
+          file_name: file.name,
+          mime_type: file.type || "application/octet-stream",
+        }),
+      });
+      const sessionData = (await sessionRes.json().catch(() => ({}))) as {
+        error?: string;
+        upload_url?: string;
+      };
+      if (!sessionRes.ok || !sessionData.upload_url) {
+        setPatchError(
+          typeof sessionData.error === "string"
+            ? sessionData.error
+            : "Failed to start upload."
+        );
+        return;
+      }
+
+      const uploadRes = await fetch(sessionData.upload_url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+        },
+        body: file,
+      });
+      if (!uploadRes.ok) {
+        const uploadBody = await uploadRes.text().catch(() => "");
+        setPatchError(uploadBody || `Upload failed (${uploadRes.status}).`);
+        return;
+      }
+
+      const uploadJson = (await uploadRes.json().catch(() => ({}))) as {
+        id?: string;
+      };
+      const driveFileId = String(uploadJson.id ?? "").trim();
+      if (!driveFileId) {
+        setPatchError("Upload succeeded but Drive did not return a file ID.");
+        return;
+      }
+
+      const confirmRes = await fetch("/api/documents/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_id: application.id,
+          doc_type: docType,
+          file_name: file.name,
+          drive_file_id: driveFileId,
+        }),
+      });
+      const data = (await confirmRes.json().catch(() => ({}))) as {
         error?: string;
         document?: Document;
       };
-      if (!res.ok) {
+      if (!confirmRes.ok) {
         setPatchError(
           typeof data.error === "string" ? data.error : "Upload failed."
         );

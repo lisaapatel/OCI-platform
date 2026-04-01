@@ -28,6 +28,17 @@ export function getGoogleDriveClient() {
   return google.drive({ version: "v3", auth });
 }
 
+async function getGoogleAccessToken(): Promise<string> {
+  const auth = getOAuth2Client();
+  const tokenResult = await auth.getAccessToken();
+  const token =
+    typeof tokenResult === "string" ? tokenResult : tokenResult?.token ?? "";
+  if (!token) {
+    throw new Error("Failed to obtain Google OAuth access token.");
+  }
+  return token;
+}
+
 export async function createApplicationFolder(
   appNumber: string,
   customerName: string
@@ -105,6 +116,55 @@ export async function uploadFileToDrive(
       `Failed to upload file to Drive (fileName="${fileName}", folderId="${folderId}"): ${message}`
     );
   }
+}
+
+export async function createDriveResumableUploadSession(
+  fileName: string,
+  mimeType: string,
+  folderId: string
+): Promise<string> {
+  const accessToken = await getGoogleAccessToken();
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": mimeType || "application/octet-stream",
+      },
+      body: JSON.stringify({
+        name: fileName,
+        parents: [folderId],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Failed to create Drive resumable upload session (${res.status}): ${
+        body || res.statusText
+      }`
+    );
+  }
+
+  const uploadUrl = res.headers.get("location");
+  if (!uploadUrl) {
+    throw new Error("Drive resumable upload session did not return a Location header.");
+  }
+  return uploadUrl;
+}
+
+export async function setFilePublicReadable(fileId: string): Promise<void> {
+  const drive = getGoogleDriveClient();
+  await drive.permissions.create({
+    fileId,
+    requestBody: {
+      type: "anyone",
+      role: "reader",
+    },
+  });
 }
 
 export async function getFileAsBase64(fileId: string): Promise<string> {
