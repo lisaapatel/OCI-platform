@@ -78,6 +78,9 @@ export function ApplicationDetailClient({
   const [documents, setDocuments] = useState(initialDocuments);
   const [notesDraft, setNotesDraft] = useState(initialApp.notes ?? "");
   const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
+    {}
+  );
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
 
@@ -141,91 +144,77 @@ export function ApplicationDetailClient({
   async function uploadFile(docType: string, file: File) {
     setUploadingDocType(docType);
     setPatchError(null);
+    setUploadProgress((p) => ({ ...p, [docType]: 0 }));
     try {
-      const sessionRes = await fetch("/api/documents/upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          application_id: application.id,
-          doc_type: docType,
-          file_name: file.name,
-          mime_type: file.type || "application/octet-stream",
-        }),
-      });
-      const sessionData = (await sessionRes.json().catch(() => ({}))) as {
-        error?: string;
-        upload_url?: string;
-      };
-      if (!sessionRes.ok || !sessionData.upload_url) {
-        setPatchError(
-          typeof sessionData.error === "string"
-            ? sessionData.error
-            : "Failed to start upload."
-        );
-        return;
-      }
+      const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const uploadSessionId = `${Date.now()}_${application.id}`;
+      let uploadUrl = "";
 
-      const uploadRes = await fetch(sessionData.upload_url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": file.type || "application/octet-stream",
-        },
-        body: file,
-      });
-      if (!uploadRes.ok) {
-        const uploadBody = await uploadRes.text().catch(() => "");
-        setPatchError(uploadBody || `Upload failed (${uploadRes.status}).`);
-        return;
-      }
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        const chunkBlob = file.slice(start, end);
 
-      const uploadJson = (await uploadRes.json().catch(() => ({}))) as {
-        id?: string;
-      };
-      const driveFileId = String(uploadJson.id ?? "").trim();
-      if (!driveFileId) {
-        setPatchError("Upload succeeded but Drive did not return a file ID.");
-        return;
-      }
+        const fd = new FormData();
+        fd.set("application_id", application.id);
+        fd.set("doc_type", docType);
+        fd.set("file_name", file.name);
+        fd.set("mime_type", file.type || "application/octet-stream");
+        fd.set("chunk_index", String(i));
+        fd.set("total_chunks", String(totalChunks));
+        fd.set("total_size", String(file.size));
+        fd.set("chunk_size", String(CHUNK_SIZE));
+        fd.set("upload_session_id", uploadSessionId);
+        if (uploadUrl) fd.set("upload_url", uploadUrl);
+        fd.set("chunk", chunkBlob, file.name);
 
-      const confirmRes = await fetch("/api/documents/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          application_id: application.id,
-          doc_type: docType,
-          file_name: file.name,
-          drive_file_id: driveFileId,
-        }),
-      });
-      const data = (await confirmRes.json().catch(() => ({}))) as {
-        error?: string;
-        document?: Document;
-      };
-      if (!confirmRes.ok) {
-        setPatchError(
-          typeof data.error === "string" ? data.error : "Upload failed."
-        );
-        return;
-      }
-      if (data.document) {
-        setDocuments((prev) => [
-          ...prev.filter((d) => d.doc_type !== docType),
-          data.document!,
-        ]);
-      } else {
-        const listRes = await fetch(
-          `/api/documents?application_id=${encodeURIComponent(application.id)}`
-        );
-        if (listRes.ok) {
-          const list = (await listRes.json()) as { documents?: Document[] };
-          if (list.documents) setDocuments(list.documents);
-        } else {
-          refresh();
+        const res = await fetch("/api/documents/chunk", {
+          method: "POST",
+          body: fd,
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          upload_url?: string;
+          document?: Document;
+          uploaded_chunks?: number;
+          total_chunks?: number;
+        };
+        if (!res.ok) {
+          setPatchError(typeof data.error === "string" ? data.error : "Upload failed.");
+          return;
         }
+
+        if (data.upload_url) uploadUrl = data.upload_url;
+        const uploadedChunks = data.uploaded_chunks ?? i + 1;
+        setUploadProgress((p) => ({
+          ...p,
+          [docType]: Math.min(1, uploadedChunks / totalChunks),
+        }));
+
+        if (data.document && uploadedChunks === totalChunks) {
+          setDocuments((prev) => [
+            ...prev.filter((d) => d.doc_type !== docType),
+            data.document!,
+          ]);
+        }
+      }
+      const listRes = await fetch(
+        `/api/documents?application_id=${encodeURIComponent(application.id)}`
+      );
+      if (listRes.ok) {
+        const list = (await listRes.json()) as { documents?: Document[] };
+        if (list.documents) setDocuments(list.documents);
+      } else {
+        refresh();
       }
       refresh();
     } finally {
       setUploadingDocType(null);
+      setUploadProgress((p) => {
+        const { [docType]: _omit, ...rest } = p;
+        return rest;
+      });
     }
   }
 
@@ -353,6 +342,7 @@ export function ApplicationDetailClient({
                 item={item}
                 document={docByType.get(item.doc_type)}
                 uploading={uploadingDocType === item.doc_type}
+                progress={uploadProgress[item.doc_type] ?? null}
                 removingId={removingId}
                 onUpload={(file) => uploadFile(item.doc_type, file)}
                 onRemove={removeDocument}
@@ -415,6 +405,7 @@ function DocumentChecklistCard({
   item,
   document,
   uploading,
+  progress,
   removingId,
   onUpload,
   onRemove,
@@ -422,6 +413,7 @@ function DocumentChecklistCard({
   item: (typeof OCI_NEW_CHECKLIST)[number];
   document: Document | undefined;
   uploading: boolean;
+  progress: number | null;
   removingId: string | null;
   onUpload: (file: File) => void;
   onRemove: (id: string) => void;
@@ -530,6 +522,19 @@ function DocumentChecklistCard({
             : "Drag and drop a file here, or use Upload"}
         </p>
       </div>
+      {uploading && progress != null ? (
+        <div className="mt-3">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+          <div className="mt-1 text-xs text-black/55">
+            Uploading… {Math.round(progress * 100)}%
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
