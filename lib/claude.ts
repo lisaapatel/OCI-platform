@@ -12,6 +12,9 @@ export async function extractFieldsFromDocument(input: {
   mimeType: string;
   docType: string;
 }): Promise<Record<string, string | null>> {
+  if (input.docType?.trim() === "photo") {
+    return {};
+  }
   const client = getAnthropicClient();
   const mediaType = input.mimeType?.trim() || "application/pdf";
   const attachmentBlock =

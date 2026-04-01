@@ -36,12 +36,6 @@ async function getDocumentAsBase64(ref: string): Promise<string> {
 export async function POST(req: Request) {
   try {
     console.log("POST /api/extract/single hit");
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY is not set" },
-        { status: 500 }
-      );
-    }
 
     const body = (await req.json()) as {
       application_id?: string;
@@ -66,6 +60,24 @@ export async function POST(req: Request) {
 
     if (docErr || !doc) {
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
+    }
+
+    if (doc.doc_type === "photo") {
+      await supabaseAdmin
+        .from("documents")
+        .update({ extraction_status: "done" })
+        .eq("id", doc.id);
+      return NextResponse.json(
+        { ok: true, fields_extracted: 0, field_data: [] },
+        { status: 200 }
+      );
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json(
+        { error: "ANTHROPIC_API_KEY is not set" },
+        { status: 500 }
+      );
     }
 
     await supabaseAdmin
