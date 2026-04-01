@@ -33,6 +33,10 @@ export interface Document {
   compressed_drive_file_id?: string | null;
   compressed_drive_url?: string | null;
   compressed_size_bytes?: number | null;
+  /** Govt photo/signature auto-fixed file in Drive folder "Fixed" */
+  fixed_drive_file_id?: string | null;
+  fixed_drive_url?: string | null;
+  fixed_size_bytes?: number | null;
 }
 
 /** 200 JSON body from POST /api/extract/single (non-streaming) */

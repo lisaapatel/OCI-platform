@@ -28,7 +28,7 @@ export function getGoogleDriveClient() {
   return google.drive({ version: "v3", auth });
 }
 
-async function getGoogleAccessToken(): Promise<string> {
+export async function getGoogleAccessToken(): Promise<string> {
   const auth = getOAuth2Client();
   const tokenResult = await auth.getAccessToken();
   const token =

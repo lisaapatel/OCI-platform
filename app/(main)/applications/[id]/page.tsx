@@ -51,6 +51,18 @@ function mapDocuments(rows: Record<string, unknown>[]): Document[] {
       row.compressed_size_bytes == null || row.compressed_size_bytes === ""
         ? null
         : Number(row.compressed_size_bytes),
+    fixed_drive_file_id:
+      row.fixed_drive_file_id == null || String(row.fixed_drive_file_id) === ""
+        ? null
+        : String(row.fixed_drive_file_id),
+    fixed_drive_url:
+      row.fixed_drive_url == null || String(row.fixed_drive_url) === ""
+        ? null
+        : String(row.fixed_drive_url),
+    fixed_size_bytes:
+      row.fixed_size_bytes == null || row.fixed_size_bytes === ""
+        ? null
+        : Number(row.fixed_size_bytes),
   }));
 }
 

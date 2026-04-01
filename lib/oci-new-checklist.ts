@@ -13,6 +13,12 @@ export const OCI_NEW_CHECKLIST: ChecklistItem[] = [
   { doc_type: "address_proof", label: "Address Proof", required: true },
   { doc_type: "applicant_photo", label: "Applicant Photo", required: true },
   {
+    doc_type: "applicant_signature",
+    label: "Applicant Signature",
+    required: false,
+    optionalNote: "Govt portal (JPEG, 3:1 ratio)",
+  },
+  {
     doc_type: "parent_indian_doc",
     label: "Parent's Indian Passport or OCI Card",
     required: true,
@@ -28,7 +34,11 @@ export const OCI_NEW_CHECKLIST: ChecklistItem[] = [
 export const OCI_NEW_REQUIRED_COUNT = OCI_NEW_CHECKLIST.filter((i) => i.required)
   .length;
 
-const SKIP_AI_EXTRACTION_DOC_TYPES = new Set(["applicant_photo", "photo"]);
+const SKIP_AI_EXTRACTION_DOC_TYPES = new Set([
+  "applicant_photo",
+  "applicant_signature",
+  "photo",
+]);
 
 /** Image-only uploads: no Claude extraction (would be sent as invalid PDF). */
 export function shouldSkipAiExtraction(docType: unknown): boolean {

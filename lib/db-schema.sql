@@ -30,7 +30,10 @@ create table documents (
   uploaded_at timestamp with time zone default now(),
   compressed_drive_file_id text,
   compressed_drive_url text,
-  compressed_size_bytes bigint
+  compressed_size_bytes bigint,
+  fixed_drive_file_id text,
+  fixed_drive_url text,
+  fixed_size_bytes bigint
 );
 
 -- Extracted fields table
@@ -76,3 +79,6 @@ create policy "Authenticated users can do everything on extracted_fields"
 -- alter table documents add column if not exists compressed_drive_file_id text;
 -- alter table documents add column if not exists compressed_drive_url text;
 -- alter table documents add column if not exists compressed_size_bytes bigint;
+-- alter table documents add column if not exists fixed_drive_file_id text;
+-- alter table documents add column if not exists fixed_drive_url text;
+-- alter table documents add column if not exists fixed_size_bytes bigint;

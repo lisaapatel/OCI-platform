@@ -43,6 +43,18 @@ function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
       row.compressed_size_bytes == null || row.compressed_size_bytes === ""
         ? null
         : Number(row.compressed_size_bytes),
+    fixed_drive_file_id:
+      row.fixed_drive_file_id == null || row.fixed_drive_file_id === ""
+        ? null
+        : String(row.fixed_drive_file_id),
+    fixed_drive_url:
+      row.fixed_drive_url == null || row.fixed_drive_url === ""
+        ? null
+        : String(row.fixed_drive_url),
+    fixed_size_bytes:
+      row.fixed_size_bytes == null || row.fixed_size_bytes === ""
+        ? null
+        : Number(row.fixed_size_bytes),
   };
 }
 
@@ -78,6 +90,14 @@ function portalNeedsCompress(row: PortalPrepDoc): boolean {
     return false;
   return true;
 }
+
+type GovtImageValResult = {
+  valid: boolean;
+  issues: string[];
+  current_size_kb: number;
+  current_dimensions: string;
+  current_format: string;
+};
 
 function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
   const label =
@@ -167,6 +187,16 @@ export function ApplicationDetailClient({
     Record<string, boolean>
   >({});
   const [compressAllRunning, setCompressAllRunning] = useState(false);
+  const [photoValResult, setPhotoValResult] = useState<GovtImageValResult | null>(
+    null
+  );
+  const [sigValResult, setSigValResult] = useState<GovtImageValResult | null>(
+    null
+  );
+  const [photoValLoading, setPhotoValLoading] = useState(false);
+  const [sigValLoading, setSigValLoading] = useState(false);
+  const [fixingPhoto, setFixingPhoto] = useState(false);
+  const [fixingSig, setFixingSig] = useState(false);
 
   const docByType = useMemo(() => {
     const m = new Map<string, Document>();
@@ -191,6 +221,11 @@ export function ApplicationDetailClient({
 
   const allRequiredUploaded =
     showDocumentChecklist && requiredUploaded >= OCI_NEW_REQUIRED_COUNT;
+
+  const showPhotoSigCard =
+    showDocumentChecklist ||
+    docByType.has("applicant_photo") ||
+    docByType.has("applicant_signature");
 
   const refresh = useCallback(() => {
     router.refresh();
@@ -293,6 +328,143 @@ export function ApplicationDetailClient({
       setCompressAllRunning(false);
     }
   }, [portalPrep, compressPortalFile]);
+
+  const downloadGovtFileLocal = useCallback(
+    async (driveFileId: string, filename: string) => {
+      const url = `/api/documents/download?application_id=${encodeURIComponent(application.id)}&drive_file_id=${encodeURIComponent(driveFileId)}&filename=${encodeURIComponent(filename)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Download failed");
+      }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    },
+    [application.id]
+  );
+
+  const runFixGovtImage = useCallback(
+    async (doc: Document | undefined, imageType: "photo" | "signature") => {
+      if (!doc?.drive_file_id) return;
+      setPatchError(null);
+      const setFixing = imageType === "photo" ? setFixingPhoto : setFixingSig;
+      setFixing(true);
+      try {
+        const res = await fetch("/api/documents/fix-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            application_id: application.id,
+            drive_file_id: doc.drive_file_id,
+            image_type: imageType,
+          }),
+        });
+        const data = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          throw new Error(data.error ?? "Auto-fix failed");
+        }
+        const list = await loadDocuments();
+        setDocuments(list);
+      } catch (e) {
+        setPatchError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setFixing(false);
+      }
+    },
+    [application.id, loadDocuments]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function validateOne(
+      driveFileId: string,
+      imageType: "photo" | "signature",
+      setResult: (v: GovtImageValResult | null) => void,
+      setLoading: (b: boolean) => void
+    ) {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/documents/validate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            application_id: application.id,
+            drive_file_id: driveFileId,
+            image_type: imageType,
+          }),
+        });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (cancelled) return;
+        if (!res.ok) {
+          setResult({
+            valid: false,
+            issues: [String(data.error ?? "Validation failed")],
+            current_size_kb: 0,
+            current_dimensions: "—",
+            current_format: "—",
+          });
+        } else {
+          setResult({
+            valid: Boolean(data.valid),
+            issues: (data.issues as string[]) ?? [],
+            current_size_kb: Number(data.current_size_kb ?? 0),
+            current_dimensions: String(data.current_dimensions ?? "—"),
+            current_format: String(data.current_format ?? "—"),
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setResult({
+            valid: false,
+            issues: ["Could not validate (network error)."],
+            current_size_kb: 0,
+            current_dimensions: "—",
+            current_format: "—",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    const pDoc = docByType.get("applicant_photo");
+    const sDoc = docByType.get("applicant_signature");
+
+    if (pDoc?.drive_file_id) {
+      void validateOne(
+        pDoc.drive_file_id,
+        "photo",
+        setPhotoValResult,
+        setPhotoValLoading
+      );
+    } else {
+      setPhotoValResult(null);
+      setPhotoValLoading(false);
+    }
+
+    if (sDoc?.drive_file_id) {
+      void validateOne(
+        sDoc.drive_file_id,
+        "signature",
+        setSigValResult,
+        setSigValLoading
+      );
+    } else {
+      setSigValResult(null);
+      setSigValLoading(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [application.id, documents]);
 
   const extractSingleStreaming = useCallback(
     async (
@@ -680,6 +852,153 @@ export function ApplicationDetailClient({
     }
   }
 
+  function renderPhotoSignatureCheckCard() {
+    if (!showPhotoSigCard) return null;
+    const photoDoc = docByType.get("applicant_photo");
+    const sigDoc = docByType.get("applicant_signature");
+
+    function renderColumn(
+      title: string,
+      doc: Document | undefined,
+      imageType: "photo" | "signature",
+      val: GovtImageValResult | null,
+      valLoading: boolean,
+      fixing: boolean
+    ) {
+      const frameClass =
+        imageType === "photo"
+          ? "relative aspect-square max-h-52 w-full max-w-xs overflow-hidden rounded border border-slate-200 bg-slate-50"
+          : "relative aspect-[3/1] max-h-40 w-full max-w-md overflow-hidden rounded border border-slate-200 bg-slate-50";
+
+      return (
+        <div className="flex flex-col gap-3 rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-[#1e3a5f]">{title}</h3>
+          {!doc?.drive_file_id ? (
+            <p className="text-sm text-[#64748b]">No file uploaded yet.</p>
+          ) : (
+            <>
+              <div className={frameClass}>
+                {doc.drive_view_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={doc.drive_view_url}
+                    alt={title}
+                    className="h-full w-full object-contain"
+                  />
+                ) : null}
+              </div>
+              <p className="text-xs text-[#64748b] truncate" title={doc.file_name}>
+                {doc.file_name}
+              </p>
+              {valLoading ? (
+                <p className="text-sm text-[#64748b]">Checking requirements…</p>
+              ) : val ? (
+                <div className="space-y-2">
+                  {val.valid ? (
+                    <p className="text-sm font-medium text-green-700">
+                      ✅ Meets govt requirements
+                    </p>
+                  ) : (
+                    <ul className="list-inside list-disc text-sm text-red-700">
+                      {val.issues.map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-xs text-[#64748b]">
+                    {val.current_format} · {val.current_dimensions} ·{" "}
+                    {val.current_size_kb} KB
+                  </p>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                disabled={fixing}
+                onClick={() => void runFixGovtImage(doc, imageType)}
+                className="inline-flex items-center justify-center rounded-lg bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#2d4d73] disabled:opacity-50"
+              >
+                {fixing ? "Fixing…" : "Auto-Fix & Save to Drive"}
+              </button>
+              <p className="text-[11px] text-[#64748b]">
+                Saves a JPEG under 30KB to Drive → <strong>Fixed</strong>. Then
+                download for portal upload.
+              </p>
+              {doc.fixed_drive_url && doc.fixed_drive_file_id ? (
+                <div className="mt-2 space-y-2 border-t border-slate-100 pt-3">
+                  <p className="text-xs font-semibold text-green-800">
+                    Fixed version
+                    {doc.fixed_size_bytes != null
+                      ? ` · ${(doc.fixed_size_bytes / 1024).toFixed(1)} KB`
+                      : ""}
+                  </p>
+                  <div className={frameClass}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={doc.fixed_drive_url}
+                      alt={`${title} fixed for portal`}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void downloadGovtFileLocal(
+                        doc.fixed_drive_file_id!,
+                        imageType === "photo"
+                          ? "applicant-photo-govt.jpg"
+                          : "applicant-signature-govt.jpg"
+                      )
+                    }
+                    className="inline-flex items-center justify-center rounded-lg border border-green-600 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-900 transition-colors hover:bg-green-100"
+                  >
+                    Download fixed file
+                  </button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <section className="rounded-xl border border-amber-200/80 bg-amber-50/30 p-6 shadow-sm">
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold text-amber-950">Govt portal image rules</p>
+          <p className="mt-1 text-amber-900/90">
+            The govt portal requires specific photo dimensions. Validate before
+            starting the application to avoid rejection.
+          </p>
+        </div>
+        <h2 className="mt-5 text-lg font-bold tracking-tight text-[#1e3a5f]">
+          Photo &amp; Signature Check
+        </h2>
+        <p className="mt-1 text-xs text-[#64748b]">
+          Photo: JPEG only, max 30KB, square {`200–1500px`}. Signature: JPEG,
+          max 30KB, wide ratio ~3:1 (e.g. 600×200), {`200×67–1500×500px`}.
+        </p>
+        <div className="mt-4 grid gap-6 md:grid-cols-2">
+          {renderColumn(
+            "Applicant photo",
+            photoDoc,
+            "photo",
+            photoValResult,
+            photoValLoading,
+            fixingPhoto
+          )}
+          {renderColumn(
+            "Applicant signature",
+            sigDoc,
+            "signature",
+            sigValResult,
+            sigValLoading,
+            fixingSig
+          )}
+        </div>
+      </section>
+    );
+  }
+
   function renderGovtPortalPrepCard() {
     if (documents.length === 0) return null;
     return (
@@ -942,6 +1261,7 @@ export function ApplicationDetailClient({
           </div>
 
           {renderGovtPortalPrepCard()}
+          {renderPhotoSignatureCheckCard()}
 
           {allRequiredUploaded ? (
             <div className="rounded-xl border border-[#e2e8f0] bg-[#eff6ff] p-4 shadow-sm">
@@ -1005,6 +1325,7 @@ export function ApplicationDetailClient({
             flows for it are not configured here yet.
           </section>
           {renderGovtPortalPrepCard()}
+          {renderPhotoSignatureCheckCard()}
         </>
       )}
     </div>

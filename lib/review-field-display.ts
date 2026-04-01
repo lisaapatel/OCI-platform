@@ -101,6 +101,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   birth_certificate: "Birth Certificate",
   address_proof: "Address Proof",
   applicant_photo: "Applicant Photo",
+  applicant_signature: "Applicant Signature",
   parent_indian_doc: "Parent Indian Document",
   marriage_certificate: "Marriage Certificate",
 };
