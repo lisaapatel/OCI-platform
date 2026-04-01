@@ -9,6 +9,14 @@ function toAppNumber(n: number) {
 
 export async function POST(req: Request) {
   try {
+    console.log("ENV CHECK:", {
+      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      hasGoogleClientId: !!process.env.GOOGLE_CLIENT_ID,
+      hasRefreshToken: !!process.env.GOOGLE_REFRESH_TOKEN,
+      hasDriveFolderId: !!process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID,
+    });
+
     const body = (await req.json()) as {
       customer_name?: string;
       customer_email?: string;
@@ -58,7 +66,20 @@ export async function POST(req: Request) {
     const app_number = toAppNumber(nextNum);
 
     // b) Create Google Drive folder
-    const driveFolder = await createApplicationFolder(app_number, customer_name);
+    let driveFolderId = "";
+    let driveFolderUrl = "";
+    try {
+      const driveFolder = await createApplicationFolder(app_number, customer_name);
+      driveFolderId = driveFolder.id;
+      driveFolderUrl = driveFolder.url;
+    } catch (error) {
+      const err = error as Error & { stack?: string };
+      console.error("Google Drive folder creation failed", {
+        message: err?.message,
+        stack: err?.stack,
+      });
+      // Continue creating the application even if Drive setup fails.
+    }
 
     // c) Insert row
     const { data: inserted, error: insertError } = await supabaseAdmin
@@ -70,8 +91,8 @@ export async function POST(req: Request) {
         customer_phone,
         service_type,
         status: "docs_pending",
-        drive_folder_id: driveFolder.id,
-        drive_folder_url: driveFolder.url,
+        drive_folder_id: driveFolderId,
+        drive_folder_url: driveFolderUrl,
         notes,
       })
       .select("id")
@@ -86,10 +107,18 @@ export async function POST(req: Request) {
 
     // d) Return new ID
     return NextResponse.json({ id: inserted.id }, { status: 200 });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (error) {
+    const err = error as Error & { stack?: string };
+    console.error("POST /api/applications failed", {
+      message: err?.message,
+      stack: err?.stack,
+      error: err,
+    });
     return NextResponse.json(
-      { error: `Unexpected error creating application: ${message}` },
+      {
+        error: err?.message ?? "Unknown error",
+        stack: err?.stack ?? "",
+      },
       { status: 500 }
     );
   }
