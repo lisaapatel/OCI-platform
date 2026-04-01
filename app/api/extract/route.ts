@@ -52,11 +52,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: docs, error: listError } = await supabaseAdmin
+    const { data: doc, error: listError } = await supabaseAdmin
       .from("documents")
       .select("*")
       .eq("application_id", application_id)
-      .eq("extraction_status", "pending");
+      .eq("extraction_status", "pending")
+      .order("uploaded_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
     if (listError) {
       return NextResponse.json(
@@ -65,81 +68,77 @@ export async function POST(req: Request) {
       );
     }
 
-    const pending = docs ?? [];
-    let processedAny = false;
-
-    for (const doc of pending) {
-      processedAny = true;
-      try {
-        await supabaseAdmin
-          .from("documents")
-          .update({ extraction_status: "processing" })
-          .eq("id", doc.id);
-
-        const b64 = await getDocumentAsBase64(doc.drive_file_id);
-        const mimeType = "application/pdf";
-        const extracted = await extractFieldsFromDocument({
-          base64: b64,
-          mimeType,
-          docType: doc.doc_type,
-        });
-
-        for (const [field_name, field_value] of Object.entries(extracted)) {
-          const { error: insErr } = await supabaseAdmin
-            .from("extracted_fields")
-            .insert({
-              application_id,
-              field_name,
-              field_value,
-              source_doc_type: doc.doc_type,
-              is_flagged: false,
-              flag_note: "",
-            });
-          if (insErr) {
-            throw new Error(insErr.message);
-          }
-        }
-
-        await supabaseAdmin
-          .from("documents")
-          .update({ extraction_status: "done" })
-          .eq("id", doc.id);
-      } catch (docErr) {
-        const msg = docErr instanceof Error ? docErr.message : String(docErr);
-        console.error("Extraction failed for document", {
-          document_id: doc.id,
-          doc_type: doc.doc_type,
-          message: msg,
-        });
-        await supabaseAdmin
-          .from("documents")
-          .update({ extraction_status: "failed" })
-          .eq("id", doc.id);
-      }
+    if (!doc) {
+      return NextResponse.json({ ok: true, processed: 0 }, { status: 200 });
     }
 
-    if (processedAny) {
-      const { count: pendingLeft } = await supabaseAdmin
+    try {
+      await supabaseAdmin
         .from("documents")
-        .select("id", { count: "exact", head: true })
-        .eq("application_id", application_id)
-        .eq("extraction_status", "pending");
+        .update({ extraction_status: "processing" })
+        .eq("id", doc.id);
 
-      const { count: docCount } = await supabaseAdmin
-        .from("documents")
-        .select("id", { count: "exact", head: true })
-        .eq("application_id", application_id);
+      const b64 = await getDocumentAsBase64(doc.drive_file_id);
+      const mimeType = "application/pdf";
+      const extracted = await extractFieldsFromDocument({
+        base64: b64,
+        mimeType,
+        docType: doc.doc_type,
+      });
 
-      if ((pendingLeft ?? 0) === 0 && (docCount ?? 0) > 0) {
-        await supabaseAdmin
-          .from("applications")
-          .update({ status: "ready_for_review" })
-          .eq("id", application_id);
+      for (const [field_name, field_value] of Object.entries(extracted)) {
+        const { error: insErr } = await supabaseAdmin
+          .from("extracted_fields")
+          .insert({
+            application_id,
+            field_name,
+            field_value,
+            source_doc_type: doc.doc_type,
+            is_flagged: false,
+            flag_note: "",
+          });
+        if (insErr) {
+          throw new Error(insErr.message);
+        }
       }
+
+      await supabaseAdmin
+        .from("documents")
+        .update({ extraction_status: "done" })
+        .eq("id", doc.id);
+    } catch (docErr) {
+      const msg = docErr instanceof Error ? docErr.message : String(docErr);
+      console.error("Extraction failed for document", {
+        document_id: doc.id,
+        doc_type: doc.doc_type,
+        message: msg,
+      });
+      await supabaseAdmin
+        .from("documents")
+        .update({ extraction_status: "failed" })
+        .eq("id", doc.id);
+    }
+
+    const { count: pendingLeft } = await supabaseAdmin
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("application_id", application_id)
+      .eq("extraction_status", "pending");
+
+    const { count: docCount } = await supabaseAdmin
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("application_id", application_id);
+
+    if ((pendingLeft ?? 0) === 0 && (docCount ?? 0) > 0) {
+      await supabaseAdmin
+        .from("applications")
+        .update({ status: "ready_for_review" })
+        .eq("id", application_id);
     }
 
     return NextResponse.json(
-      { ok: true, processed: pending.length },
+      { ok: true, processed: 1 },
       { status: 200 }
     );
   } catch (err) {
