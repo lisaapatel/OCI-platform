@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Readable } from "node:stream";
 
 import {
   createApplicationFolder,
@@ -6,6 +7,9 @@ import {
   uploadFileToDrive,
 } from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
@@ -123,10 +127,17 @@ export async function POST(req: Request) {
       await supabaseAdmin.from("documents").delete().eq("id", existing.id);
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
     const mimeType = file.type || "application/octet-stream";
+    let driveStream: NodeJS.ReadableStream;
+    try {
+      driveStream = Readable.fromWeb(file.stream() as any);
+    } catch {
+      // Fallback for runtimes where fromWeb stream conversion is unavailable.
+      const buffer = Buffer.from(await file.arrayBuffer());
+      driveStream = Readable.from(buffer);
+    }
     const uploaded = await uploadFileToDrive(
-      buffer,
+      driveStream,
       file.name,
       mimeType,
       driveFolderId

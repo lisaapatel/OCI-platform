@@ -59,7 +59,7 @@ export async function createApplicationFolder(
 }
 
 export async function uploadFileToDrive(
-  file: Buffer,
+  file: Buffer | NodeJS.ReadableStream,
   fileName: string,
   mimeType: string,
   folderId: string
@@ -74,7 +74,7 @@ export async function uploadFileToDrive(
       },
       media: {
         mimeType,
-        body: Readable.from(file),
+        body: Buffer.isBuffer(file) ? Readable.from(file) : file,
       },
       fields: "id",
     });
