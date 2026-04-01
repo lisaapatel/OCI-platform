@@ -1,0 +1,102 @@
+/**
+ * Google Drive display names: readable doc-type prefix + customer filename for originals;
+ * short `{prefix}_compressed` / `{prefix}_fixed` for derived files in subfolders.
+ */
+
+/** Maps checklist `doc_type` → short Drive prefix (e.g. current_passport → passport_current). */
+export const DOC_TYPE_DRIVE_PREFIX: Record<string, string> = {
+  current_passport: "passport_current",
+  old_passport: "passport_old",
+  birth_certificate: "certificate_birth",
+  address_proof: "proof_address",
+  applicant_photo: "photo_applicant",
+  applicant_signature: "signature_applicant",
+  parent_indian_doc: "parent_indian",
+  marriage_certificate: "certificate_marriage",
+};
+
+
+const DRIVE_NAME_MAX = 220;
+
+function basenameOnly(pathOrName: string): string {
+  const s = pathOrName.trim().replace(/\\/g, "/");
+  const i = s.lastIndexOf("/");
+  return i >= 0 ? s.slice(i + 1) : s;
+}
+
+/** One path segment or stem: safe for Drive file names. */
+export function sanitizeDriveSegment(segment: string): string {
+  const t = segment.trim() || "document";
+  return t
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 180) || "document";
+}
+
+/** Full filename (may include extension): sanitize and cap length. */
+export function sanitizeDriveFilename(fullName: string, maxLength = DRIVE_NAME_MAX): string {
+  const base = basenameOnly(fullName) || "document";
+  const dot = base.lastIndexOf(".");
+  const ext = dot > 0 ? base.slice(dot) : "";
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  let stemOut = sanitizeDriveSegment(stem);
+  let extOut = "";
+  if (ext) {
+    const e = sanitizeDriveSegment(ext.replace(/^\./, ""));
+    extOut = e ? `.${e}` : "";
+  }
+  let out = `${stemOut}${extOut}`;
+  if (out.length > maxLength) {
+    const keepExt = extOut || "";
+    const maxStem = Math.max(1, maxLength - keepExt.length);
+    stemOut = stemOut.slice(0, maxStem);
+    out = `${stemOut}${keepExt}`;
+  }
+  return out || "document";
+}
+
+export function drivePrefixForDocType(doc_type: string): string {
+  const key = doc_type.trim();
+  if (DOC_TYPE_DRIVE_PREFIX[key]) return DOC_TYPE_DRIVE_PREFIX[key];
+  return sanitizeDriveSegment(key);
+}
+
+/**
+ * Original upload in application folder: `{prefix}_{customerBase}{ext}`.
+ * Idempotent if the client name already starts with `{prefix}_`.
+ */
+export function originalUploadDriveName(
+  doc_type: string,
+  clientFileName: string
+): string {
+  const prefix = drivePrefixForDocType(doc_type);
+  const baseName = basenameOnly(clientFileName.trim() || "document");
+  const lower = baseName.toLowerCase();
+  const p = `${prefix.toLowerCase()}_`;
+  if (lower.startsWith(p)) {
+    return sanitizeDriveFilename(baseName);
+  }
+  const dot = baseName.lastIndexOf(".");
+  const ext = dot > 0 ? baseName.slice(dot) : "";
+  const stem = dot > 0 ? baseName.slice(0, dot) : baseName;
+  const sanitizedStem = sanitizeDriveSegment(stem);
+  return sanitizeDriveFilename(`${prefix}_${sanitizedStem}${ext}`);
+}
+
+/** Portal-compressed copy in Compressed/ — one file per doc_type per app (short name). */
+export function portalCompressedDriveName(
+  doc_type: string,
+  _file_name: string,
+  outputMime: string
+): string {
+  void _file_name;
+  const prefix = drivePrefixForDocType(doc_type);
+  const ext = outputMime.toLowerCase().includes("pdf") ? ".pdf" : ".jpg";
+  return `${prefix}_compressed${ext}`;
+}
+
+/** Govt-fixed JPEG in Fixed/ */
+export function govtFixedDriveName(doc_type: string): string {
+  return `${drivePrefixForDocType(doc_type)}_fixed.jpg`;
+}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { originalUploadDriveName } from "@/lib/drive-file-naming";
 import {
   createApplicationFolder,
   createDriveResumableUploadSession,
@@ -73,8 +74,9 @@ export async function POST(req: Request) {
       }
     }
 
+    const driveFileName = originalUploadDriveName(doc_type, file_name);
     const upload_url = await createDriveResumableUploadSession(
-      file_name,
+      driveFileName,
       mime_type,
       driveFolderId
     );

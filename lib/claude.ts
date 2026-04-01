@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-import { CLAUDE_EXTRACTION_KEY_INSTRUCTIONS } from "@/lib/form-fill-sections";
+import {
+  CLAUDE_EXTRACTION_KEY_INSTRUCTIONS,
+  CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA,
+} from "@/lib/form-fill-sections";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 
 export function getAnthropicClient() {
@@ -35,6 +38,18 @@ export async function callClaudeExtractFieldsRaw(input: {
             data: input.base64,
           },
         } as any);
+  const passportExtra =
+    input.docType === "current_passport" || input.docType === "old_passport"
+      ? `\n\n${CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA}`
+      : "";
+  const userPromptText = `You extract structured data from a document.
+Document type key: ${input.docType}
+MIME: ${mediaType}
+
+${CLAUDE_EXTRACTION_KEY_INSTRUCTIONS}${passportExtra}
+
+Return ONLY a single JSON object mapping field names to string values or null. No markdown.`;
+
   const res = await client.messages.create({
     model: "claude-sonnet-4-5",
     max_tokens: 4096,
@@ -44,13 +59,7 @@ export async function callClaudeExtractFieldsRaw(input: {
         content: [
           {
             type: "text",
-            text: `You extract structured data from a document.
-Document type key: ${input.docType}
-MIME: ${mediaType}
-
-${CLAUDE_EXTRACTION_KEY_INSTRUCTIONS}
-
-Return ONLY a single JSON object mapping field names to string values or null. No markdown.`,
+            text: userPromptText,
           },
           attachmentBlock,
         ],

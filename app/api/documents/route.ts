@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Readable } from "node:stream";
 
+import { originalUploadDriveName } from "@/lib/drive-file-naming";
 import {
   createApplicationFolder,
   deleteFile,
@@ -136,9 +137,10 @@ export async function POST(req: Request) {
       const buffer = Buffer.from(await file.arrayBuffer());
       driveStream = Readable.from(buffer);
     }
+    const driveFileName = originalUploadDriveName(doc_type, file.name);
     const uploaded = await uploadFileToDrive(
       driveStream,
-      file.name,
+      driveFileName,
       mimeType,
       driveFolderId
     );
@@ -148,7 +150,7 @@ export async function POST(req: Request) {
       .insert({
         application_id,
         doc_type,
-        file_name: file.name,
+        file_name: driveFileName,
         drive_file_id: uploaded.id,
         drive_view_url: uploaded.url,
         extraction_status: "pending",

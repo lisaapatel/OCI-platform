@@ -176,6 +176,11 @@ Use snake_case keys only. Prefer these exact names when the value exists (use nu
 When you see one long address line (e.g. street + city + PIN + state + country), split into address_line_1, city, state_province, postal_code, and country when the parts are identifiable (Indian PIN is often 6 digits; labels like PIN:, Gujarat, India help).
 `.trim();
 
+/** Extra instructions when extracting from current or old passport biodata pages. */
+export const CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA = `
+Passport biodata: extract country_of_birth (country name as printed, e.g. India, United Kingdom) whenever it appears on the page—labeled "Country of birth", in MRZ-adjacent fields, or clearly part of place-of-birth (city + country). Use null only if no country is shown for birth.
+`.trim();
+
 export type FormFillSectionDef = {
   title: string;
   fields: FormFillFieldDef[];

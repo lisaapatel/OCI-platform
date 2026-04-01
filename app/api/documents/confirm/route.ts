@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { originalUploadDriveName } from "@/lib/drive-file-naming";
 import { deleteFile, setFilePublicReadable } from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -26,6 +27,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const canonicalFileName = originalUploadDriveName(doc_type, file_name);
 
     const drive_view_url = `https://drive.google.com/file/d/${drive_file_id}/view`;
 
@@ -62,7 +65,7 @@ export async function POST(req: Request) {
       .insert({
         application_id,
         doc_type,
-        file_name,
+        file_name: canonicalFileName,
         drive_file_id,
         drive_view_url,
         extraction_status: "pending",

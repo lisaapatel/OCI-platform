@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { originalUploadDriveName } from "@/lib/drive-file-naming";
 import {
   createApplicationFolder,
   createDriveResumableUploadSession,
@@ -131,7 +132,12 @@ export async function POST(req: Request) {
     }
 
     if (chunk_index === 0 && !uploadUrl) {
-      uploadUrl = await createDriveResumableUploadSession(file_name, mime_type, driveFolderId);
+      const driveFileName = originalUploadDriveName(doc_type, file_name);
+      uploadUrl = await createDriveResumableUploadSession(
+        driveFileName,
+        mime_type,
+        driveFolderId
+      );
       UPLOAD_SESSIONS.set(upload_session_id, { uploadUrl, createdAt: Date.now() });
     }
 

@@ -4,6 +4,7 @@ import {
   type GovtImageType,
   fixGovtImage,
 } from "@/lib/govt-photo-signature";
+import { govtFixedDriveName } from "@/lib/drive-file-naming";
 import {
   findOrCreateChildFolder,
   getDriveFileMetadata,
@@ -24,13 +25,6 @@ const DOC_BY_TYPE: Record<GovtImageType, string> = {
 
 function kb(bytes: number): number {
   return Math.round((bytes / 1024) * 100) / 100;
-}
-
-function fixedName(originalName: string, imageType: GovtImageType): string {
-  const base =
-    (originalName.replace(/\.[^/.]+$/, "") || originalName).trim() ||
-    (imageType === "photo" ? "photo" : "signature");
-  return `${base}.govt-fixed.jpg`;
 }
 
 export async function POST(req: Request) {
@@ -123,7 +117,7 @@ export async function POST(req: Request) {
 
     const uploaded = await uploadFileToDrive(
       out,
-      fixedName(String(doc.file_name ?? meta.name), image_type),
+      govtFixedDriveName(String(doc.doc_type)),
       "image/jpeg",
       fixedFolderId
     );

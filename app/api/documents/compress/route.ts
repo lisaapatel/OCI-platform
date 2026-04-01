@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { compressForGovtPortal } from "@/lib/document-compress";
+import { portalCompressedDriveName } from "@/lib/drive-file-naming";
 import {
   PORTAL_PDF_COMPRESS_TARGET_KB,
   PORTAL_PDF_MAX_BYTES,
@@ -18,14 +19,6 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const GOOGLE_NATIVE = "application/vnd.google-apps.";
-
-function portalOutputName(originalName: string, outputMime: string): string {
-  const trimmed = originalName.trim() || "document";
-  const dot = trimmed.lastIndexOf(".");
-  const base = dot > 0 ? trimmed.slice(0, dot) : trimmed;
-  const ext = outputMime.includes("pdf") ? ".pdf" : ".jpg";
-  return `${base}.portal${ext}`;
-}
 
 function kb(bytes: number): number {
   return Math.round((bytes / 1024) * 10) / 10;
@@ -57,7 +50,7 @@ export async function POST(req: Request) {
     const { data: doc, error: docErr } = await supabaseAdmin
       .from("documents")
       .select(
-        "id, application_id, file_name, drive_file_id, drive_view_url"
+        "id, application_id, doc_type, file_name, drive_file_id, drive_view_url"
       )
       .eq("application_id", application_id)
       .eq("drive_file_id", drive_file_id)
@@ -134,7 +127,8 @@ export async function POST(req: Request) {
       "Compressed"
     );
 
-    const outName = portalOutputName(
+    const outName = portalCompressedDriveName(
+      String(doc.doc_type ?? ""),
       String(doc.file_name ?? meta.name),
       outputMime
     );
