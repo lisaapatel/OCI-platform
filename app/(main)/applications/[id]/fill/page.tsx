@@ -29,7 +29,7 @@ export default async function FormFillPage({
 
   const { data: app, error: appErr } = await supabaseAdmin
     .from("applications")
-    .select("id, app_number, customer_name")
+    .select("id, app_number, customer_name, customer_email, customer_phone")
     .eq("id", id)
     .single();
 
@@ -88,12 +88,17 @@ export default async function FormFillPage({
             padding-bottom: 8px !important;
             box-shadow: none !important;
           }
+          .fill-govt-row {
+            break-inside: avoid;
+          }
         }
       `}</style>
       <FormFillPageClient
         applicationId={id}
         appNumber={String(app.app_number ?? "")}
         customerName={String(app.customer_name ?? "")}
+        customerEmail={String(app.customer_email ?? "")}
+        customerPhone={String(app.customer_phone ?? "")}
         lastReviewedLabel={formatReviewedAt(lastReviewedIso)}
         initialFields={extracted}
       />

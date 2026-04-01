@@ -34,6 +34,19 @@ const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
   ["father_full_name", "father_name", "fathers_name", "father"],
   ["mother_full_name", "mother_name", "mothers_name", "mother"],
   ["spouse_name", "spouse_full_name", "husband_name", "wife_name"],
+  [
+    "previous_name",
+    "maiden_name",
+    "former_name",
+    "name_changed_from",
+  ],
+  [
+    "address_at_birth",
+    "permanent_address",
+    "native_place_address",
+    "address_at_place_of_birth",
+    "birth_address",
+  ],
 ];
 
 function normalizeStoredFieldKey(name: string): string {
@@ -157,7 +170,8 @@ Use snake_case keys only. Prefer these exact names when the value exists (use nu
 - Personal: first_name, middle_name, last_name, date_of_birth, place_of_birth, country_of_birth, gender, marital_status, current_nationality
 - Passport: passport_number, passport_issue_date, passport_expiry_date, place_of_issue, country_of_issue
 - Address: address_line_1, address_line_2, city, state_province, postal_code (use pin_code style values for India), country
-- Family: father_full_name, mother_full_name, spouse_name
+- Family: father_full_name, mother_full_name, spouse_name; previous_name if applicable
+- Birth cert / native place: address_at_birth, permanent_address when useful for native place
 
 When you see one long address line (e.g. street + city + PIN + state + country), split into address_line_1, city, state_province, postal_code, and country when the parts are identifiable (Indian PIN is often 6 digits; labels like PIN:, Gujarat, India help).
 `.trim();
