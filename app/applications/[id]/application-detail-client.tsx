@@ -152,24 +152,20 @@ export function ApplicationDetailClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ application_id: application.id }),
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        error?: string;
-      };
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        const msg =
-          typeof data.error === "string"
-            ? data.error
-            : `Extraction failed (${res.status}).`;
-        setPatchError(msg);
-        alert(msg);
+        const msg = typeof data.error === "string" ? data.error : "Unknown error";
+        const full = `Extraction failed: ${msg}`;
+        setPatchError(full);
+        alert(full);
         return;
       }
 
-      refresh();
+      router.push(`/applications/${application.id}/review`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setPatchError(msg);
-      alert(msg);
+      alert(`Extraction failed: ${msg}`);
     } finally {
       setIsProcessing(false);
     }

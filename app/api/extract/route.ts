@@ -4,6 +4,9 @@ import { extractFieldsFromDocument } from "@/lib/claude";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 function parseSupabaseObjectRef(ref: string): { bucket: string; path: string } | null {
   if (!ref.startsWith("sb:")) return null;
   const raw = ref.slice(3);
@@ -35,7 +38,7 @@ export async function POST(req: Request) {
     console.log("POST /api/extract hit");
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
-        { error: "Missing ANTHROPIC_API_KEY" },
+        { error: "ANTHROPIC_API_KEY is not set" },
         { status: 500 }
       );
     }
@@ -101,7 +104,13 @@ export async function POST(req: Request) {
           .from("documents")
           .update({ extraction_status: "done" })
           .eq("id", doc.id);
-      } catch {
+      } catch (docErr) {
+        const msg = docErr instanceof Error ? docErr.message : String(docErr);
+        console.error("Extraction failed for document", {
+          document_id: doc.id,
+          doc_type: doc.doc_type,
+          message: msg,
+        });
         await supabaseAdmin
           .from("documents")
           .update({ extraction_status: "failed" })
@@ -129,7 +138,10 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, processed: pending.length },
+      { status: 200 }
+    );
   } catch (err) {
     const e = err as Error & { stack?: string };
     console.error("POST /api/extract failed", {
