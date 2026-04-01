@@ -150,6 +150,7 @@ export function ApplicationDetailClient({
           application_id: application.id,
           doc_type: docType,
           file_name: file.name,
+          file_size: file.size,
         }),
       });
       const signData = (await signRes.json().catch(() => ({}))) as {
