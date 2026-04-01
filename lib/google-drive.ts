@@ -19,6 +19,11 @@ function getOAuth2Client() {
 }
 
 export function getGoogleDriveClient() {
+  console.log("Initializing Google Drive client", {
+    hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+    hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+    hasRefreshToken: !!process.env.GOOGLE_REFRESH_TOKEN,
+  });
   const auth = getOAuth2Client();
   return google.drive({ version: "v3", auth });
 }

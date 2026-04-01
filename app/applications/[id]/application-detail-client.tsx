@@ -11,7 +11,6 @@ import {
   OCI_NEW_CHECKLIST,
   OCI_NEW_REQUIRED_COUNT,
 } from "@/lib/oci-new-checklist";
-import { supabase } from "@/lib/supabase";
 
 type ServiceType = Application["service_type"];
 type Status = Application["status"];
@@ -143,50 +142,11 @@ export function ApplicationDetailClient({
     setUploadingDocType(docType);
     setPatchError(null);
     try {
-      const signRes = await fetch("/api/documents/upload-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          application_id: application.id,
-          doc_type: docType,
-          file_name: file.name,
-          file_size: file.size,
-        }),
-      });
-      const signData = (await signRes.json().catch(() => ({}))) as {
-        error?: string;
-        bucket?: string;
-        path?: string;
-        token?: string;
-      };
-      if (!signRes.ok || !signData.bucket || !signData.path || !signData.token) {
-        setPatchError(
-          typeof signData.error === "string"
-            ? signData.error
-            : "Failed to prepare upload."
-        );
-        return;
-      }
-
-      const { error: uploadErr } = await supabase.storage
-        .from(signData.bucket)
-        .uploadToSignedUrl(signData.path, signData.token, file);
-      if (uploadErr) {
-        setPatchError(uploadErr.message || "Upload failed.");
-        return;
-      }
-
-      const res = await fetch("/api/documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          application_id: application.id,
-          doc_type: docType,
-          file_name: file.name,
-          storage_bucket: signData.bucket,
-          storage_path: signData.path,
-        }),
-      });
+      const fd = new FormData();
+      fd.set("application_id", application.id);
+      fd.set("doc_type", docType);
+      fd.set("file", file);
+      const res = await fetch("/api/documents", { method: "POST", body: fd });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         document?: Document;
