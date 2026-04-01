@@ -32,6 +32,14 @@ async function getDocumentAsBase64(ref: string): Promise<string> {
 
 export async function POST(req: Request) {
   try {
+    console.log("POST /api/extract hit");
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json(
+        { error: "Missing ANTHROPIC_API_KEY" },
+        { status: 500 }
+      );
+    }
+
     const body = (await req.json()) as { application_id?: string };
     const application_id = (body.application_id ?? "").trim();
     if (!application_id) {
@@ -123,7 +131,14 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const e = err as Error & { stack?: string };
+    console.error("POST /api/extract failed", {
+      message: e?.message,
+      stack: e?.stack,
+    });
+    return NextResponse.json(
+      { error: e?.message ?? String(err) },
+      { status: 500 }
+    );
   }
 }

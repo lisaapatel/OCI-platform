@@ -81,6 +81,7 @@ export function ApplicationDetailClient({
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {}
   );
+  const [isProcessing, setIsProcessing] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
 
@@ -139,6 +140,39 @@ export function ApplicationDetailClient({
   async function onNotesBlur() {
     if (notesDraft === (application.notes ?? "")) return;
     await patchApplication({ notes: notesDraft });
+  }
+
+  async function processDocuments() {
+    console.log("Process Documents clicked", { applicationId: application.id });
+    setPatchError(null);
+    setIsProcessing(true);
+    try {
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: application.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        const msg =
+          typeof data.error === "string"
+            ? data.error
+            : `Extraction failed (${res.status}).`;
+        setPatchError(msg);
+        alert(msg);
+        return;
+      }
+
+      refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPatchError(msg);
+      alert(msg);
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   async function uploadFile(docType: string, file: File) {
@@ -396,12 +430,16 @@ export function ApplicationDetailClient({
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
               <button
                 type="button"
+                onClick={() => void processDocuments()}
+                disabled={isProcessing}
                 className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
               >
-                Process Documents with AI →
+                {isProcessing ? "Processing…" : "Process Documents with AI →"}
               </button>
               <p className="mt-2 text-center text-xs text-emerald-900/70">
-                Extraction will be wired in the next step.
+                {isProcessing
+                  ? "Running extraction… this may take a moment."
+                  : "Runs OCR + extraction on pending documents."}
               </p>
             </div>
           ) : null}
