@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 
-import { extractFieldsFromDocument } from "@/lib/claude";
+import {
+  callClaudeExtractFieldsRaw,
+  parseClaudeExtractedFieldsText,
+} from "@/lib/claude";
+import type { ExtractionFailureCode } from "@/lib/extraction-failure-reasons";
+import { FAILURE_REASON_LABELS } from "@/lib/extraction-failure-reasons";
 import { getFileAsBase64 } from "@/lib/google-drive";
-import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import { getOciChecklistLabel, shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { ExtractSingleResultBody } from "@/lib/types";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
+
+const STEPS = 4;
 
 function parseSupabaseObjectRef(ref: string): { bucket: string; path: string } | null {
   if (!ref.startsWith("sb:")) return null;
@@ -34,114 +42,335 @@ async function getDocumentAsBase64(ref: string): Promise<string> {
   return Buffer.from(ab).toString("base64");
 }
 
-export async function POST(req: Request) {
-  try {
-    console.log("POST /api/extract/single hit");
+async function markDocument(
+  docId: string,
+  fields: {
+    extraction_status: "pending" | "processing" | "done" | "failed";
+    failure_reason?: string | null;
+  }
+) {
+  await supabaseAdmin.from("documents").update(fields).eq("id", docId);
+}
 
-    const body = (await req.json()) as {
-      application_id?: string;
-      document_id?: string;
+function failPayload(
+  code: ExtractionFailureCode,
+  fields_extracted = 0
+): ExtractSingleResultBody {
+  return {
+    ok: true,
+    status: "failed",
+    reason: code,
+    human_reason: FAILURE_REASON_LABELS[code],
+    fields_extracted,
+    field_data: [],
+  };
+}
+
+type EmitProgress = (p: {
+  step: number;
+  documentIndex: number;
+  documentTotal: number;
+  message: string;
+}) => void;
+
+async function runExtraction(args: {
+  doc: Record<string, unknown>;
+  application_id: string;
+  documentIndex: number;
+  documentTotal: number;
+  emit?: EmitProgress;
+}): Promise<ExtractSingleResultBody> {
+  const { doc, application_id, documentIndex, documentTotal, emit } = args;
+  const docId = String(doc.id);
+  const docType = String(doc.doc_type ?? "");
+  const docLabel = getOciChecklistLabel(docType);
+
+  const progress = (step: number, message: string) => {
+    emit?.({
+      step,
+      documentIndex,
+      documentTotal,
+      message: `Step ${step} of ${STEPS}: ${message}`,
+    });
+  };
+
+  if (shouldSkipAiExtraction(docType)) {
+    await markDocument(docId, {
+      extraction_status: "done",
+      failure_reason: null,
+    });
+    return {
+      ok: true,
+      status: "done",
+      fields_extracted: 0,
+      field_data: [],
+      skipped: true,
+      document_id: docId,
     };
-    const application_id = String(body.application_id ?? "").trim();
-    const document_id = String(body.document_id ?? "").trim();
+  }
 
-    if (!application_id || !document_id) {
-      return NextResponse.json(
-        { error: "application_id and document_id are required." },
-        { status: 400 }
-      );
-    }
-
-    const { data: doc, error: docErr } = await supabaseAdmin
-      .from("documents")
-      .select("*")
-      .eq("id", document_id)
-      .eq("application_id", application_id)
-      .single();
-
-    if (docErr || !doc) {
-      return NextResponse.json({ error: "Document not found." }, { status: 404 });
-    }
-
-    if (shouldSkipAiExtraction(doc.doc_type)) {
-      await supabaseAdmin
-        .from("documents")
-        .update({ extraction_status: "done" })
-        .eq("id", doc.id);
-      return NextResponse.json(
-        { ok: true, fields_extracted: 0, field_data: [] },
-        { status: 200 }
-      );
-    }
-
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY is not set" },
-        { status: 500 }
-      );
-    }
-
-    await supabaseAdmin
-      .from("documents")
-      .update({ extraction_status: "processing" })
-      .eq("id", doc.id);
-
-    console.log("Extracting single doc", {
-      application_id,
-      document_id: doc.id,
-      doc_type: doc.doc_type,
-      drive_file_id: doc.drive_file_id,
+  if (!process.env.ANTHROPIC_API_KEY) {
+    await markDocument(docId, {
+      extraction_status: "failed",
+      failure_reason: "claude_api_failed",
     });
+    return {
+      ...failPayload("claude_api_failed"),
+      human_reason: "AI API key is not configured",
+      document_id: docId,
+    };
+  }
 
-    const b64 = await getDocumentAsBase64(doc.drive_file_id);
-    if (!b64 || b64.length === 0) {
-      await supabaseAdmin
-        .from("documents")
-        .update({ extraction_status: "failed" })
-        .eq("id", doc.id);
-      return NextResponse.json(
-        { error: "Downloaded document was empty." },
-        { status: 500 }
-      );
-    }
+  await markDocument(docId, {
+    extraction_status: "processing",
+    failure_reason: null,
+  });
 
-    const mimeType = "application/pdf";
-    const extracted = await extractFieldsFromDocument({
+  progress(
+    1,
+    `Downloading ${docLabel} from Drive…`
+  );
+
+  let b64: string;
+  try {
+    b64 = await getDocumentAsBase64(String(doc.drive_file_id ?? ""));
+  } catch {
+    await markDocument(docId, {
+      extraction_status: "failed",
+      failure_reason: "drive_download_failed",
+    });
+    return { ...failPayload("drive_download_failed"), document_id: docId };
+  }
+
+  if (!b64 || b64.length === 0) {
+    await markDocument(docId, {
+      extraction_status: "failed",
+      failure_reason: "drive_download_failed",
+    });
+    return { ...failPayload("drive_download_failed"), document_id: docId };
+  }
+
+  progress(2, "Sending to AI…");
+
+  let rawText: string;
+  try {
+    rawText = await callClaudeExtractFieldsRaw({
       base64: b64,
-      mimeType,
-      docType: doc.doc_type,
+      mimeType: "application/pdf",
+      docType,
     });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Claude API error:", msg);
+    await markDocument(docId, {
+      extraction_status: "failed",
+      failure_reason: "claude_api_failed",
+    });
+    return {
+      ...failPayload("claude_api_failed"),
+      human_reason: msg.slice(0, 200) || FAILURE_REASON_LABELS.claude_api_failed,
+      document_id: docId,
+    };
+  }
 
-    const field_data: { field_name: string; field_value: string | null }[] = [];
-    let fields_extracted = 0;
-    for (const [field_name, field_value] of Object.entries(extracted)) {
-      const { error: insErr } = await supabaseAdmin
-        .from("extracted_fields")
-        .insert({
-          application_id,
-          field_name,
-          field_value,
-          source_doc_type: doc.doc_type,
-          is_flagged: false,
-          flag_note: "",
-        });
+  progress(3, "Parsing results…");
+
+  let extracted: Record<string, string | null>;
+  try {
+    extracted = parseClaudeExtractedFieldsText(rawText);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Parse error:", msg);
+    await markDocument(docId, {
+      extraction_status: "failed",
+      failure_reason: "parse_failed",
+    });
+    return {
+      ...failPayload("parse_failed"),
+      human_reason: msg.slice(0, 200) || FAILURE_REASON_LABELS.parse_failed,
+      document_id: docId,
+    };
+  }
+
+  const entries = Object.entries(extracted);
+  progress(
+    4,
+    entries.length === 0
+      ? "Saving results…"
+      : `Saving ${entries.length} field${entries.length === 1 ? "" : "s"}…`
+  );
+
+  const field_data: { field_name: string; field_value: string | null }[] = [];
+
+  try {
+    const { error: delErr } = await supabaseAdmin
+      .from("extracted_fields")
+      .delete()
+      .eq("application_id", application_id)
+      .eq("source_doc_type", docType);
+    if (delErr) throw new Error(delErr.message);
+
+    for (const [field_name, field_value] of entries) {
+      const { error: insErr } = await supabaseAdmin.from("extracted_fields").insert({
+        application_id,
+        field_name,
+        field_value,
+        source_doc_type: docType,
+        is_flagged: false,
+        flag_note: "",
+      });
       if (insErr) throw new Error(insErr.message);
-      fields_extracted += 1;
       field_data.push({ field_name, field_value: field_value ?? null });
     }
 
-    await supabaseAdmin
-      .from("documents")
-      .update({ extraction_status: "done" })
-      .eq("id", doc.id);
-
-    return NextResponse.json(
-      { ok: true, fields_extracted, field_data },
-      { status: 200 }
-    );
+    await markDocument(docId, {
+      extraction_status: "done",
+      failure_reason: null,
+    });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("DB save error:", msg);
+    await markDocument(docId, {
+      extraction_status: "failed",
+      failure_reason: "db_save_failed",
+    });
+    return {
+      ...failPayload("db_save_failed"),
+      human_reason: msg.slice(0, 200) || FAILURE_REASON_LABELS.db_save_failed,
+      fields_extracted: field_data.length,
+      field_data,
+      document_id: docId,
+    };
   }
+
+  return {
+    ok: true,
+    status: "done",
+    fields_extracted: field_data.length,
+    field_data,
+    document_id: docId,
+  };
 }
 
+export async function POST(req: Request) {
+  let body: {
+    application_id?: string;
+    document_id?: string;
+    stream?: boolean;
+    document_index?: number;
+    document_total?: number;
+  };
+  try {
+    body = (await req.json()) as typeof body;
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "Invalid JSON body." },
+      { status: 400 }
+    );
+  }
+
+  const application_id = String(body.application_id ?? "").trim();
+  const document_id = String(body.document_id ?? "").trim();
+  const useStream = Boolean(body.stream);
+  const documentIndex = Math.max(1, Number(body.document_index) || 1);
+  const documentTotal = Math.max(1, Number(body.document_total) || 1);
+
+  if (!application_id || !document_id) {
+    return NextResponse.json(
+      { ok: false, error: "application_id and document_id are required." },
+      { status: 400 }
+    );
+  }
+
+  const { data: doc, error: docErr } = await supabaseAdmin
+    .from("documents")
+    .select("*")
+    .eq("id", document_id)
+    .eq("application_id", application_id)
+    .single();
+
+  if (docErr || !doc) {
+    return NextResponse.json(
+      { ok: false, error: "Document not found." },
+      { status: 404 }
+    );
+  }
+
+  const docRow = doc as Record<string, unknown>;
+
+  if (useStream) {
+    const encoder = new TextEncoder();
+    const docLabel = getOciChecklistLabel(String(docRow.doc_type ?? ""));
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (obj: unknown) => {
+          controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+        };
+        try {
+          send({
+            type: "doc_start",
+            documentIndex,
+            documentTotal,
+            message: `Document ${documentIndex} of ${documentTotal}: ${docLabel}`,
+          });
+          const result = await runExtraction({
+            doc: docRow,
+            application_id,
+            documentIndex,
+            documentTotal,
+            emit: (p) => send({ type: "progress", totalSteps: STEPS, ...p }),
+          });
+          send({ type: "result", ...result });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          send({
+            type: "result",
+            ok: true,
+            status: "failed" as const,
+            reason: "db_save_failed",
+            human_reason: msg.slice(0, 300),
+            fields_extracted: 0,
+            field_data: [] as { field_name: string; field_value: string | null }[],
+            document_id: document_id,
+          });
+        } finally {
+          controller.close();
+        }
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  try {
+    const result = await runExtraction({
+      doc: docRow,
+      application_id,
+      documentIndex,
+      documentTotal,
+    });
+    return NextResponse.json(result, { status: 200 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await markDocument(document_id, {
+      extraction_status: "failed",
+      failure_reason: "db_save_failed",
+    });
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "failed" as const,
+        reason: "db_save_failed",
+        human_reason: msg.slice(0, 300),
+        fields_extracted: 0,
+        field_data: [],
+        document_id,
+      },
+      { status: 200 }
+    );
+  }
+}

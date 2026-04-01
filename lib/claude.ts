@@ -8,15 +8,12 @@ export function getAnthropicClient() {
   });
 }
 
-/** Returns flat field map for persistence in `extracted_fields`. Tests mock this. */
-export async function extractFieldsFromDocument(input: {
+/** Raw assistant text from Claude (no parsing). Skipped doc types must be handled by the caller. */
+export async function callClaudeExtractFieldsRaw(input: {
   base64: string;
   mimeType: string;
   docType: string;
-}): Promise<Record<string, string | null>> {
-  if (shouldSkipAiExtraction(input.docType)) {
-    return {};
-  }
+}): Promise<string> {
   const client = getAnthropicClient();
   const mediaType = input.mimeType?.trim() || "application/pdf";
   const attachmentBlock =
@@ -59,18 +56,39 @@ Return ONLY a single JSON object mapping field names to string values or null. N
   });
 
   const block = res.content.find((b) => b.type === "text");
-  const text = block?.type === "text" ? block.text : "{}";
-  console.log("Claude raw response text:", text.slice(0, 2000));
-  const match = text.match(/\{[\s\S]*\}/);
-  const parsed = JSON.parse(match ? match[0] : "{}") as unknown;
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    const out: Record<string, string | null> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (v === null || v === undefined) out[k] = null;
-      else out[k] = String(v);
-    }
-    return out;
-  }
-  return {};
+  return block?.type === "text" ? block.text : "";
 }
 
+/** Parse JSON object from Claude text; throws if no valid object. */
+export function parseClaudeExtractedFieldsText(
+  text: string
+): Record<string, string | null> {
+  console.log("Claude raw response text:", text.slice(0, 2000));
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new SyntaxError("No JSON object in Claude response");
+  }
+  const parsed = JSON.parse(match[0]) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new SyntaxError("Claude response JSON was not an object");
+  }
+  const out: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    if (v === null || v === undefined) out[k] = null;
+    else out[k] = String(v);
+  }
+  return out;
+}
+
+/** Returns flat field map for persistence in `extracted_fields`. Tests mock this. */
+export async function extractFieldsFromDocument(input: {
+  base64: string;
+  mimeType: string;
+  docType: string;
+}): Promise<Record<string, string | null>> {
+  if (shouldSkipAiExtraction(input.docType)) {
+    return {};
+  }
+  const text = await callClaudeExtractFieldsRaw(input);
+  return parseClaudeExtractedFieldsText(text);
+}

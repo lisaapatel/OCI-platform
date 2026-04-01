@@ -120,6 +120,7 @@ describe("Application detail", () => {
         drive_file_id: "f1",
         drive_view_url: "https://drive.google.com/file/d/f1/view",
         extraction_status: "pending",
+        failure_reason: null,
         uploaded_at: "2026-01-01T00:00:00Z",
       },
     ];
@@ -155,6 +156,7 @@ describe("Application detail", () => {
         drive_file_id: "1",
         drive_view_url: "",
         extraction_status: "pending",
+        failure_reason: null,
         uploaded_at: "",
       },
       {
@@ -165,6 +167,7 @@ describe("Application detail", () => {
         drive_file_id: "2",
         drive_view_url: "",
         extraction_status: "pending",
+        failure_reason: null,
         uploaded_at: "",
       },
     ];
@@ -197,6 +200,7 @@ describe("Application detail", () => {
       drive_file_id: `f${i}`,
       drive_view_url: "",
       extraction_status: "pending",
+      failure_reason: null,
       uploaded_at: "",
     }));
 

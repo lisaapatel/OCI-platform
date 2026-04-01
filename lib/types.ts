@@ -26,8 +26,22 @@ export interface Document {
   drive_file_id: string;
   drive_view_url: string;
   extraction_status: "pending" | "processing" | "done" | "failed";
+  /** Machine code from failed extraction step; null when not failed */
+  failure_reason: string | null;
   uploaded_at: string;
 }
+
+/** 200 JSON body from POST /api/extract/single (non-streaming) */
+export type ExtractSingleResultBody = {
+  ok: true;
+  status: "done" | "failed";
+  reason?: string;
+  human_reason?: string;
+  fields_extracted: number;
+  field_data: { field_name: string; field_value: string | null }[];
+  skipped?: boolean;
+  document_id?: string;
+};
 
 export interface ExtractedField {
   id: string;

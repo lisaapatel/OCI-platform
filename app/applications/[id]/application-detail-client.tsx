@@ -6,11 +6,30 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 
-import type { Application, Document } from "@/lib/types";
+import { labelForFailureReason } from "@/lib/extraction-failure-reasons";
 import {
   OCI_NEW_CHECKLIST,
   OCI_NEW_REQUIRED_COUNT,
+  shouldSkipAiExtraction,
 } from "@/lib/oci-new-checklist";
+import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
+
+function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
+  return {
+    id: String(row.id),
+    application_id: String(row.application_id),
+    doc_type: String(row.doc_type ?? ""),
+    file_name: String(row.file_name ?? ""),
+    drive_file_id: String(row.drive_file_id ?? ""),
+    drive_view_url: String(row.drive_view_url ?? ""),
+    extraction_status: row.extraction_status as Document["extraction_status"],
+    failure_reason:
+      row.failure_reason == null || row.failure_reason === ""
+        ? null
+        : String(row.failure_reason),
+    uploaded_at: String(row.uploaded_at ?? ""),
+  };
+}
 
 type ServiceType = Application["service_type"];
 type Status = Application["status"];
@@ -82,7 +101,15 @@ export function ApplicationDetailClient({
     {}
   );
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingLabel, setProcessingLabel] = useState<string | null>(null);
+  const [extractingDocId, setExtractingDocId] = useState<string | null>(null);
+  const [extractionProgress, setExtractionProgress] = useState<{
+    message: string;
+    step: number | null;
+    stepTotal: number;
+    docIndex: number;
+    docTotal: number;
+  } | null>(null);
+  const [skipNotice, setSkipNotice] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
@@ -115,6 +142,129 @@ export function ApplicationDetailClient({
     router.refresh();
   }, [router]);
 
+  const loadDocuments = useCallback(async (): Promise<Document[]> => {
+    const listRes = await fetch(
+      `/api/documents?application_id=${encodeURIComponent(application.id)}`
+    );
+    if (!listRes.ok) {
+      throw new Error("Failed to reload documents.");
+    }
+    const list = (await listRes.json()) as {
+      documents?: Record<string, unknown>[];
+    };
+    return (list.documents ?? []).map(normalizeDocumentFromApi);
+  }, [application.id]);
+
+  const extractSingleStreaming = useCallback(
+    async (
+      documentId: string,
+      documentIndex: number,
+      documentTotal: number,
+      onProgress: (p: {
+        message: string;
+        step: number | null;
+        stepTotal: number;
+        docIndex: number;
+        docTotal: number;
+      }) => void
+    ): Promise<ExtractSingleResultBody> => {
+      const res = await fetch("/api/extract/single", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          application_id: application.id,
+          document_id: documentId,
+          stream: true,
+          document_index: documentIndex,
+          document_total: documentTotal,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try {
+          const j = JSON.parse(text) as { error?: string };
+          if (j.error) msg = j.error;
+        } catch {
+          /* keep raw */
+        }
+        throw new Error(msg);
+      }
+
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("ndjson") || !res.body) {
+        const j = (await res.json()) as Record<string, unknown>;
+        if (j.ok === false && typeof j.error === "string") {
+          throw new Error(j.error);
+        }
+        return j as unknown as ExtractSingleResultBody;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let lastResult: ExtractSingleResultBody | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const evt = JSON.parse(trimmed) as
+            | {
+                type: "doc_start";
+                message: string;
+                documentIndex: number;
+                documentTotal: number;
+              }
+            | {
+                type: "progress";
+                message: string;
+                step: number;
+                totalSteps: number;
+                documentIndex: number;
+                documentTotal: number;
+              }
+            | ({ type: "result" } & Record<string, unknown>);
+
+          if (evt.type === "doc_start") {
+            onProgress({
+              message: evt.message,
+              step: null,
+              stepTotal: 4,
+              docIndex: evt.documentIndex,
+              docTotal: evt.documentTotal,
+            });
+          }
+          if (evt.type === "progress" && "step" in evt) {
+            onProgress({
+              message: evt.message,
+              step: evt.step,
+              stepTotal: evt.totalSteps ?? 4,
+              docIndex: evt.documentIndex,
+              docTotal: evt.documentTotal,
+            });
+          }
+          if (evt.type === "result") {
+            const { type: _t, ...rest } = evt;
+            lastResult = rest as ExtractSingleResultBody;
+          }
+        }
+      }
+
+      if (!lastResult) {
+        throw new Error("No extraction result from server");
+      }
+      return lastResult;
+    },
+    [application.id]
+  );
+
   async function patchApplication(body: { status?: Status; notes?: string }) {
     setPatchError(null);
     const res = await fetch(`/api/applications/${application.id}`, {
@@ -145,45 +295,80 @@ export function ApplicationDetailClient({
   }
 
   async function processDocuments() {
-    console.log("Process Documents clicked", { applicationId: application.id });
     setPatchError(null);
+    setSkipNotice(null);
     setIsProcessing(true);
-    setProcessingLabel("Starting extraction…");
+    setExtractionProgress(null);
 
     if (pollRef.current != null) {
       window.clearInterval(pollRef.current);
       pollRef.current = null;
     }
+
     try {
-      const docsToProcess = documents.filter((d) => d.id);
-      const total = docsToProcess.length;
-      if (total === 0) {
-        setProcessingLabel(null);
+      const fresh = await loadDocuments();
+      setDocuments(fresh);
+
+      const byType = new Map(fresh.map((d) => [d.doc_type, d]));
+      const checklistDocs = OCI_NEW_CHECKLIST.map((i) => byType.get(i.doc_type)).filter(
+        (d): d is Document => Boolean(d)
+      );
+
+      const alreadyDone = checklistDocs.filter((d) => d.extraction_status === "done");
+      if (alreadyDone.length > 0) {
+        setSkipNotice(
+          `Skipping ${alreadyDone.length} already extracted doc${alreadyDone.length === 1 ? "" : "s"}`
+        );
+      }
+
+      const toProcess = checklistDocs.filter((d) => d.extraction_status === "pending");
+
+      if (toProcess.length === 0) {
         setIsProcessing(false);
-        alert("No documents to process.");
+        setExtractionProgress(null);
+        if (checklistDocs.length === 0) {
+          alert("No documents to process.");
+        } else {
+          alert("No pending documents to extract.");
+        }
         return;
       }
 
-      for (let i = 0; i < total; i++) {
-        const doc = docsToProcess[i]!;
-        setProcessingLabel(`Processing ${doc.doc_type} (${i + 1} of ${total})…`);
+      const total = toProcess.length;
+      let failureCount = 0;
 
-        const res = await fetch("/api/extract/single", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            application_id: application.id,
-            document_id: doc.id,
-          }),
-        });
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) {
-          const msg = typeof data.error === "string" ? data.error : "Unknown error";
-          const full = `Extraction failed: ${msg}`;
-          setPatchError(full);
-          alert(full);
-          return;
+      for (let i = 0; i < total; i++) {
+        const doc = toProcess[i]!;
+        setExtractingDocId(doc.id);
+        try {
+          const result = await extractSingleStreaming(
+            doc.id,
+            i + 1,
+            total,
+            (p) => setExtractionProgress(p)
+          );
+          if (result.status === "failed") failureCount += 1;
+        } catch (err) {
+          failureCount += 1;
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("Extraction request error:", msg);
         }
+
+        try {
+          const updated = await loadDocuments();
+          setDocuments(updated);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      setExtractingDocId(null);
+      setExtractionProgress(null);
+
+      if (failureCount > 0) {
+        setPatchError(
+          `${failureCount} document${failureCount === 1 ? "" : "s"} failed extraction. Use ↺ Retry on each card.`
+        );
       }
 
       await patchApplication({ status: "ready_for_review" });
@@ -194,7 +379,31 @@ export function ApplicationDetailClient({
       alert(`Extraction failed: ${msg}`);
     } finally {
       setIsProcessing(false);
-      setProcessingLabel(null);
+      setExtractingDocId(null);
+      setExtractionProgress(null);
+    }
+  }
+
+  async function retryExtractionForDoc(doc: Document) {
+    setPatchError(null);
+    setExtractingDocId(doc.id);
+    setExtractionProgress({
+      message: "Retrying extraction…",
+      step: null,
+      stepTotal: 4,
+      docIndex: 1,
+      docTotal: 1,
+    });
+    try {
+      await extractSingleStreaming(doc.id, 1, 1, (p) => setExtractionProgress(p));
+      const updated = await loadDocuments();
+      setDocuments(updated);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPatchError(msg);
+    } finally {
+      setExtractingDocId(null);
+      setExtractionProgress(null);
     }
   }
 
@@ -253,7 +462,9 @@ export function ApplicationDetailClient({
         if (data.document && uploadedChunks === totalChunks) {
           setDocuments((prev) => [
             ...prev.filter((d) => d.doc_type !== docType),
-            data.document!,
+            normalizeDocumentFromApi(
+              data.document as unknown as Record<string, unknown>
+            ),
           ]);
           finished = true;
         }
@@ -265,8 +476,12 @@ export function ApplicationDetailClient({
           `/api/documents?application_id=${encodeURIComponent(application.id)}`
         );
         if (listRes.ok) {
-          const list = (await listRes.json()) as { documents?: Document[] };
-          if (list.documents) setDocuments(list.documents);
+          const list = (await listRes.json()) as {
+            documents?: Record<string, unknown>[];
+          };
+          if (list.documents) {
+            setDocuments(list.documents.map(normalizeDocumentFromApi));
+          }
         }
         refresh();
       } else {
@@ -275,8 +490,12 @@ export function ApplicationDetailClient({
           `/api/documents?application_id=${encodeURIComponent(application.id)}`
         );
         if (listRes.ok) {
-          const list = (await listRes.json()) as { documents?: Document[] };
-          if (list.documents) setDocuments(list.documents);
+          const list = (await listRes.json()) as {
+            documents?: Record<string, unknown>[];
+          };
+          if (list.documents) {
+            setDocuments(list.documents.map(normalizeDocumentFromApi));
+          }
         } else {
           refresh();
         }
@@ -417,8 +636,10 @@ export function ApplicationDetailClient({
                 uploading={uploadingDocType === item.doc_type}
                 progress={uploadProgress[item.doc_type] ?? null}
                 removingId={removingId}
+                extractingDocId={extractingDocId}
                 onUpload={(file) => uploadFile(item.doc_type, file)}
                 onRemove={removeDocument}
+                onRetryExtract={(d) => void retryExtractionForDoc(d)}
               />
             ))}
           </div>
@@ -451,19 +672,55 @@ export function ApplicationDetailClient({
 
           {allRequiredUploaded ? (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              {skipNotice ? (
+                <p className="mb-2 text-center text-xs text-emerald-900/70">
+                  {skipNotice}
+                </p>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void processDocuments()}
                 disabled={isProcessing}
-                className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
+                className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
               >
                 {isProcessing ? "Processing…" : "Process Documents with AI →"}
               </button>
               <p className="mt-2 text-center text-xs text-emerald-900/70">
-                {processingLabel
-                  ? processingLabel
-                  : "Runs OCR + extraction on pending documents."}
+                Runs OCR + extraction on pending documents only. Retry failed
+                docs from each card.
               </p>
+              {isProcessing && extractionProgress ? (
+                <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50/90 p-3 text-left">
+                  <p className="text-sm font-medium text-blue-950 animate-pulse">
+                    {extractionProgress.message}
+                  </p>
+                  {extractionProgress.step != null ? (
+                    <>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100">
+                        <div
+                          className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              (extractionProgress.step /
+                                extractionProgress.stepTotal) *
+                                100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-blue-900/80">
+                        Step {extractionProgress.step} of{" "}
+                        {extractionProgress.stepTotal}
+                      </p>
+                    </>
+                  ) : null}
+                  <p className="text-xs text-black/50">
+                    Document {extractionProgress.docIndex} of{" "}
+                    {extractionProgress.docTotal}
+                  </p>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
@@ -484,16 +741,20 @@ function DocumentChecklistCard({
   uploading,
   progress,
   removingId,
+  extractingDocId,
   onUpload,
   onRemove,
+  onRetryExtract,
 }: {
   item: (typeof OCI_NEW_CHECKLIST)[number];
   document: Document | undefined;
   uploading: boolean;
   progress: number | null;
   removingId: string | null;
+  extractingDocId: string | null;
   onUpload: (file: File) => void;
   onRemove: (id: string) => void;
+  onRetryExtract: (doc: Document) => void;
 }) {
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -557,6 +818,49 @@ function DocumentChecklistCard({
                     View in Drive
                   </a>
                 </>
+              ) : null}
+            </div>
+          ) : null}
+          {uploaded && document ? (
+            <div className="mt-2 space-y-1 text-xs">
+              {extractingDocId === document.id ? (
+                <p className="flex items-center gap-1 font-medium text-blue-700 animate-pulse">
+                  <span aria-hidden>🔄</span> Extracting…
+                </p>
+              ) : shouldSkipAiExtraction(document.doc_type) &&
+                document.extraction_status === "done" ? (
+                <p className="font-medium text-black/45">
+                  <span aria-hidden>⏭️</span> Skipped
+                </p>
+              ) : document.extraction_status === "pending" ? (
+                <p className="font-medium text-black/45">
+                  <span aria-hidden>⏳</span> Not started
+                </p>
+              ) : document.extraction_status === "processing" ? (
+                <p className="font-medium text-blue-700 animate-pulse">
+                  <span aria-hidden>🔄</span> Extracting…
+                </p>
+              ) : document.extraction_status === "done" ? (
+                <p className="font-medium text-emerald-700">
+                  <span aria-hidden>✅</span> Extracted
+                </p>
+              ) : document.extraction_status === "failed" ? (
+                <div className="space-y-1">
+                  <p className="font-medium text-red-700">
+                    <span aria-hidden>❌</span> Failed
+                  </p>
+                  <p className="text-[11px] leading-snug text-red-700/90">
+                    Failed: {labelForFailureReason(document.failure_reason)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onRetryExtract(document)}
+                    disabled={extractingDocId === document.id}
+                    className="mt-1 inline-flex items-center rounded border border-red-200 bg-white px-2 py-0.5 text-[11px] font-medium text-red-800 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    ↺ Retry
+                  </button>
+                </div>
               ) : null}
             </div>
           ) : null}

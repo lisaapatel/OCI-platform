@@ -26,6 +26,7 @@ create table documents (
   drive_file_id text,
   drive_view_url text,
   extraction_status text default 'pending' check (extraction_status in ('pending', 'processing', 'done', 'failed')),
+  failure_reason text,
   uploaded_at timestamp with time zone default now()
 );
 

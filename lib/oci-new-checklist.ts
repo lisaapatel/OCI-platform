@@ -34,3 +34,8 @@ const SKIP_AI_EXTRACTION_DOC_TYPES = new Set(["applicant_photo", "photo"]);
 export function shouldSkipAiExtraction(docType: unknown): boolean {
   return SKIP_AI_EXTRACTION_DOC_TYPES.has(String(docType ?? "").trim());
 }
+
+export function getOciChecklistLabel(docType: string): string {
+  const key = docType.trim();
+  return OCI_NEW_CHECKLIST.find((i) => i.doc_type === key)?.label ?? docType;
+}

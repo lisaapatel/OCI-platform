@@ -32,6 +32,10 @@ function mapDocuments(rows: Record<string, unknown>[]): Document[] {
     drive_file_id: String(row.drive_file_id ?? ""),
     drive_view_url: String(row.drive_view_url ?? ""),
     extraction_status: row.extraction_status as Document["extraction_status"],
+    failure_reason:
+      row.failure_reason == null || row.failure_reason === ""
+        ? null
+        : String(row.failure_reason),
     uploaded_at: String(row.uploaded_at ?? ""),
   }));
 }
