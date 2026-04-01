@@ -92,7 +92,7 @@ describe("Review page", () => {
 
   test("Test 1: Page renders document tabs for each uploaded document", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -114,7 +114,7 @@ describe("Review page", () => {
 
   test("Test 2: Extracted fields display correctly with their values", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -129,7 +129,7 @@ describe("Review page", () => {
 
   test("Test 3: Field values are editable — typing in a field updates its value", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -147,7 +147,7 @@ describe("Review page", () => {
 
   test("Test 4: Flag button toggles a field to flagged state with red styling", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -167,12 +167,12 @@ describe("Review page", () => {
 
     const card2 = valueInput.closest("[data-flagged]");
     expect(card2?.getAttribute("data-flagged")).toBe("true");
-    expect(valueInput).toHaveClass("border-red-500");
+    expect(valueInput).toHaveClass("border-red-400");
   });
 
   test("Test 5: Flag note input appears when a field is flagged", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -201,7 +201,7 @@ describe("Review page", () => {
       baseFields[1],
     ];
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -218,7 +218,7 @@ describe("Review page", () => {
 
   test("Test 7: Mark as Ready to Submit button is enabled when zero fields are flagged", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -235,7 +235,7 @@ describe("Review page", () => {
 
   test("Test 8: Saving a field edit calls PATCH /api/fields/[id] with correct data", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -264,7 +264,7 @@ describe("Review page", () => {
 
   test("Test 9: PDF viewer uses Drive preview URL", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -282,7 +282,7 @@ describe("Review page", () => {
 
   test("Test 10: Flag note blur sends is_flagged and flag_note", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient
@@ -312,7 +312,7 @@ describe("Review page", () => {
 
   test("Test 11: Mark as Ready redirects to fill page on success", async () => {
     const { ReviewPageClient } = await import(
-      "../../app/applications/[id]/review/review-page-client"
+      "../../app/(main)/applications/[id]/review/review-page-client"
     );
     render(
       <ReviewPageClient

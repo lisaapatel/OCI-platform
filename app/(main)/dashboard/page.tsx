@@ -48,7 +48,7 @@ function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
         : "Passport Renewal";
 
   return (
-    <span className="inline-flex items-center rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs font-medium text-black/80">
+    <span className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1e3a5f]">
       {label}
     </span>
   );
@@ -59,29 +59,29 @@ function StatusBadge({ status }: { status: Status }) {
     status === "docs_pending"
       ? {
           label: "Docs Pending",
-          className: "bg-zinc-100 text-zinc-700 ring-zinc-200",
+          className: "bg-gray-100 text-gray-600 ring-gray-200",
         }
       : status === "ready_for_review"
         ? {
             label: "Ready for Review",
-            className: "bg-amber-100 text-amber-800 ring-amber-200",
+            className: "bg-yellow-100 text-yellow-700 ring-yellow-200",
           }
         : status === "ready_to_submit"
           ? {
               label: "Ready to Submit",
-              className: "bg-blue-100 text-blue-800 ring-blue-200",
+              className: "bg-blue-100 text-blue-700 ring-blue-200",
             }
           : status === "submitted"
             ? {
                 label: "Submitted",
-                className: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+                className: "bg-green-100 text-green-700 ring-green-200",
               }
-            : { label: "On Hold", className: "bg-red-100 text-red-800 ring-red-200" };
+            : { label: "On Hold", className: "bg-red-100 text-red-600 ring-red-200" };
 
   return (
     <span
       className={clsx(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
         className
       )}
     >
@@ -156,14 +156,16 @@ export default function DashboardPage() {
     <div className="flex flex-1 flex-col gap-6 p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-black/60">
+          <h1 className="text-2xl font-bold tracking-tight text-[#1e293b]">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-[#64748b]">
             Review and manage all applications.
           </p>
         </div>
         <Link
           href="/applications/new"
-          className="inline-flex h-10 items-center justify-center rounded-md bg-black px-4 text-sm font-medium text-white shadow-sm hover:bg-black/90"
+          className="inline-flex h-10 items-center justify-center rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-blue-700"
         >
           New Application
         </Link>
@@ -189,8 +191,8 @@ export default function DashboardPage() {
         <StatCard testId="stat-submitted" label="Submitted" value={stats.submitted} />
       </div>
 
-      <div className="rounded-xl border border-black/10 bg-white">
-        <div className="flex flex-col gap-3 border-b border-black/10 p-4 md:flex-row md:items-center md:justify-between">
+      <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-[#e2e8f0] p-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
             <div className="flex-1">
               <label className="sr-only" htmlFor="search">
@@ -201,7 +203,7 @@ export default function DashboardPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search customer name…"
-                className="h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none ring-black/10 placeholder:text-black/40 focus:ring-2"
+                className="h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
               />
             </div>
 
@@ -214,7 +216,7 @@ export default function DashboardPage() {
                   id="status"
                   value={status}
                   onChange={(e) => setStatus(e.target.value as any)}
-                  className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm outline-none ring-black/10 focus:ring-2"
+                  className="h-10 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
                 >
                   <option value="">All statuses</option>
                   <option value="docs_pending">Docs Pending</option>
@@ -233,7 +235,7 @@ export default function DashboardPage() {
                   id="serviceType"
                   value={serviceType}
                   onChange={(e) => setServiceType(e.target.value as any)}
-                  className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm outline-none ring-black/10 focus:ring-2"
+                  className="h-10 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
                 >
                   <option value="">All services</option>
                   <option value="oci_new">OCI New</option>
@@ -244,14 +246,14 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="text-sm text-black/50">
+          <div className="text-sm text-[#64748b]">
             {filtered.length} of {applications.length}
           </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-black/60">
+            <thead className="bg-[#f8fafc] text-xs font-semibold uppercase tracking-wide text-[#64748b]">
               <tr>
                 <th className="px-4 py-3">App #</th>
                 <th className="px-4 py-3">Customer Name</th>
@@ -261,23 +263,26 @@ export default function DashboardPage() {
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-black/5">
+            <tbody className="divide-y divide-[#e2e8f0]">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-black/50" colSpan={6}>
+                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={6}>
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-black/50" colSpan={6}>
+                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={6}>
                     No applications found.
                   </td>
                 </tr>
               ) : (
                 filtered.map((app) => (
-                  <tr key={app.id} className="hover:bg-zinc-50/60">
-                    <td className="px-4 py-3 font-medium text-black/80">
+                  <tr
+                    key={app.id}
+                    className="transition-colors duration-150 hover:bg-[#eff6ff]/50"
+                  >
+                    <td className="px-4 py-3 font-medium text-[#1e293b]">
                       {app.app_number}
                     </td>
                     <td className="px-4 py-3">{app.customer_name}</td>
@@ -287,13 +292,13 @@ export default function DashboardPage() {
                     <td className="px-4 py-3">
                       <StatusBadge status={app.status} />
                     </td>
-                    <td className="px-4 py-3 text-black/70">
+                    <td className="px-4 py-3 text-[#64748b]">
                       {formatCreatedAt(app.created_at)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/applications/${app.id}`}
-                        className="inline-flex h-9 items-center justify-center rounded-md border border-black/10 bg-white px-3 text-sm font-medium text-black hover:bg-zinc-50"
+                        className="inline-flex h-9 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:bg-[#eff6ff]"
                       >
                         View
                       </Link>
@@ -320,11 +325,13 @@ function StatCard({
 }) {
   return (
     <div
-      className="rounded-xl border border-black/10 bg-white p-4"
+      className="rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#2563eb] bg-white p-4 shadow-sm transition-shadow duration-150 hover:shadow-md"
       data-testid={testId}
     >
-      <div className="text-xs font-medium text-black/55">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="text-xs font-medium text-[#64748b]">{label}</div>
+      <div className="mt-2 text-2xl font-bold tabular-nums text-[#1e293b]">
+        {value}
+      </div>
     </div>
   );
 }

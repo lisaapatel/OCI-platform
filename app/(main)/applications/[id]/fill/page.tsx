@@ -1,6 +1,10 @@
 import { format, isValid, parseISO } from "date-fns";
 import { notFound } from "next/navigation";
 
+import {
+  dedupeExtractedFieldsLatest,
+  type ExtractedFieldRow,
+} from "@/lib/extracted-fields-dedupe";
 import type { ExtractedField } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -34,9 +38,12 @@ export default async function FormFillPage({
   const { data: fields } = await supabaseAdmin
     .from("extracted_fields")
     .select("*")
-    .eq("application_id", id);
+    .eq("application_id", id)
+    .order("updated_at", { ascending: false });
 
-  const extracted = (fields ?? []) as ExtractedField[];
+  const extracted = dedupeExtractedFieldsLatest(
+    (fields ?? []) as ExtractedFieldRow[]
+  );
 
   let lastReviewedIso: string | null = null;
   for (const f of extracted) {

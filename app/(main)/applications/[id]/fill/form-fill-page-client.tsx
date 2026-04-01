@@ -67,26 +67,26 @@ export function FormFillPageClient({
   }, []);
 
   return (
-    <div className="fill-print-root mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="no-print border-b border-black/10 pb-5">
+    <div className="fill-print-root mx-auto flex min-h-screen max-w-4xl flex-col gap-8 bg-[#f8fafc] px-4 py-6 sm:px-6 lg:px-8">
+      <header className="no-print rounded-xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <Link
               href={`/applications/${applicationId}/review`}
-              className="text-sm font-medium text-black/55 hover:text-black"
+              className="text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:text-blue-700"
             >
               Back to Review
             </Link>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-black sm:text-3xl">
-              <span className="text-black">{appNumber}</span>
-              <span className="mx-2 font-normal text-black/40">·</span>
-              <span className="font-medium text-black">{customerName}</span>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1e293b] sm:text-3xl">
+              <span>{appNumber}</span>
+              <span className="mx-2 font-normal text-[#64748b]">·</span>
+              <span>{customerName}</span>
             </h1>
           </div>
           <button
             type="button"
             onClick={() => window.print()}
-            className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-black/15 bg-white px-4 text-sm font-medium hover:bg-zinc-50"
+            className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-4 text-sm font-medium text-[#1e293b] transition-colors duration-150 hover:bg-[#eff6ff]"
           >
             Print
           </button>
@@ -94,18 +94,18 @@ export function FormFillPageClient({
       </header>
 
       <div
-        className="fill-print-summary no-print rounded-xl border border-black/10 bg-zinc-50 p-4 text-sm"
+        className="fill-print-summary no-print rounded-xl border border-[#e2e8f0] bg-white p-4 text-sm shadow-sm"
         data-testid="form-fill-summary"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <span className="text-black/55">Total fields</span>
+            <span className="text-[#64748b]">Total fields</span>
             <div className="text-lg font-semibold" data-testid="summary-total">
               {totalFields}
             </div>
           </div>
           <div>
-            <span className="text-black/55">Fields with values</span>
+            <span className="text-[#64748b]">Fields with values</span>
             <div
               className="text-lg font-semibold"
               data-testid="summary-with-values"
@@ -114,11 +114,11 @@ export function FormFillPageClient({
             </div>
           </div>
           <div>
-            <span className="text-black/55">Flagged fields</span>
+            <span className="text-[#64748b]">Flagged fields</span>
             <div
               className={clsx(
                 "text-lg font-semibold",
-                flaggedCount > 0 && "text-red-600"
+                flaggedCount > 0 && "text-[#dc2626]"
               )}
               data-testid="summary-flagged"
             >
@@ -126,9 +126,9 @@ export function FormFillPageClient({
             </div>
           </div>
           <div>
-            <span className="text-black/55">Last reviewed</span>
+            <span className="text-[#64748b]">Last reviewed</span>
             <div
-              className="text-lg font-semibold text-black"
+              className="text-lg font-semibold text-[#1e293b]"
               data-testid="summary-last-reviewed"
             >
               {lastReviewedLabel}
@@ -153,7 +153,7 @@ export function FormFillPageClient({
       <div className="flex flex-col gap-10">
         {FORM_FILL_SECTIONS.map((section) => (
           <section key={section.title} className="space-y-4">
-            <h2 className="fill-print-section-title text-lg font-semibold text-black">
+            <h2 className="fill-print-section-title border-b border-blue-200 pb-2 text-lg font-bold text-[#1e3a5f]">
               {section.title}
             </h2>
             <div className="space-y-4">
@@ -168,17 +168,19 @@ export function FormFillPageClient({
                 return (
                   <div
                     key={stableId}
-                    className="fill-field-card flex flex-col gap-1 rounded-xl border border-black/10 bg-white p-4 shadow-sm print:grid print:grid-cols-[minmax(132px,32%)_minmax(0,1fr)] print:items-start print:gap-x-6 print:gap-y-1 print:shadow-none"
+                    className="fill-field-card flex flex-col gap-1 rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm transition-shadow duration-150 hover:shadow-md print:grid print:grid-cols-[minmax(132px,32%)_minmax(0,1fr)] print:items-start print:gap-x-6 print:gap-y-1 print:shadow-none"
                     data-field-key={matchedKey}
                   >
-                    <span className="text-xs font-medium text-black/50">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">
                       {def.label}
                     </span>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <p
                         className={clsx(
                           "min-w-0 flex-1 text-lg font-medium leading-snug tracking-tight sm:text-xl",
-                          hasValue ? "text-black" : "italic text-red-600"
+                          hasValue
+                            ? "text-[#1e293b]"
+                            : "italic text-[#dc2626]"
                         )}
                         data-empty={!hasValue ? "true" : "false"}
                       >
@@ -187,7 +189,7 @@ export function FormFillPageClient({
                       {hasValue ? (
                         <button
                           type="button"
-                          className="no-print shrink-0 rounded-md border border-black/15 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-50"
+                          className="no-print shrink-0 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-3 py-1.5 text-xs font-semibold text-[#2563eb] transition-colors duration-150 hover:bg-blue-100"
                           onClick={() => void copyValue(display!, stableId)}
                         >
                           {isCopied ? "Copied!" : "Copy"}
@@ -195,7 +197,7 @@ export function FormFillPageClient({
                       ) : null}
                     </div>
                     {row?.is_flagged ? (
-                      <div className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-950 ring-1 ring-amber-200 print:ring-amber-300">
+                      <div className="mt-2 border-l-4 border-[#d97706] bg-yellow-50 px-3 py-2 text-sm text-amber-950 print:border-amber-400">
                         <span className="mr-1.5" aria-hidden>
                           ⚠️
                         </span>

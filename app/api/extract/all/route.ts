@@ -93,6 +93,13 @@ export async function POST(req: Request) {
           docType: doc.doc_type,
         });
 
+        const { error: delErr } = await supabaseAdmin
+          .from("extracted_fields")
+          .delete()
+          .eq("application_id", application_id)
+          .eq("source_doc_type", doc.doc_type);
+        if (delErr) throw new Error(delErr.message);
+
         for (const [field_name, field_value] of Object.entries(extracted)) {
           const { error: insErr } = await supabaseAdmin
             .from("extracted_fields")

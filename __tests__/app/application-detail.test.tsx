@@ -79,7 +79,7 @@ describe("Application detail", () => {
 
   test("Test 1: Page renders customer name, app number, service type badge, status badge", async () => {
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
@@ -94,7 +94,7 @@ describe("Application detail", () => {
 
   test("Test 2: Document checklist shows all 6 required OCI documents", async () => {
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
@@ -125,7 +125,7 @@ describe("Application detail", () => {
       },
     ];
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
@@ -172,7 +172,7 @@ describe("Application detail", () => {
       },
     ];
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
@@ -205,7 +205,7 @@ describe("Application detail", () => {
     }));
 
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     const { unmount } = render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
@@ -227,7 +227,7 @@ describe("Application detail", () => {
 
   test("Test 6: Open Google Drive Folder button has correct drive URL as href", async () => {
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
@@ -242,7 +242,7 @@ describe("Application detail", () => {
 
   test("Test 7: Status dropdown allows changing status", async () => {
     const { ApplicationDetailClient } = await import(
-      "../../app/applications/[id]/application-detail-client"
+      "../../app/(main)/applications/[id]/application-detail-client"
     );
     render(
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />

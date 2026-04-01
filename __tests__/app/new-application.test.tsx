@@ -38,7 +38,7 @@ describe("New Application page", () => {
   });
 
   test("Test 1: Form renders all required fields — customer name, email, phone, service type selector", async () => {
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe("New Application page", () => {
   });
 
   test("Test 2: OCI New and OCI Renewal options are selectable in service type", async () => {
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     const select = screen.getByLabelText(/service type/i);
@@ -66,7 +66,7 @@ describe("New Application page", () => {
   });
 
   test("Test 3: Passport Renewal shows as disabled/coming soon", async () => {
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     const opt = screen.getByRole("option", {
@@ -77,7 +77,7 @@ describe("New Application page", () => {
   });
 
   test("Test 4: Submit button is disabled when customer name is empty", async () => {
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     const submit = screen.getByRole("button", { name: /create application/i });
@@ -97,7 +97,7 @@ describe("New Application page", () => {
     });
     (global.fetch as jest.Mock).mockReturnValue(fetchPromise);
 
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     const user = userEvent.setup();
@@ -125,7 +125,7 @@ describe("New Application page", () => {
     });
     (global.fetch as jest.Mock).mockReturnValue(fetchPromise);
 
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     const user = userEvent.setup();
@@ -150,7 +150,7 @@ describe("New Application page", () => {
       json: async () => ({ error: "Failed to create application: boom" }),
     });
 
-    const Page = (await import("../../app/applications/new/page")).default;
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
     const user = userEvent.setup();

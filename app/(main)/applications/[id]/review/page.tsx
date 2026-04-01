@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import {
+  dedupeExtractedFieldsLatest,
+  type ExtractedFieldRow,
+} from "@/lib/extracted-fields-dedupe";
 import type { ExtractedField } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -31,7 +35,7 @@ export default async function ReviewPage({
     .from("extracted_fields")
     .select("*")
     .eq("application_id", id)
-    .order("field_name");
+    .order("updated_at", { ascending: false });
 
   const documents = (docs ?? []).map((row) => ({
     id: String(row.id),
@@ -41,13 +45,18 @@ export default async function ReviewPage({
     drive_file_id: String(row.drive_file_id ?? ""),
   }));
 
-  const extracted = (fields ?? []) as ExtractedField[];
+  const extracted = dedupeExtractedFieldsLatest(
+    (fields ?? []) as ExtractedFieldRow[]
+  );
 
   if (documents.length === 0) {
     return (
       <div className="p-6">
-        <p className="text-sm text-black/70">No uploaded documents to review.</p>
-        <Link href={`/applications/${id}`} className="mt-2 inline-block text-sm underline">
+        <p className="text-sm text-[#64748b]">No uploaded documents to review.</p>
+        <Link
+          href={`/applications/${id}`}
+          className="mt-2 inline-block text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:text-blue-700"
+        >
           Back
         </Link>
       </div>

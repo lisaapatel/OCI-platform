@@ -43,7 +43,7 @@ function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
         ? "OCI Renewal"
         : "Passport Renewal";
   return (
-    <span className="inline-flex items-center rounded-full border border-black/10 bg-white px-2.5 py-1 text-xs font-medium text-black/80">
+    <span className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1e3a5f]">
       {label}
     </span>
   );
@@ -54,28 +54,28 @@ function StatusBadge({ status }: { status: Status }) {
     status === "docs_pending"
       ? {
           label: "Docs Pending",
-          className: "bg-zinc-100 text-zinc-700 ring-zinc-200",
+          className: "bg-gray-100 text-gray-600 ring-gray-200",
         }
       : status === "ready_for_review"
         ? {
             label: "Ready for Review",
-            className: "bg-amber-100 text-amber-800 ring-amber-200",
+            className: "bg-yellow-100 text-yellow-700 ring-yellow-200",
           }
         : status === "ready_to_submit"
           ? {
               label: "Ready to Submit",
-              className: "bg-blue-100 text-blue-800 ring-blue-200",
+              className: "bg-blue-100 text-blue-700 ring-blue-200",
             }
           : status === "submitted"
             ? {
                 label: "Submitted",
-                className: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+                className: "bg-green-100 text-green-700 ring-green-200",
               }
-            : { label: "On Hold", className: "bg-red-100 text-red-800 ring-red-200" };
+            : { label: "On Hold", className: "bg-red-100 text-red-600 ring-red-200" };
   return (
     <span
       className={clsx(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset",
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
         className
       )}
     >
@@ -544,30 +544,30 @@ export function ApplicationDetailClient({
 
   return (
     <div className="flex flex-1 flex-col gap-8 p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md sm:flex-row sm:items-start sm:justify-between">
         <div>
           <Link
             href="/dashboard"
-            className="text-sm font-medium text-black/55 hover:text-black"
+            className="text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:text-blue-700"
           >
             ← Dashboard
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1e293b]">
             {application.app_number}{" "}
-            <span className="font-normal text-black/60">·</span>{" "}
+            <span className="font-normal text-[#64748b]">·</span>{" "}
             {application.customer_name}
           </h1>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-black/70">
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#64748b]">
             {application.customer_email ? (
               <span>{application.customer_email}</span>
             ) : (
-              <span className="text-black/40">No email</span>
+              <span className="text-[#94a3b8]">No email</span>
             )}
             <span className="hidden sm:inline">·</span>
             {application.customer_phone ? (
               <span>{application.customer_phone}</span>
             ) : (
-              <span className="text-black/40">No phone</span>
+              <span className="text-[#94a3b8]">No phone</span>
             )}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -581,13 +581,13 @@ export function ApplicationDetailClient({
               href={application.drive_folder_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-10 items-center justify-center rounded-md border border-black/15 bg-white px-4 text-sm font-medium hover:bg-zinc-50"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-4 text-sm font-medium text-[#1e293b] transition-colors duration-150 hover:bg-[#eff6ff]"
             >
               Open Google Drive Folder
             </a>
           ) : null}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-black/55" htmlFor="status">
+            <label className="text-xs font-medium text-[#64748b]" htmlFor="status">
               Status
             </label>
             <select
@@ -596,7 +596,7 @@ export function ApplicationDetailClient({
               onChange={(e) =>
                 patchApplication({ status: e.target.value as Status })
               }
-              className="h-10 min-w-[200px] rounded-md border border-black/10 bg-white px-3 text-sm outline-none ring-black/10 focus:ring-2"
+              className="h-10 min-w-[200px] rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
             >
               <option value="docs_pending">Docs Pending</option>
               <option value="ready_for_review">Ready for Review</option>
@@ -608,21 +608,21 @@ export function ApplicationDetailClient({
         </div>
       </div>
 
-      <section className="rounded-xl border border-black/10 bg-white p-6">
-        <h2 className="text-sm font-semibold text-black">Notes</h2>
-        <p className="mt-1 text-xs text-black/50">Saves when you click away.</p>
+      <section className="rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
+        <h2 className="text-sm font-semibold text-[#1e3a5f]">Notes</h2>
+        <p className="mt-1 text-xs text-[#64748b]">Saves when you click away.</p>
         <textarea
           value={notesDraft}
           onChange={(e) => setNotesDraft(e.target.value)}
           onBlur={onNotesBlur}
           rows={4}
-          className="mt-3 w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none ring-black/10 focus:ring-2"
+          className="mt-3 w-full resize-y rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
           placeholder="Internal team notes…"
         />
       </section>
 
       {patchError ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-[#dc2626]">
           {patchError}
         </div>
       ) : null}
@@ -630,12 +630,12 @@ export function ApplicationDetailClient({
       {showDocumentChecklist ? (
         <section className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">
+            <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
               {application.service_type === "oci_new"
                 ? "OCI New Application — Document checklist"
                 : "Document checklist (OCI renewal)"}
             </h2>
-            <p className="mt-1 text-sm text-black/60">
+            <p className="mt-1 text-sm text-[#64748b]">
               Upload each required document. Optional items can be skipped.
             </p>
           </div>
@@ -657,22 +657,22 @@ export function ApplicationDetailClient({
             ))}
           </div>
 
-          <div className="rounded-xl border border-black/10 bg-white p-4">
+          <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm transition-shadow duration-150 hover:shadow-md">
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="font-medium text-black">
+              <span className="font-medium text-[#1e293b]">
                 {requiredUploaded} of {OCI_NEW_REQUIRED_COUNT} required documents
                 uploaded
               </span>
-              <span className="text-black/50">
+              <span className="text-[#64748b]">
                 {Math.round(
                   (requiredUploaded / OCI_NEW_REQUIRED_COUNT) * 100
                 )}
                 %
               </span>
             </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#eff6ff]">
               <div
-                className="h-full rounded-full bg-emerald-500 transition-all"
+                className="h-full rounded-full bg-[#16a34a] transition-all"
                 style={{
                   width: `${Math.min(
                     100,
@@ -684,9 +684,9 @@ export function ApplicationDetailClient({
           </div>
 
           {allRequiredUploaded ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="rounded-xl border border-[#e2e8f0] bg-[#eff6ff] p-4 shadow-sm">
               {skipNotice ? (
-                <p className="mb-2 text-center text-xs text-emerald-900/70">
+                <p className="mb-2 text-center text-xs text-[#1e3a5f]/80">
                   {skipNotice}
                 </p>
               ) : null}
@@ -694,11 +694,11 @@ export function ApplicationDetailClient({
                 type="button"
                 onClick={() => void processDocuments()}
                 disabled={isProcessing}
-                className="w-full rounded-lg bg-emerald-700 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
+                className="w-full rounded-lg bg-[#1e3a5f] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[#2d4d73] disabled:opacity-60"
               >
                 {isProcessing ? "Processing…" : "Process Documents with AI →"}
               </button>
-              <p className="mt-2 text-center text-xs text-emerald-900/70">
+              <p className="mt-2 text-center text-xs text-[#64748b]">
                 Runs OCR + extraction on pending documents only. Retry failed
                 docs from each card.
               </p>
@@ -738,7 +738,7 @@ export function ApplicationDetailClient({
           ) : null}
         </section>
       ) : (
-        <section className="rounded-xl border border-black/10 bg-zinc-50 p-6 text-sm text-black/70">
+        <section className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-6 text-sm text-[#64748b]">
           Document checklist is available for OCI New and OCI Renewal
           applications. This application uses a different service type; upload
           flows for it are not configured here yet.
@@ -787,11 +787,18 @@ function DocumentChecklistCard({
   const uploaded = Boolean(document);
 
   return (
-    <div className="rounded-xl border border-black/10 bg-white p-4 shadow-sm">
+    <div
+      className={clsx(
+        "rounded-xl border p-4 shadow-sm transition-shadow duration-150 hover:shadow-md",
+        uploaded
+          ? "border-green-200 bg-green-50"
+          : "border-[#e2e8f0] bg-white"
+      )}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-black">{item.label}</h3>
+            <h3 className="text-sm font-semibold text-[#1e293b]">{item.label}</h3>
             {item.required ? (
               <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700">
                 Required
@@ -826,7 +833,7 @@ function DocumentChecklistCard({
                     href={document.drive_view_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-700 underline underline-offset-2"
+                    className="text-[#2563eb] underline-offset-2 transition-colors duration-150 hover:text-blue-700"
                   >
                     View in Drive
                   </a>
@@ -884,7 +891,7 @@ function DocumentChecklistCard({
               type="button"
               disabled={removingId === document.id}
               onClick={() => onRemove(document.id)}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-[#dc2626] transition-colors duration-150 hover:bg-red-50 disabled:opacity-50"
             >
               {removingId === document.id ? "Removing…" : "Remove"}
             </button>
@@ -894,7 +901,7 @@ function DocumentChecklistCard({
               type="button"
               disabled={uploading}
               onClick={() => open()}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-black px-3 text-sm font-medium text-white hover:bg-black/90 disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50"
             >
               {uploading ? "Uploading…" : "Upload"}
             </button>
@@ -904,15 +911,15 @@ function DocumentChecklistCard({
       <div
         {...getRootProps()}
         className={clsx(
-          "mt-3 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm transition-colors",
+          "mt-3 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm transition-colors duration-150",
           isDragActive
-            ? "border-black/40 bg-zinc-50"
-            : "border-black/15 bg-zinc-50/50 hover:border-black/25",
+            ? "border-[#2563eb] bg-[#eff6ff]"
+            : "border-[#e2e8f0] bg-white hover:border-[#2563eb]/40",
           uploading && "pointer-events-none opacity-50"
         )}
       >
         <input {...getInputProps()} />
-        <p className="text-black/70">
+        <p className="text-[#64748b]">
           {isDragActive
             ? "Drop the file here…"
             : "Drag and drop a file here, or use Upload"}

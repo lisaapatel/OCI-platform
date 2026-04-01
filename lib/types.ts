@@ -53,4 +53,7 @@ export interface ExtractedField {
   flag_note: string;
   reviewed_by: string;
   reviewed_at: string;
+  /** Present on DB rows; used for latest-wins deduplication */
+  updated_at?: string;
+  created_at?: string;
 }

@@ -121,8 +121,8 @@ describe("project structure", () => {
       "lib/supabase.ts",
       "lib/google-drive.ts",
       "lib/claude.ts",
-      "app/dashboard/page.tsx",
-      "app/applications/new/page.tsx",
+      "app/(main)/dashboard/page.tsx",
+      "app/(main)/applications/new/page.tsx",
       "app/login/page.tsx",
       ".env.local",
     ];

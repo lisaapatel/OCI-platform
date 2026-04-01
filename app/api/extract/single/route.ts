@@ -203,6 +203,7 @@ async function runExtraction(args: {
   const field_data: { field_name: string; field_value: string | null }[] = [];
 
   try {
+    // Replace all fields for this doc type so re-extraction never leaves stale rows.
     const { error: delErr } = await supabaseAdmin
       .from("extracted_fields")
       .delete()

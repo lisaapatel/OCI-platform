@@ -74,7 +74,7 @@ describe("Form fill page", () => {
 
   test("Test 1: All field sections render with portal-aligned titles", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     render(
       <FormFillPageClient
@@ -97,7 +97,7 @@ describe("Form fill page", () => {
 
   test("Test 2: Field values display in large readable text", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     render(
       <FormFillPageClient
@@ -115,7 +115,7 @@ describe("Form fill page", () => {
 
   test("Test 3: Copy button copies field value to clipboard", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     render(
       <FormFillPageClient
@@ -131,7 +131,7 @@ describe("Form fill page", () => {
 
   test("Test 4: Flagged fields show yellow warning banner with the flag note", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     const fields = buildFields({
       first_name: { value: "X", flagged: true, note: "Verify spelling" },
@@ -146,7 +146,7 @@ describe("Form fill page", () => {
 
   test("Test 5: Empty/null fields show — Not found — in red", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     const fields = buildFields({
       first_name: { value: "" },
@@ -163,7 +163,7 @@ describe("Form fill page", () => {
 
   test("Test 6: Summary box shows correct counts and last reviewed", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     const fields = buildFields({
       first_name: { value: "", flagged: false },
@@ -187,7 +187,7 @@ describe("Form fill page", () => {
 
   test("Test 7: Page is print-friendly — print styles hide chrome", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     const { container } = render(
       <>
@@ -214,7 +214,7 @@ describe("Form fill page", () => {
 
   test("Test 8: Header shows app number, customer, and Back to Review", async () => {
     const { FormFillPageClient } = await import(
-      "../../app/applications/[id]/fill/form-fill-page-client"
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     render(
       <FormFillPageClient

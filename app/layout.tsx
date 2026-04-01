@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OCI filler",
+  title: "OCI Platform",
   description: "OCI application helper",
 };
 
