@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDropzone } from "react-dropzone";
 
 import { coerceExtractionStatus } from "@/lib/document-utils";
@@ -13,6 +13,7 @@ import {
   OCI_NEW_REQUIRED_COUNT,
   shouldSkipAiExtraction,
 } from "@/lib/oci-new-checklist";
+import { PORTAL_MAX_BYTES, PORTAL_MAX_KB } from "@/lib/portal-constants";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
 function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
@@ -29,11 +30,54 @@ function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
         ? null
         : String(row.failure_reason),
     uploaded_at: String(row.uploaded_at ?? ""),
+    compressed_drive_file_id:
+      row.compressed_drive_file_id == null ||
+      row.compressed_drive_file_id === ""
+        ? null
+        : String(row.compressed_drive_file_id),
+    compressed_drive_url:
+      row.compressed_drive_url == null || row.compressed_drive_url === ""
+        ? null
+        : String(row.compressed_drive_url),
+    compressed_size_bytes:
+      row.compressed_size_bytes == null || row.compressed_size_bytes === ""
+        ? null
+        : Number(row.compressed_size_bytes),
   };
 }
 
 type ServiceType = Application["service_type"];
 type Status = Application["status"];
+
+type PortalPrepDoc = {
+  id: string;
+  file_name: string | null;
+  drive_file_id: string | null;
+  drive_view_url: string | null;
+  size_bytes: number | null;
+  mime_type: string | null;
+  meta_error: string | null;
+  ready_for_portal: boolean;
+  compressed_drive_file_id?: string | null;
+  compressed_drive_url?: string | null;
+  compressed_size_bytes?: number | null;
+};
+
+function formatKb(bytes: number | null): string {
+  if (bytes == null || !Number.isFinite(bytes)) return "—";
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function portalNeedsCompress(row: PortalPrepDoc): boolean {
+  if (!row.drive_file_id || row.size_bytes == null) return false;
+  if (row.size_bytes <= PORTAL_MAX_BYTES) return false;
+  if (
+    row.compressed_size_bytes != null &&
+    row.compressed_size_bytes <= PORTAL_MAX_BYTES
+  )
+    return false;
+  return true;
+}
 
 function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
   const label =
@@ -114,6 +158,15 @@ export function ApplicationDetailClient({
   const pollRef = useRef<number | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
+  const [portalPrep, setPortalPrep] = useState<{
+    documents: PortalPrepDoc[];
+    summary: { ready: number; total: number };
+  } | null>(null);
+  const [portalPrepLoading, setPortalPrepLoading] = useState(false);
+  const [compressingDriveIds, setCompressingDriveIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [compressAllRunning, setCompressAllRunning] = useState(false);
 
   const docByType = useMemo(() => {
     const m = new Map<string, Document>();
@@ -155,6 +208,91 @@ export function ApplicationDetailClient({
     };
     return (list.documents ?? []).map(normalizeDocumentFromApi);
   }, [application.id]);
+
+  const loadPortalPrep = useCallback(async () => {
+    if (!application.id) return;
+    setPortalPrepLoading(true);
+    try {
+      const res = await fetch(
+        `/api/documents/portal-prep?application_id=${encodeURIComponent(application.id)}`
+      );
+      const data = (await res.json()) as {
+        error?: string;
+        documents?: PortalPrepDoc[];
+        summary?: { ready: number; total: number };
+      };
+      if (!res.ok) {
+        setPortalPrep(null);
+        console.error("portal-prep failed:", data.error);
+        return;
+      }
+      setPortalPrep({
+        documents: data.documents ?? [],
+        summary: data.summary ?? { ready: 0, total: 0 },
+      });
+    } finally {
+      setPortalPrepLoading(false);
+    }
+  }, [application.id]);
+
+  useEffect(() => {
+    if (documents.length === 0) {
+      setPortalPrep(null);
+      return;
+    }
+    void loadPortalPrep();
+  }, [documents, loadPortalPrep]);
+
+  const compressPortalFile = useCallback(
+    async (driveFileId: string) => {
+      if (!driveFileId) return;
+      setPatchError(null);
+      setCompressingDriveIds((p) => ({ ...p, [driveFileId]: true }));
+      try {
+        const res = await fetch("/api/documents/compress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            application_id: application.id,
+            drive_file_id: driveFileId,
+            target_size_kb: 450,
+          }),
+        });
+        const data = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          throw new Error(data.error ?? "Compression failed");
+        }
+        const list = await loadDocuments();
+        setDocuments(list);
+        await loadPortalPrep();
+      } catch (e) {
+        setPatchError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setCompressingDriveIds((p) => {
+          const next = { ...p };
+          delete next[driveFileId];
+          return next;
+        });
+      }
+    },
+    [application.id, loadDocuments, loadPortalPrep]
+  );
+
+  const compressAllOversized = useCallback(async () => {
+    if (!portalPrep?.documents.length) return;
+    const targets = portalPrep.documents.filter(portalNeedsCompress);
+    if (!targets.length) return;
+    setCompressAllRunning(true);
+    setPatchError(null);
+    try {
+      for (const d of targets) {
+        if (!d.drive_file_id) continue;
+        await compressPortalFile(d.drive_file_id);
+      }
+    } finally {
+      setCompressAllRunning(false);
+    }
+  }, [portalPrep, compressPortalFile]);
 
   const extractSingleStreaming = useCallback(
     async (
@@ -542,6 +680,126 @@ export function ApplicationDetailClient({
     }
   }
 
+  function renderGovtPortalPrepCard() {
+    if (documents.length === 0) return null;
+    return (
+      <section className="rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
+              Ready for Govt Portal Upload
+            </h2>
+            <p className="mt-1 text-sm text-[#64748b]">
+              The OCI portal accepts PDFs under {PORTAL_MAX_KB}KB. Use
+              compression for oversized scans; copies are saved in Drive →{" "}
+              <span className="font-medium text-[#1e293b]">Compressed</span>.
+            </p>
+          </div>
+          {portalPrep &&
+          portalPrep.documents.some(portalNeedsCompress) ? (
+            <button
+              type="button"
+              disabled={compressAllRunning || portalPrepLoading}
+              onClick={() => void compressAllOversized()}
+              className="mt-2 inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#2d4d73] disabled:opacity-50 sm:mt-0"
+            >
+              {compressAllRunning ? "Compressing…" : "Compress All"}
+            </button>
+          ) : null}
+        </div>
+
+        <p className="mt-4 text-sm font-medium text-[#1e293b]">
+          {portalPrepLoading
+            ? "Loading file sizes from Google Drive…"
+            : portalPrep
+              ? `${portalPrep.summary.ready} of ${portalPrep.summary.total} documents ready for govt portal upload`
+              : "—"}
+        </p>
+
+        {portalPrep && !portalPrepLoading ? (
+          <ul className="mt-4 space-y-3">
+            {portalPrep.documents.map((row) => {
+              const docRow = documents.find((d) => d.id === row.id);
+              const busy = Boolean(
+                row.drive_file_id && compressingDriveIds[row.drive_file_id]
+              );
+              const needs = portalNeedsCompress(row);
+              return (
+                <li
+                  key={row.id}
+                  className={clsx(
+                    "flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between",
+                    row.ready_for_portal
+                      ? "border-green-200 bg-green-50/80"
+                      : "border-red-200 bg-red-50/50"
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-lg" aria-hidden>
+                        {row.ready_for_portal ? "✓" : "✗"}
+                      </span>
+                      <span className="font-medium text-[#1e293b]">
+                        {row.file_name ?? "Untitled"}
+                      </span>
+                      <span className="text-sm text-[#64748b]">
+                        ({formatKb(row.size_bytes)})
+                      </span>
+                    </div>
+                    {docRow ? (
+                      <p className="mt-0.5 text-xs text-[#64748b]">
+                        {docRow.doc_type.replace(/_/g, " ")}
+                      </p>
+                    ) : null}
+                    {row.meta_error ? (
+                      <p className="mt-1 text-xs text-amber-800">
+                        Could not read size from Drive ({row.meta_error}).
+                      </p>
+                    ) : null}
+                    {row.compressed_size_bytes != null &&
+                    row.compressed_drive_url ? (
+                      <p className="mt-1 text-xs font-medium text-green-800">
+                        Compressed: {formatKb(row.compressed_size_bytes)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {needs ? (
+                      <button
+                        type="button"
+                        disabled={
+                          busy || compressAllRunning || !row.drive_file_id
+                        }
+                        onClick={() =>
+                          row.drive_file_id
+                            ? void compressPortalFile(row.drive_file_id)
+                            : undefined
+                        }
+                        className="rounded-lg border border-[#1e3a5f] bg-white px-3 py-1.5 text-xs font-semibold text-[#1e3a5f] transition-colors hover:bg-[#eff6ff] disabled:opacity-50"
+                      >
+                        {busy ? "Compressing…" : "Compress"}
+                      </button>
+                    ) : null}
+                    {row.compressed_drive_url ? (
+                      <a
+                        href={row.compressed_drive_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-lg border border-green-600 bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-700"
+                      >
+                        Download compressed
+                      </a>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-8 p-6">
       <div className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md sm:flex-row sm:items-start sm:justify-between">
@@ -683,6 +941,8 @@ export function ApplicationDetailClient({
             </div>
           </div>
 
+          {renderGovtPortalPrepCard()}
+
           {allRequiredUploaded ? (
             <div className="rounded-xl border border-[#e2e8f0] bg-[#eff6ff] p-4 shadow-sm">
               {skipNotice ? (
@@ -738,11 +998,14 @@ export function ApplicationDetailClient({
           ) : null}
         </section>
       ) : (
-        <section className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-6 text-sm text-[#64748b]">
-          Document checklist is available for OCI New and OCI Renewal
-          applications. This application uses a different service type; upload
-          flows for it are not configured here yet.
-        </section>
+        <>
+          <section className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-6 text-sm text-[#64748b]">
+            Document checklist is available for OCI New and OCI Renewal
+            applications. This application uses a different service type; upload
+            flows for it are not configured here yet.
+          </section>
+          {renderGovtPortalPrepCard()}
+        </>
       )}
     </div>
   );

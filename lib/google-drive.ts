@@ -167,6 +167,65 @@ export async function setFilePublicReadable(fileId: string): Promise<void> {
   });
 }
 
+export async function getDriveFileMetadata(fileId: string): Promise<{
+  name: string;
+  mimeType: string;
+  size: number;
+}> {
+  const drive = getGoogleDriveClient();
+  try {
+    const res = await drive.files.get({
+      fileId,
+      fields: "name,mimeType,size",
+    });
+    const size = Number(res.data.size ?? 0);
+    return {
+      name: String(res.data.name ?? "file"),
+      mimeType: String(res.data.mimeType ?? "application/octet-stream"),
+      size,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to read Drive file metadata (id="${fileId}"): ${message}`);
+  }
+}
+
+/** Find or create a direct child folder of `parentId` with the given name. */
+export async function findOrCreateChildFolder(
+  parentId: string,
+  folderName: string
+): Promise<string> {
+  const drive = getGoogleDriveClient();
+  const escaped = folderName.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const q = `'${parentId}' in parents and name = '${escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  try {
+    const list = await drive.files.list({
+      q,
+      fields: "files(id)",
+      pageSize: 10,
+    });
+    const existing = list.data.files?.[0]?.id;
+    if (existing) return existing;
+
+    const res = await drive.files.create({
+      requestBody: {
+        name: folderName,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [parentId],
+      },
+      fields: "id",
+    });
+    const id = res.data.id;
+    if (!id) throw new Error("Drive did not return folder id.");
+    return id;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Failed to resolve folder "${folderName}" under ${parentId}: ${message}`
+    );
+  }
+}
+
 export async function getFileAsBase64(fileId: string): Promise<string> {
   try {
     const accessToken = await getGoogleAccessToken();

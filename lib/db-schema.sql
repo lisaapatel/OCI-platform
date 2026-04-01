@@ -27,7 +27,10 @@ create table documents (
   drive_view_url text,
   extraction_status text default 'pending' check (extraction_status in ('pending', 'processing', 'done', 'failed')),
   failure_reason text,
-  uploaded_at timestamp with time zone default now()
+  uploaded_at timestamp with time zone default now(),
+  compressed_drive_file_id text,
+  compressed_drive_url text,
+  compressed_size_bytes bigint
 );
 
 -- Extracted fields table
@@ -69,3 +72,7 @@ create policy "Authenticated users can do everything on documents"
 create policy "Authenticated users can do everything on extracted_fields"
   on extracted_fields for all using (auth.role() = 'authenticated');
 
+-- Existing databases: add portal compression columns (run once if upgrading):
+-- alter table documents add column if not exists compressed_drive_file_id text;
+-- alter table documents add column if not exists compressed_drive_url text;
+-- alter table documents add column if not exists compressed_size_bytes bigint;

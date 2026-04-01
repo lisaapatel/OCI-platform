@@ -38,6 +38,19 @@ function mapDocuments(rows: Record<string, unknown>[]): Document[] {
         ? null
         : String(row.failure_reason),
     uploaded_at: String(row.uploaded_at ?? ""),
+    compressed_drive_file_id:
+      row.compressed_drive_file_id == null ||
+      String(row.compressed_drive_file_id) === ""
+        ? null
+        : String(row.compressed_drive_file_id),
+    compressed_drive_url:
+      row.compressed_drive_url == null || String(row.compressed_drive_url) === ""
+        ? null
+        : String(row.compressed_drive_url),
+    compressed_size_bytes:
+      row.compressed_size_bytes == null || row.compressed_size_bytes === ""
+        ? null
+        : Number(row.compressed_size_bytes),
   }));
 }
 

@@ -29,6 +29,10 @@ export interface Document {
   /** Machine code from failed extraction step; null when not failed */
   failure_reason: string | null;
   uploaded_at: string;
+  /** Govt portal–compressed copy in Drive folder "Compressed" */
+  compressed_drive_file_id?: string | null;
+  compressed_drive_url?: string | null;
+  compressed_size_bytes?: number | null;
 }
 
 /** 200 JSON body from POST /api/extract/single (non-streaming) */
