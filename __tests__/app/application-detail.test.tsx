@@ -295,9 +295,8 @@ describe("Application detail", () => {
     await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
     );
-    expect(
-      screen.getByRole("button", { name: /Edit Photo/i })
-    ).toBeInTheDocument();
+    const editBtns = screen.getAllByRole("button", { name: /Edit Photo/i });
+    expect(editBtns.length).toBeGreaterThanOrEqual(1);
   });
 
   test("Test 7b: US Passport test shows minimal checklist uploads, not unsupported message", async () => {

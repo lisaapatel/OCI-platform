@@ -19,6 +19,9 @@ import type { Document } from "@/lib/types";
 
 import styles from "./photo-crop-editor-modal.module.css";
 
+const EXPORT_SIZE = 600;
+const PORTAL_MAX_KB = Math.round(PORTAL_IMAGE_MAX_BYTES / 1024);
+
 let faceApiLoadPromise: Promise<void> | null = null;
 
 function ensureFaceApiLoaded(): Promise<void> {
@@ -105,8 +108,8 @@ function exportCroppedToCanvas(
   pixelCrop: PixelCrop
 ): HTMLCanvasElement {
   const out = document.createElement("canvas");
-  out.width = 600;
-  out.height = 600;
+  out.width = EXPORT_SIZE;
+  out.height = EXPORT_SIZE;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
   ctx.drawImage(
@@ -117,10 +120,84 @@ function exportCroppedToCanvas(
     pixelCrop.height,
     0,
     0,
-    600,
-    600
+    EXPORT_SIZE,
+    EXPORT_SIZE
   );
   return out;
+}
+
+function applyCanvasFilters(
+  src: HTMLCanvasElement,
+  brightness: number,
+  contrast: number
+): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = src.width;
+  out.height = src.height;
+  const ctx = out.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+  ctx.filter = `brightness(${100 + brightness}%) contrast(${100 + contrast}%)`;
+  ctx.drawImage(src, 0, 0);
+  ctx.filter = "none";
+  return out;
+}
+
+function PassportGuidesOverlay() {
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 h-full w-full"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <line
+        x1="0"
+        y1="60"
+        x2="100"
+        y2="60"
+        stroke="#2563eb"
+        strokeWidth="0.35"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray="4 3"
+      />
+      <text x="2" y="58" fill="#2563eb" fontSize="5" fontWeight="600">
+        Eyes here
+      </text>
+      <line
+        x1="0"
+        y1="85"
+        x2="100"
+        y2="85"
+        stroke="#2563eb"
+        strokeWidth="0.35"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray="4 3"
+      />
+      <text x="2" y="83" fill="#2563eb" fontSize="5" fontWeight="600">
+        Chin here
+      </text>
+      <line
+        x1="50"
+        y1="0"
+        x2="50"
+        y2="100"
+        stroke="rgba(71,85,105,0.45)"
+        strokeWidth="0.25"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray="2 2"
+      />
+      <ellipse
+        cx="50"
+        cy="58"
+        rx="24"
+        ry="30"
+        fill="none"
+        stroke="rgba(37,99,235,0.28)"
+        strokeWidth="0.4"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
 }
 
 export type PhotoCropEditorModalProps = {
@@ -142,18 +219,34 @@ export function PhotoCropEditorModal({
   const [sourceObjectUrl, setSourceObjectUrl] = useState<string | null>(null);
   const [displayUrl, setDisplayUrl] = useState<string | null>(null);
   const [rotationDeg, setRotationDeg] = useState(0);
+  const [zoomPct, setZoomPct] = useState(100);
+  const [brightness, setBrightness] = useState(0);
+  const [contrast, setContrast] = useState(0);
+  const [showGuides, setShowGuides] = useState(true);
   const [crop, setCrop] = useState<Crop>();
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewKb, setPreviewKb] = useState<string>("—");
+  const [previewResultUrl, setPreviewResultUrl] = useState<string | null>(null);
+  const [previewOriginalUrl, setPreviewOriginalUrl] = useState<string | null>(
+    null
+  );
+  const [finalKb, setFinalKb] = useState<string>("—");
+  const [compressOk, setCompressOk] = useState(false);
+  const [compressError, setCompressError] = useState<string | null>(null);
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceHint, setFaceHint] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [mediaNatural, setMediaNatural] = useState<{
+    w: number;
+    h: number;
+  } | null>(null);
 
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const displayImgRef = useRef<HTMLImageElement | null>(null);
   const rotatedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const revokeUrls = useRef<string[]>([]);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+  const rotationDegRef = useRef(0);
+  const lastDisplayUrlForCropRef = useRef<string | null>(null);
 
   const pushRevoke = (u: string) => {
     revokeUrls.current.push(u);
@@ -177,9 +270,18 @@ export function PhotoCropEditorModal({
     setLoadError(null);
     setFaceHint(null);
     setRotationDeg(0);
+    setZoomPct(100);
+    setBrightness(0);
+    setContrast(0);
+    setShowGuides(true);
     setCrop(undefined);
-    setPreviewUrl(null);
-    setPreviewKb("—");
+    setMediaNatural(null);
+    lastDisplayUrlForCropRef.current = null;
+    setPreviewResultUrl(null);
+    setPreviewOriginalUrl(null);
+    setFinalKb("—");
+    setCompressOk(false);
+    setCompressError(null);
     cleanupUrls();
     setSourceObjectUrl(null);
     setDisplayUrl(null);
@@ -212,71 +314,116 @@ export function PhotoCropEditorModal({
     };
   }, [open, doc, applicationId, cleanupUrls]);
 
-  const rebuildRotatedDisplay = useCallback(
-    (img: HTMLImageElement, deg: number) => {
-      const canvas = drawRotatedToCanvas(img, deg);
-      rotatedCanvasRef.current = canvas;
-      void canvasToObjectUrl(canvas).then((url) => {
-        setDisplayUrl((prev) => {
-          if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
-          return url;
-        });
-        pushRevoke(url);
+  const rebuildRotatedDisplay = useCallback((img: HTMLImageElement, deg: number) => {
+    const canvas = drawRotatedToCanvas(img, deg);
+    rotatedCanvasRef.current = canvas;
+    void canvasToObjectUrl(canvas).then((url) => {
+      setDisplayUrl((prev) => {
+        if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return url;
       });
-    },
-    []
-  );
+      pushRevoke(url);
+    });
+  }, []);
+
+  rotationDegRef.current = rotationDeg;
 
   const onSourceImageLoad = useCallback(() => {
     const img = sourceImgRef.current;
     if (!img?.naturalWidth) return;
-    rebuildRotatedDisplay(img, rotationDeg);
-  }, [rebuildRotatedDisplay, rotationDeg]);
+    rebuildRotatedDisplay(img, rotationDegRef.current);
+  }, [rebuildRotatedDisplay]);
 
   useEffect(() => {
     const img = sourceImgRef.current;
     if (!img?.naturalWidth || !sourceObjectUrl) return;
     rebuildRotatedDisplay(img, rotationDeg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rotation-only refresh
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rotationDeg, sourceObjectUrl, rebuildRotatedDisplay]);
 
   const onDisplayImageLoad = useCallback(() => {
     const el = displayImgRef.current;
-    if (!el?.naturalWidth) return;
+    if (!el?.naturalWidth || !displayUrl) return;
     const w = el.naturalWidth;
     const h = el.naturalHeight;
-    const ic = initialSquareCrop(w, h);
-    setCrop(ic);
-  }, []);
+    setMediaNatural({ w, h });
+    if (lastDisplayUrlForCropRef.current !== displayUrl) {
+      lastDisplayUrlForCropRef.current = displayUrl;
+      setCrop(initialSquareCrop(w, h));
+    }
+  }, [displayUrl]);
 
-  const updatePreview = useCallback(async () => {
+  const buildFilteredExportCanvas = useCallback((): HTMLCanvasElement | null => {
     const src = rotatedCanvasRef.current;
     const img = displayImgRef.current;
-    const c = crop;
-    if (!src || !img?.naturalWidth || !c?.width) {
-      setPreviewUrl(null);
-      setPreviewKb("—");
+    if (!src || !img?.naturalWidth || !crop?.width) return null;
+    const pixel = convertToPixelCrop(crop, img.naturalWidth, img.naturalHeight);
+    const cropped = exportCroppedToCanvas(src, pixel);
+    return applyCanvasFilters(cropped, brightness, contrast);
+  }, [crop, brightness, contrast]);
+
+  const updatePreview = useCallback(async () => {
+    const filtered = buildFilteredExportCanvas();
+    const src = rotatedCanvasRef.current;
+    if (!filtered || !src) {
+      setPreviewResultUrl(null);
+      setPreviewOriginalUrl(null);
+      setFinalKb("—");
+      setCompressOk(false);
+      setCompressError(null);
       return;
     }
-    const pixel = convertToPixelCrop(c, img.naturalWidth, img.naturalHeight);
-    const cropped = exportCroppedToCanvas(src, pixel);
+
+    const origThumb = document.createElement("canvas");
+    origThumb.width = 80;
+    origThumb.height = 80;
+    const octx = origThumb.getContext("2d");
+    if (octx) {
+      octx.drawImage(src, 0, 0, src.width, src.height, 0, 0, 80, 80);
+    }
+    const origBlob = await new Promise<Blob | null>((resolve) =>
+      origThumb.toBlob((b) => resolve(b), "image/jpeg", 0.82)
+    );
+    if (origBlob) {
+      const ou = URL.createObjectURL(origBlob);
+      setPreviewOriginalUrl((old) => {
+        if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+        return ou;
+      });
+    }
+
     const prev = document.createElement("canvas");
-    prev.width = 150;
-    prev.height = 150;
+    prev.width = 250;
+    prev.height = 250;
     const pctx = prev.getContext("2d");
-    if (!pctx) return;
-    pctx.drawImage(cropped, 0, 0, 150, 150);
-    const blob = await new Promise<Blob | null>((resolve) =>
+    if (pctx) {
+      pctx.drawImage(filtered, 0, 0, EXPORT_SIZE, EXPORT_SIZE, 0, 0, 250, 250);
+    }
+    const prevBlob = await new Promise<Blob | null>((resolve) =>
       prev.toBlob((b) => resolve(b), "image/jpeg", 0.85)
     );
-    if (!blob) return;
-    setPreviewKb((blob.size / 1024).toFixed(1));
-    const pu = URL.createObjectURL(blob);
-    setPreviewUrl((old) => {
-      if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
-      return pu;
-    });
-  }, [crop]);
+    if (prevBlob) {
+      const pu = URL.createObjectURL(prevBlob);
+      setPreviewResultUrl((old) => {
+        if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+        return pu;
+      });
+    }
+
+    try {
+      const outBlob = await compressCanvasToLimit(
+        filtered,
+        PORTAL_IMAGE_MAX_BYTES
+      );
+      setFinalKb((outBlob.size / 1024).toFixed(1));
+      setCompressOk(true);
+      setCompressError(null);
+    } catch (e) {
+      setFinalKb("—");
+      setCompressOk(false);
+      setCompressError(e instanceof Error ? e.message : String(e));
+    }
+  }, [buildFilteredExportCanvas]);
 
   useEffect(() => {
     if (!open || !displayUrl) return;
@@ -284,7 +431,50 @@ export function PhotoCropEditorModal({
       void updatePreview();
     }, 120);
     return () => clearTimeout(t);
-  }, [open, displayUrl, crop, updatePreview]);
+  }, [open, displayUrl, crop, updatePreview, brightness, contrast]);
+
+  const nudgeCrop = useCallback(
+    (dx: number, dy: number) => {
+      const img = displayImgRef.current;
+      if (!img?.naturalWidth || !crop?.width) return;
+      const cw = img.clientWidth;
+      const ch = img.clientHeight;
+      if (cw < 1 || ch < 1) return;
+      const px = convertToPixelCrop(crop, cw, ch);
+      let x = px.x + dx;
+      let y = px.y + dy;
+      x = Math.max(0, Math.min(x, cw - px.width));
+      y = Math.max(0, Math.min(y, ch - px.height));
+      setCrop(convertToPercentCrop({ ...px, x, y }, cw, ch));
+    },
+    [crop]
+  );
+
+  const applyPreset = useCallback(
+    (fraction: number) => {
+      const img = displayImgRef.current;
+      if (!img?.naturalWidth || !crop?.width) return;
+      const nw = img.naturalWidth;
+      const nh = img.naturalHeight;
+      const cur = convertToPixelCrop(crop, nw, nh);
+      const cx = cur.x + cur.width / 2;
+      const cy = cur.y + cur.height / 2;
+      let side = Math.min(nw, nh) * fraction;
+      side = Math.min(side, Math.min(nw, nh));
+      let left = cx - side / 2;
+      let top = cy - side / 2;
+      left = Math.max(0, Math.min(left, nw - side));
+      top = Math.max(0, Math.min(top, nh - side));
+      setCrop(
+        convertToPercentCrop(
+          { unit: "px", x: left, y: top, width: side, height: side },
+          nw,
+          nh
+        )
+      );
+    },
+    [crop]
+  );
 
   const runFaceCenter = useCallback(async () => {
     const img = displayImgRef.current;
@@ -338,15 +528,10 @@ export function PhotoCropEditorModal({
   }, []);
 
   const buildFinalBlob = useCallback(async (): Promise<Blob> => {
-    const src = rotatedCanvasRef.current;
-    const img = displayImgRef.current;
-    if (!src || !img?.naturalWidth || !crop?.width) {
-      throw new Error("Image or crop not ready.");
-    }
-    const pixel = convertToPixelCrop(crop, img.naturalWidth, img.naturalHeight);
-    const out = exportCroppedToCanvas(src, pixel);
-    return compressCanvasToLimit(out, PORTAL_IMAGE_MAX_BYTES);
-  }, [crop]);
+    const filtered = buildFilteredExportCanvas();
+    if (!filtered) throw new Error("Image or crop not ready.");
+    return compressCanvasToLimit(filtered, PORTAL_IMAGE_MAX_BYTES);
+  }, [buildFilteredExportCanvas]);
 
   const onApplyDownload = useCallback(async () => {
     try {
@@ -399,7 +584,11 @@ export function PhotoCropEditorModal({
       if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
       return null;
     });
-    setPreviewUrl((old) => {
+    setPreviewResultUrl((old) => {
+      if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
+      return null;
+    });
+    setPreviewOriginalUrl((old) => {
       if (old?.startsWith("blob:")) URL.revokeObjectURL(old);
       return null;
     });
@@ -409,20 +598,112 @@ export function PhotoCropEditorModal({
     onClose();
   }, [cleanupUrls, onClose]);
 
+  const squareOk = true;
+  const minOk = EXPORT_SIZE >= 200;
+  const maxOk = EXPORT_SIZE <= 1500;
+  const jpegOk = true;
+  const sizeOk = compressOk;
+  const allPortalGreen =
+    squareOk && minOk && maxOk && jpegOk && sizeOk && !compressError;
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (
+        t?.closest("input, textarea, select, [contenteditable=true]")
+      ) {
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (!saveBusy) handleClose();
+        return;
+      }
+      if (e.key === "g" || e.key === "G") {
+        e.preventDefault();
+        setShowGuides((g) => !g);
+        return;
+      }
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        setRotationDeg(0);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (allPortalGreen && displayUrl && crop?.width) {
+          void onApplyDownload();
+        }
+        return;
+      }
+      const step = e.shiftKey ? 20 : 5;
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        nudgeCrop(0, -step);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        nudgeCrop(0, step);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        nudgeCrop(-step, 0);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nudgeCrop(step, 0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    open,
+    saveBusy,
+    handleClose,
+    allPortalGreen,
+    displayUrl,
+    crop?.width,
+    nudgeCrop,
+    onApplyDownload,
+  ]);
+
+  const imgFilter = `brightness(${100 + brightness}%) contrast(${100 + contrast}%)`;
+  const zoomScale = zoomPct / 100;
+  const displayW = mediaNatural
+    ? Math.round(mediaNatural.w * zoomScale)
+    : undefined;
+
   if (!mounted || !open) return null;
+
+  const shortcutsTitle =
+    "Shortcuts: Arrow keys nudge crop (Shift+Arrow 20px). R reset rotation. G toggle guides. Enter Apply & Download. Esc Cancel.";
 
   const portal = (
     <div
+      ref={modalRef}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Edit applicant photo"
     >
-      <div className="flex max-h-[95vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+      <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Edit applicant photo
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Edit applicant photo
+            </h2>
+            <span className="relative group inline-flex">
+              <button
+                type="button"
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                aria-label="Keyboard shortcuts"
+                title={shortcutsTitle}
+              >
+                ⌨️
+              </button>
+              <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-72 rounded border border-slate-200 bg-white p-2 text-[11px] text-slate-700 shadow-lg group-hover:block group-focus-within:block">
+                {shortcutsTitle}
+              </span>
+            </span>
+          </div>
           <button
             type="button"
             onClick={handleClose}
@@ -450,7 +731,7 @@ export function PhotoCropEditorModal({
             <p className="text-sm text-slate-600">Loading image…</p>
           ) : null}
 
-          <div className="mt-2 flex flex-wrap items-center gap-3">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={!displayUrl || faceBusy}
@@ -459,84 +740,307 @@ export function PhotoCropEditorModal({
             >
               {faceBusy ? "Detecting face…" : "Auto-center face"}
             </button>
+            <button
+              type="button"
+              disabled={!displayUrl}
+              onClick={() => setShowGuides((g) => !g)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:opacity-50"
+            >
+              {showGuides ? "Hide guides" : "Show guides"}
+            </button>
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                disabled={!displayUrl}
+                onClick={() => applyPreset(0.7)}
+                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Tight
+              </button>
+              <button
+                type="button"
+                disabled={!displayUrl}
+                onClick={() => applyPreset(0.85)}
+                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                disabled={!displayUrl}
+                onClick={() => applyPreset(0.95)}
+                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Loose
+              </button>
+            </div>
             {faceHint ? (
               <span className="text-sm text-amber-800">{faceHint}</span>
             ) : null}
           </div>
 
           {displayUrl ? (
-            <div className={clsx("mt-4 flex flex-col gap-4 lg:flex-row", styles.wrap)}>
-              <div className="min-w-0 flex-1">
-                <ReactCrop
-                  crop={crop}
-                  onChange={(_, percentCrop) => setCrop(percentCrop)}
-                  aspect={1}
-                  className="max-w-full"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    ref={displayImgRef}
-                    src={displayUrl}
-                    alt="Crop preview"
-                    className="max-h-[min(60vh,560px)] w-auto max-w-full"
-                    onLoad={onDisplayImageLoad}
-                  />
-                </ReactCrop>
-
-                <div className="mt-4 space-y-2">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="text-sm font-medium text-slate-700">
-                      Rotation: {rotationDeg > 0 ? "+" : ""}
-                      {rotationDeg}°
-                    </label>
-                    <input
-                      type="range"
-                      min={-45}
-                      max={45}
-                      value={rotationDeg}
-                      onChange={(e) =>
-                        setRotationDeg(Number(e.target.value))
-                      }
-                      className="w-48 max-w-full"
+            <div
+              className={clsx("mt-4 flex flex-col gap-4 xl:flex-row", styles.wrap)}
+            >
+              <div className="min-w-0 flex flex-1 flex-col gap-3 lg:flex-row">
+                <div className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-slate-100/80 max-h-[min(62vh,580px)]">
+                  <ReactCrop
+                    crop={crop}
+                    onChange={(_, percentCrop) => setCrop(percentCrop)}
+                    aspect={1}
+                    className="inline-block max-w-none"
+                    renderSelectionAddon={
+                      showGuides ? () => <PassportGuidesOverlay /> : undefined
+                    }
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      ref={displayImgRef}
+                      src={displayUrl}
+                      alt="Crop preview"
+                      style={{
+                        width: displayW ? `${displayW}px` : undefined,
+                        height: "auto",
+                        maxWidth: "none",
+                        filter: imgFilter,
+                        display: "block",
+                      }}
+                      onLoad={onDisplayImageLoad}
                     />
+                  </ReactCrop>
+                </div>
+
+                <div
+                  className="flex shrink-0 flex-col items-center gap-1 self-center"
+                  role="group"
+                  aria-label="Nudge crop"
+                >
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                    onClick={() => nudgeCrop(0, -5)}
+                    aria-label="Nudge up"
+                  >
+                    ↑
+                  </button>
+                  <div className="flex gap-1">
                     <button
                       type="button"
-                      className="text-sm font-medium text-blue-700 hover:underline"
-                      onClick={() => setRotationDeg(0)}
+                      className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                      onClick={() => nudgeCrop(-5, 0)}
+                      aria-label="Nudge left"
                     >
-                      Reset rotation
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                      onClick={() => nudgeCrop(5, 0)}
+                      aria-label="Nudge right"
+                    >
+                      →
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500">
-                    Export: 600×600px JPEG under portal limit (
-                    {Math.round(PORTAL_IMAGE_MAX_BYTES / 1024)}KB).
-                  </p>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                    onClick={() => nudgeCrop(0, 5)}
+                    aria-label="Nudge down"
+                  >
+                    ↓
+                  </button>
                 </div>
               </div>
 
-              <div className="flex w-full flex-col items-center gap-2 lg:w-44 lg:shrink-0">
+              <div className="flex w-full shrink-0 flex-col gap-3 xl:w-72">
                 <p className="text-center text-xs font-semibold text-slate-600">
-                  Preview (govt portal view)
+                  Previews
                 </p>
-                <div className="h-[150px] w-[150px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                  {previewUrl ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={previewUrl}
-                      alt="Preview"
-                      width={150}
-                      height={150}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-slate-400">
-                      …
+                <div className="flex flex-wrap items-start justify-center gap-4">
+                  <div className="text-center">
+                    <p className="mb-1 text-[10px] font-medium text-slate-500">
+                      Original
+                    </p>
+                    <div className="h-20 w-20 overflow-hidden rounded border border-slate-200 bg-slate-100">
+                      {previewOriginalUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={previewOriginalUrl}
+                          alt=""
+                          width={80}
+                          height={80}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                          …
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+                  <div className="text-center">
+                    <p className="mb-1 text-[10px] font-medium text-slate-500">
+                      Result
+                    </p>
+                    <div className="h-[250px] w-[250px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                      {previewResultUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={previewResultUrl}
+                          alt="Export preview"
+                          width={250}
+                          height={250}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-slate-400">
+                          …
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs font-medium text-slate-700">
+                      {EXPORT_SIZE} × {EXPORT_SIZE} px
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      ~{finalKb} KB
+                      {compressError ? (
+                        <span className="ml-1 text-red-600">(compress)</span>
+                      ) : null}
+                    </p>
+                    <p
+                      className={clsx(
+                        "mt-1 text-xs font-semibold",
+                        allPortalGreen ? "text-green-700" : "text-red-700"
+                      )}
+                    >
+                      {allPortalGreen
+                        ? "✅ Meets OCI requirements"
+                        : "❌ Adjust crop or brightness — see checklist below"}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-center text-xs text-slate-500">
-                  ~{previewKb} KB (preview quality)
+              </div>
+            </div>
+          ) : null}
+
+          {displayUrl ? (
+            <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-sm font-medium text-slate-700">
+                  Rotation: {rotationDeg > 0 ? "+" : ""}
+                  {rotationDeg}°
+                </label>
+                <input
+                  type="range"
+                  min={-45}
+                  max={45}
+                  value={rotationDeg}
+                  onChange={(e) => setRotationDeg(Number(e.target.value))}
+                  className="w-40 max-w-full"
+                />
+                <button
+                  type="button"
+                  className="text-sm font-medium text-blue-700 hover:underline"
+                  onClick={() => setRotationDeg(0)}
+                >
+                  Reset rotation
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-sm font-medium text-slate-700">
+                  Zoom: {zoomPct}%
+                </label>
+                <input
+                  type="range"
+                  min={50}
+                  max={200}
+                  value={zoomPct}
+                  onChange={(e) => setZoomPct(Number(e.target.value))}
+                  className="w-40 max-w-full"
+                />
+                <span className="text-xs text-slate-500">
+                  Scroll the image area to pan when zoomed
+                </span>
+              </div>
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="text-sm font-medium text-slate-700">
+                    Brightness: {brightness > 0 ? "+" : ""}
+                    {brightness}
+                  </label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={brightness}
+                      onChange={(e) => setBrightness(Number(e.target.value))}
+                      className="w-36"
+                    />
+                    <button
+                      type="button"
+                      className="text-xs text-blue-700 hover:underline"
+                      onClick={() => setBrightness(0)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">
+                    Contrast: {contrast > 0 ? "+" : ""}
+                    {contrast}
+                  </label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={contrast}
+                      onChange={(e) => setContrast(Number(e.target.value))}
+                      className="w-36"
+                    />
+                    <button
+                      type="button"
+                      className="text-xs text-blue-700 hover:underline"
+                      onClick={() => setContrast(0)}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={clsx(
+                  "rounded-lg border px-3 py-2 text-xs",
+                  allPortalGreen
+                    ? "border-green-200 bg-green-50/80"
+                    : "border-amber-200 bg-amber-50/80"
+                )}
+              >
+                <p className="mb-1 font-semibold text-slate-800">
+                  OCI portal checks (export)
                 </p>
+                <ul className="space-y-0.5 text-slate-700">
+                  <li>
+                    {squareOk ? "✅" : "❌"} Square ratio (1:1)
+                  </li>
+                  <li>
+                    {minOk ? "✅" : "❌"} Min 200×200px
+                  </li>
+                  <li>
+                    {maxOk ? "✅" : "❌"} Max 1500×1500px
+                  </li>
+                  <li>
+                    {sizeOk ? "✅" : "❌"} Under {PORTAL_MAX_KB}KB
+                    {compressError ? (
+                      <span className="ml-1 text-red-600">({compressError})</span>
+                    ) : null}
+                  </li>
+                  <li>{jpegOk ? "✅" : "❌"} JPEG format</li>
+                </ul>
               </div>
             </div>
           ) : null}
@@ -552,7 +1056,9 @@ export function PhotoCropEditorModal({
           </button>
           <button
             type="button"
-            disabled={!displayUrl || !crop?.width}
+            disabled={
+              !displayUrl || !crop?.width || !allPortalGreen || saveBusy
+            }
             onClick={() => void onApplyDownload()}
             className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
           >
@@ -560,7 +1066,9 @@ export function PhotoCropEditorModal({
           </button>
           <button
             type="button"
-            disabled={!displayUrl || !crop?.width || saveBusy}
+            disabled={
+              !displayUrl || !crop?.width || !allPortalGreen || saveBusy
+            }
             onClick={() => void onApplySave()}
             className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
           >

@@ -995,11 +995,20 @@ export function ApplicationDetailClient({
                   </p>
                 </div>
               ) : null}
+              {imageType === "photo" ? (
+                <button
+                  type="button"
+                  onClick={() => setPhotoEditorDoc(doc)}
+                  className="inline-flex w-full items-center justify-center rounded-lg border-2 border-[#2563eb] bg-[#eff6ff] px-4 py-2.5 text-sm font-semibold text-[#1e3a8a] shadow-sm transition-colors hover:bg-[#dbeafe]"
+                >
+                  Edit Photo
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={fixing}
                 onClick={() => void runFixGovtImage(doc, imageType)}
-                className="inline-flex items-center justify-center rounded-lg bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#2d4d73] disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center rounded-lg bg-[#1e3a5f] px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#2d4d73] disabled:opacity-50"
               >
                 {fixing ? "Fixing…" : "Auto-Fix & Save to Drive"}
               </button>
@@ -1773,19 +1782,16 @@ function DocumentChecklistCard({
                   </a>
                 </>
               ) : null}
-              {item.doc_type === "applicant_photo" && onEditPhoto ? (
-                <>
-                  {" · "}
-                  <button
-                    type="button"
-                    onClick={() => onEditPhoto(document)}
-                    className="text-[#2563eb] underline-offset-2 transition-colors duration-150 hover:text-blue-700"
-                  >
-                    Edit Photo
-                  </button>
-                </>
-              ) : null}
             </div>
+          ) : null}
+          {uploaded && document && item.doc_type === "applicant_photo" && onEditPhoto ? (
+            <button
+              type="button"
+              onClick={() => onEditPhoto(document)}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-lg border-2 border-[#2563eb] bg-[#eff6ff] px-4 py-2.5 text-sm font-semibold text-[#1e3a8a] shadow-sm transition-colors hover:bg-[#dbeafe] sm:w-auto sm:min-w-[200px]"
+            >
+              Edit Photo
+            </button>
           ) : null}
           {uploaded && document ? (
             <div className="mt-2 space-y-1 text-xs">
