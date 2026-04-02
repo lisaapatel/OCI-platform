@@ -45,6 +45,10 @@ jest.mock("react-dropzone", () => ({
   }),
 }));
 
+jest.mock("@/app/(main)/applications/[id]/photo-crop-editor-modal", () => ({
+  PhotoCropEditorModal: () => null,
+}));
+
 import React from "react";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -295,8 +299,17 @@ describe("Application detail", () => {
     await renderApplicationDetail(
       <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
     );
-    const editBtns = screen.getAllByRole("button", { name: /Edit Photo/i });
-    expect(editBtns.length).toBeGreaterThanOrEqual(1);
+    // Checklist uses "Applicant Photo"; Photo & Signature column uses "Applicant photo" — match case-sensitively.
+    const applicantHeading = screen.getByRole("heading", {
+      name: /^Applicant Photo$/,
+    });
+    const checklistCard = applicantHeading.closest(".rounded-xl");
+    expect(checklistCard).toBeTruthy();
+    expect(
+      within(checklistCard as HTMLElement).getByRole("button", {
+        name: /Edit Photo/i,
+      })
+    ).toBeInTheDocument();
   });
 
   test("Test 7b: US Passport test shows minimal checklist uploads, not unsupported message", async () => {
