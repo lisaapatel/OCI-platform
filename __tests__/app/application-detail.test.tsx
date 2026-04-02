@@ -275,6 +275,31 @@ describe("Application detail", () => {
     expect(fillLink).toHaveAttribute("href", "/applications/app-1/fill");
   });
 
+  test("Test 7b: US Passport test shows minimal checklist uploads, not unsupported message", async () => {
+    const { ApplicationDetailClient } = await import(
+      "../../app/(main)/applications/[id]/application-detail-client"
+    );
+    await renderApplicationDetail(
+      <ApplicationDetailClient
+        application={baseApp({ service_type: "passport_us_renewal_test" })}
+        initialDocuments={[]}
+      />
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: /US Passport Renewal — Document checklist \(DS-82 test\)/i,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Current Passport$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /^Passport Photo \(2×2\)$/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/upload flows for it are not configured/i)
+    ).not.toBeInTheDocument();
+  });
+
   test("Test 7: Status dropdown allows changing status", async () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"

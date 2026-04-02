@@ -7,7 +7,8 @@ import {
 import type { ExtractionFailureCode } from "@/lib/extraction-failure-reasons";
 import { FAILURE_REASON_LABELS } from "@/lib/extraction-failure-reasons";
 import { getFileAsBase64 } from "@/lib/google-drive";
-import { getOciChecklistLabel, shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import { resolveDocTypeChecklistLabel } from "@/lib/application-checklist";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { ExtractSingleResultBody } from "@/lib/types";
@@ -84,7 +85,7 @@ async function runExtraction(args: {
   const { doc, application_id, documentIndex, documentTotal, emit } = args;
   const docId = String(doc.id);
   const docType = String(doc.doc_type ?? "");
-  const docLabel = getOciChecklistLabel(docType);
+  const docLabel = resolveDocTypeChecklistLabel(docType);
 
   const progress = (step: number, message: string) => {
     emit?.({
@@ -307,7 +308,7 @@ export async function POST(req: Request) {
 
   if (useStream) {
     const encoder = new TextEncoder();
-    const docLabel = getOciChecklistLabel(String(docRow.doc_type ?? ""));
+    const docLabel = resolveDocTypeChecklistLabel(String(docRow.doc_type ?? ""));
     const stream = new ReadableStream({
       async start(controller) {
         const send = (obj: unknown) => {

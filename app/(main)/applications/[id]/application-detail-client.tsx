@@ -9,10 +9,11 @@ import { useDropzone } from "react-dropzone";
 import { coerceExtractionStatus } from "@/lib/document-utils";
 import { labelForFailureReason } from "@/lib/extraction-failure-reasons";
 import {
-  OCI_NEW_CHECKLIST,
-  OCI_NEW_REQUIRED_COUNT,
-  shouldSkipAiExtraction,
-} from "@/lib/oci-new-checklist";
+  getChecklistForServiceType,
+  checklistRequiredCount,
+  type ChecklistItem,
+} from "@/lib/application-checklist";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import {
   PORTAL_IMAGE_MAX_KB,
   PORTAL_PDF_COMPRESS_TARGET_KB,
@@ -218,29 +219,40 @@ export function ApplicationDetailClient({
     return m;
   }, [documents]);
 
+  const activeChecklist = useMemo(
+    () => getChecklistForServiceType(application.service_type),
+    [application.service_type]
+  );
+  const activeRequiredCount = useMemo(
+    () => checklistRequiredCount(activeChecklist),
+    [activeChecklist]
+  );
+
   const requiredUploaded = useMemo(() => {
     let n = 0;
-    for (const item of OCI_NEW_CHECKLIST) {
+    for (const item of activeChecklist) {
       if (!item.required) continue;
       if (docByType.has(item.doc_type)) n += 1;
     }
     return n;
-  }, [docByType]);
+  }, [docByType, activeChecklist]);
 
   const showDocumentChecklist =
     application.service_type === "oci_new" ||
-    application.service_type === "oci_renewal";
+    application.service_type === "oci_renewal" ||
+    application.service_type === "passport_us_renewal_test";
 
   const allRequiredUploaded =
-    showDocumentChecklist && requiredUploaded >= OCI_NEW_REQUIRED_COUNT;
+    showDocumentChecklist && requiredUploaded >= activeRequiredCount;
 
   const portalPdfClientReady = useMemo(
     () =>
       allUploadedChecklistPdfsPortalReady(
         documents.map((d) => ({ id: d.id, doc_type: d.doc_type })),
-        portalPrep?.documents ?? null
+        portalPrep?.documents ?? null,
+        activeChecklist
       ),
-    [documents, portalPrep]
+    [documents, portalPrep, activeChecklist]
   );
 
   const showReadyToSubmitPortalWarning =
@@ -499,7 +511,7 @@ export function ApplicationDetailClient({
     return () => {
       cancelled = true;
     };
-  }, [application.id, documents]);
+  }, [application.id, docByType]);
 
   const extractSingleStreaming = useCallback(
     async (
@@ -690,9 +702,9 @@ export function ApplicationDetailClient({
       setDocuments(fresh);
 
       const byType = new Map(fresh.map((d) => [d.doc_type, d]));
-      const checklistDocs = OCI_NEW_CHECKLIST.map((i) => byType.get(i.doc_type)).filter(
-        (d): d is Document => Boolean(d)
-      );
+      const checklistDocs = activeChecklist
+        .map((i) => byType.get(i.doc_type))
+        .filter((d): d is Document => Boolean(d));
 
       const alreadyDone = checklistDocs.filter((d) => d.extraction_status === "done");
       if (alreadyDone.length > 0) {
@@ -1073,18 +1085,34 @@ export function ApplicationDetailClient({
 
   function renderGovtPortalPrepCard() {
     if (documents.length === 0) return null;
+    const isPassportTest =
+      application.service_type === "passport_us_renewal_test";
     return (
       <section className="rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
-              Supporting documents (PDF) for portal
+              {isPassportTest
+                ? "Passport PDF (extraction)"
+                : "Supporting documents (PDF) for portal"}
             </h2>
             <p className="mt-1 text-sm text-[#64748b]">
-              The OCI portal accepts supporting PDFs up to {PORTAL_PDF_MAX_KB}
-              KB each. Use compression for oversized scans; copies are saved in
-              Drive →{" "}
-              <span className="font-medium text-[#1e293b]">Compressed</span>.
+              {isPassportTest ? (
+                <>
+                  Current passport uploads should be PDFs up to{" "}
+                  {PORTAL_PDF_MAX_KB}
+                  KB for this test flow. Compress oversized scans; copies are saved
+                  in Drive →{" "}
+                  <span className="font-medium text-[#1e293b]">Compressed</span>.
+                </>
+              ) : (
+                <>
+                  The OCI portal accepts supporting PDFs up to {PORTAL_PDF_MAX_KB}
+                  KB each. Use compression for oversized scans; copies are saved in
+                  Drive →{" "}
+                  <span className="font-medium text-[#1e293b]">Compressed</span>.
+                </>
+              )}
             </p>
           </div>
           {portalPrep &&
@@ -1195,35 +1223,65 @@ export function ApplicationDetailClient({
   function renderGovtPortalReadinessHub() {
     if (documents.length === 0) return null;
 
+    const isPassportTest =
+      application.service_type === "passport_us_renewal_test";
     const photoOk = photoValResult?.valid === true;
     const sigOptionalOk =
       !docByType.get("applicant_signature") ||
       sigValResult?.valid === true;
-    const imagesLineOk =
-      photoOk &&
-      sigOptionalOk &&
-      !photoValLoading &&
-      !sigValLoading;
+    const imagesLineOk = isPassportTest
+      ? photoOk && !photoValLoading && !sigValLoading
+      : photoOk &&
+        sigOptionalOk &&
+        !photoValLoading &&
+        !sigValLoading;
 
     return (
       <section className="rounded-xl border-2 border-[#c7d2fe] bg-gradient-to-b from-[#eef2ff]/90 to-white p-6 shadow-sm">
         <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
-          Govt portal readiness
+          {isPassportTest
+            ? "DS-82 test pipeline readiness"
+            : "Govt portal readiness"}
         </h2>
         <p className="mt-2 text-sm font-medium text-[#4338ca]">
-          Uploading all required documents on the govt portal is mandatory.
-          Applications can be rejected if anything is missing or out of spec.
+          {isPassportTest ? (
+            <>
+              Upload current passport (PDF) and passport photo (JPEG). Use{" "}
+              <strong>Generate Test Passport PDF</strong> for the filled DS-82;
+              payment and mail-in steps are outside this app.
+            </>
+          ) : (
+            <>
+              Uploading all required documents on the govt portal is mandatory.
+              Applications can be rejected if anything is missing or out of spec.
+            </>
+          )}
         </p>
         <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-[#64748b]">
-          <li>
-            Applicant photo &amp; signature: JPEG, max {PORTAL_IMAGE_MAX_KB}KB
-            each. Photo square {`200×200–1500×1500px`}. Signature wide (~3:1
-            width:height), {`200×67–1500×500px`}.
-          </li>
-          <li>
-            Supporting documents: PDF, max {PORTAL_PDF_MAX_KB}KB each, as listed
-            in the checklist below.
-          </li>
+          {isPassportTest ? (
+            <>
+              <li>
+                Passport photo: JPEG, max {PORTAL_IMAGE_MAX_KB}KB, square{" "}
+                {`200×200–1500×1500px`} (same checks as OCI portal photo).
+              </li>
+              <li>
+                Current passport: PDF, max {PORTAL_PDF_MAX_KB}KB — primary source
+                for extraction and DS-82 mapping.
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                Applicant photo &amp; signature: JPEG, max {PORTAL_IMAGE_MAX_KB}KB
+                each. Photo square {`200×200–1500×1500px`}. Signature wide (~3:1
+                width:height), {`200×67–1500×500px`}.
+              </li>
+              <li>
+                Supporting documents: PDF, max {PORTAL_PDF_MAX_KB}KB each, as listed
+                in the checklist below.
+              </li>
+            </>
+          )}
         </ul>
 
         <div className="mt-4 grid gap-2 rounded-lg border border-[#e0e7ff] bg-white/90 p-4 text-sm sm:grid-cols-2">
@@ -1237,11 +1295,13 @@ export function ApplicationDetailClient({
                   : "bg-amber-100 text-amber-900"
               )}
             >
-              {requiredUploaded}/{OCI_NEW_REQUIRED_COUNT} uploaded
+              {requiredUploaded}/{activeRequiredCount} uploaded
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-[#1e293b]">PDFs for portal</span>
+            <span className="font-medium text-[#1e293b]">
+              {isPassportTest ? "PDFs (passport)" : "PDFs for portal"}
+            </span>
             <span
               className={clsx(
                 "rounded-full px-2 py-0.5 text-xs font-semibold",
@@ -1260,7 +1320,9 @@ export function ApplicationDetailClient({
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-            <span className="font-medium text-[#1e293b]">Photo &amp; signature</span>
+            <span className="font-medium text-[#1e293b]">
+              {isPassportTest ? "Photo check" : "Photo & signature"}
+            </span>
             <span
               className={clsx(
                 "rounded-full px-2 py-0.5 text-xs font-semibold",
@@ -1282,15 +1344,28 @@ export function ApplicationDetailClient({
 
         <div className="mt-5">
           <h3 className="text-sm font-semibold text-[#1e3a5f]">
-            Suggested portal upload order
+            {isPassportTest
+              ? "Document checklist (this application)"
+              : "Suggested portal upload order"}
           </h3>
           <p className="mt-1 text-xs text-[#64748b]">
-            Match this order on{" "}
-            <span className="font-medium text-[#1e293b]">ociservices.gov.in</span>{" "}
-            when the portal asks for each document.
+            {isPassportTest ? (
+              <>
+                DS-82 form output is generated here; name-change and extra ID are
+                optional in a full renewal — not required for this POC.
+              </>
+            ) : (
+              <>
+                Match this order on{" "}
+                <span className="font-medium text-[#1e293b]">
+                  ociservices.gov.in
+                </span>{" "}
+                when the portal asks for each document.
+              </>
+            )}
           </p>
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-[#1e293b]">
-            {OCI_NEW_CHECKLIST.map((item) => {
+            {activeChecklist.map((item) => {
               const doc = docByType.get(item.doc_type);
               const uploaded = Boolean(doc);
               const kind = isPortalPdfChecklistItem(item)
@@ -1465,15 +1540,19 @@ export function ApplicationDetailClient({
             <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
               {application.service_type === "oci_new"
                 ? "OCI New Application — Document checklist"
-                : "Document checklist (OCI renewal)"}
+                : application.service_type === "oci_renewal"
+                  ? "Document checklist (OCI renewal)"
+                  : "US Passport Renewal — Document checklist (DS-82 test)"}
             </h2>
             <p className="mt-1 text-sm text-[#64748b]">
-              Upload each required document. Optional items can be skipped.
+              {application.service_type === "passport_us_renewal_test"
+                ? "Upload current passport (PDF) and passport photo (JPEG). Generate the filled DS-82 from the header when ready."
+                : "Upload each required document. Optional items can be skipped."}
             </p>
           </div>
 
           <div className="space-y-4">
-            {OCI_NEW_CHECKLIST.map((item) => (
+            {activeChecklist.map((item) => (
               <DocumentChecklistCard
                 key={item.doc_type}
                 item={item}
@@ -1492,12 +1571,12 @@ export function ApplicationDetailClient({
           <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm transition-shadow duration-150 hover:shadow-md">
             <div className="flex items-center justify-between gap-4 text-sm">
               <span className="font-medium text-[#1e293b]">
-                {requiredUploaded} of {OCI_NEW_REQUIRED_COUNT} required documents
+                {requiredUploaded} of {activeRequiredCount} required documents
                 uploaded
               </span>
               <span className="text-[#64748b]">
                 {Math.round(
-                  (requiredUploaded / OCI_NEW_REQUIRED_COUNT) * 100
+                  (requiredUploaded / Math.max(1, activeRequiredCount)) * 100
                 )}
                 %
               </span>
@@ -1508,7 +1587,7 @@ export function ApplicationDetailClient({
                 style={{
                   width: `${Math.min(
                     100,
-                    (requiredUploaded / OCI_NEW_REQUIRED_COUNT) * 100
+                    (requiredUploaded / Math.max(1, activeRequiredCount)) * 100
                   )}%`,
                 }}
               />
@@ -1596,7 +1675,7 @@ function DocumentChecklistCard({
   onRemove,
   onRetryExtract,
 }: {
-  item: (typeof OCI_NEW_CHECKLIST)[number];
+  item: ChecklistItem;
   document: Document | undefined;
   uploading: boolean;
   progress: number | null;

@@ -1,8 +1,8 @@
 import "server-only";
 
+import { getChecklistForServiceType } from "@/lib/application-checklist";
 import { getDriveFileMetadata, getFileAsBase64 } from "@/lib/google-drive";
 import { validateGovtImage } from "@/lib/govt-photo-signature";
-import { OCI_NEW_CHECKLIST } from "@/lib/oci-new-checklist";
 import {
   allRequiredDocumentsUploaded,
   documentPdfReadyForPortal,
@@ -10,10 +10,21 @@ import {
 } from "@/lib/portal-readiness";
 import type { PortalReadinessSnapshot } from "@/lib/portal-readiness";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Application } from "@/lib/types";
 
 export async function getPortalReadinessSnapshot(
   applicationId: string
 ): Promise<PortalReadinessSnapshot> {
+  const { data: appRow } = await supabaseAdmin
+    .from("applications")
+    .select("service_type")
+    .eq("id", applicationId)
+    .maybeSingle();
+
+  const checklist = getChecklistForServiceType(
+    (appRow?.service_type as Application["service_type"] | undefined) ?? "oci_new"
+  );
+
   const { data: rows, error } = await supabaseAdmin
     .from("documents")
     .select("doc_type, drive_file_id, compressed_size_bytes")
@@ -44,13 +55,13 @@ export async function getPortalReadinessSnapshot(
   }
 
   const present = new Set(byType.keys());
-  const required_docs_complete = allRequiredDocumentsUploaded(present);
+  const required_docs_complete = allRequiredDocumentsUploaded(present, checklist);
 
   let checklist_pdfs_ok = 0;
   let checklist_pdfs_uploaded = 0;
   let checklist_pdfs_ready = true;
 
-  for (const item of OCI_NEW_CHECKLIST) {
+  for (const item of checklist) {
     if (!isPortalPdfChecklistItem(item)) continue;
     const row = byType.get(item.doc_type);
     if (!row?.drive_file_id) {

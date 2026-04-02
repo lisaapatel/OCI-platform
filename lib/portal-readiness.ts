@@ -40,8 +40,11 @@ export function isPortalPdfChecklistItem(item: ChecklistItem): boolean {
   return !shouldSkipAiExtraction(item.doc_type);
 }
 
-export function allRequiredDocumentsUploaded(docTypesPresent: Set<string>): boolean {
-  for (const item of OCI_NEW_CHECKLIST) {
+export function allRequiredDocumentsUploaded(
+  docTypesPresent: Set<string>,
+  checklist: ChecklistItem[] = OCI_NEW_CHECKLIST
+): boolean {
+  for (const item of checklist) {
     if (!item.required) continue;
     if (!docTypesPresent.has(item.doc_type)) return false;
   }
@@ -54,13 +57,14 @@ export function allRequiredDocumentsUploaded(docTypesPresent: Set<string>): bool
  */
 export function allUploadedChecklistPdfsPortalReady(
   documents: { id: string; doc_type: string }[],
-  portalDocs: { id: string; ready_for_portal: boolean }[] | null | undefined
+  portalDocs: { id: string; ready_for_portal: boolean }[] | null | undefined,
+  checklist: ChecklistItem[] = OCI_NEW_CHECKLIST
 ): boolean {
   if (!portalDocs?.length) return false;
   const portalById = new Map(portalDocs.map((p) => [p.id, p]));
   const docByType = new Map(documents.map((d) => [d.doc_type, d]));
 
-  for (const item of OCI_NEW_CHECKLIST) {
+  for (const item of checklist) {
     if (!isPortalPdfChecklistItem(item)) continue;
     const doc = docByType.get(item.doc_type);
     if (!doc) {

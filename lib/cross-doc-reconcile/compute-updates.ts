@@ -11,7 +11,8 @@ import {
   type ReconLogicalKey,
 } from "@/lib/cross-doc-reconcile/config";
 import { normalizeStoredFieldKey } from "@/lib/form-fill-sections";
-import { getOciChecklistLabel, shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import { resolveDocTypeChecklistLabel } from "@/lib/application-checklist";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 
 export type ReconRow = {
   id: string;
@@ -42,7 +43,7 @@ function docTypes(rows: ReconRow[]): string[] {
 }
 
 function labelDoc(dt: string): string {
-  return getOciChecklistLabel(dt);
+  return resolveDocTypeChecklistLabel(dt);
 }
 
 /** Per doc_type: first non-empty value among synonym rows + all contributing row ids. */

@@ -1,16 +1,20 @@
 import sharp from "sharp";
 
-import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
+import {
+  PORTAL_IMAGE_MAX_BYTES,
+  PORTAL_IMAGE_MAX_KB,
+} from "@/lib/portal-constants";
 
 /** @deprecated Use PORTAL_IMAGE_MAX_BYTES from portal-constants */
 export const GOVT_IMAGE_MAX_BYTES = PORTAL_IMAGE_MAX_BYTES;
 
 export type GovtImageType = "photo" | "signature";
 
+/** Photo: JPEG, square 1:1, min 200×200, max 1500×1500 (ociservices.gov.in). */
 const PHOTO_MIN = 200;
 const PHOTO_MAX = 1500;
 
-/** Signature is wide: width / height ≈ 3 (matches 200×67 … 1500×500). */
+/** Signature: JPEG, 3:1 width:height, min 200×67, max 1500×500. */
 const SIG_RATIO = 3;
 const SIG_RATIO_TOL = 0.06;
 const SIG_W_MIN = 200;
@@ -70,7 +74,7 @@ export async function validateGovtImage(
 
   if (buffer.length > PORTAL_IMAGE_MAX_BYTES) {
     issues.push(
-      `File is ${sizeKb}KB; must be under ${kb(PORTAL_IMAGE_MAX_BYTES)}KB for govt portal.`
+      `File is ${sizeKb}KB; must be at most ${PORTAL_IMAGE_MAX_KB}KB (${PORTAL_IMAGE_MAX_BYTES} bytes) for govt portal.`
     );
   }
 
@@ -90,7 +94,7 @@ export async function validateGovtImage(
     const ratio = w / h;
     if (Math.abs(ratio - SIG_RATIO) > SIG_RATIO_TOL) {
       issues.push(
-        `Aspect ratio is ${(w / h).toFixed(2)}:1 (width:height); govt expects ~3:1 (e.g. 600×200).`
+        `Aspect ratio is ${(w / h).toFixed(2)}:1 (width:height); OCI portal expects 3:1 within ${SIG_W_MIN}×${SIG_H_MIN}–${SIG_W_MAX}×${SIG_H_MAX}px (e.g. 600×200).`
       );
     }
     if (w < SIG_W_MIN || h < SIG_H_MIN) {
@@ -143,7 +147,10 @@ async function jpegUnderLimit(
   );
 }
 
-/** Center-crop to square, resize 600×600, JPEG within portal byte limit. */
+/**
+ * Crop editor / auto-fix target: 600×600px square JPEG under 500KB
+ * (PORTAL_IMAGE_MAX_BYTES).
+ */
 export async function fixGovtPhoto(buffer: Buffer): Promise<{
   buffer: Buffer;
   width: number;
@@ -169,7 +176,10 @@ export async function fixGovtPhoto(buffer: Buffer): Promise<{
   );
 }
 
-/** Cover-crop to 600×200 (3:1), JPEG within portal byte limit. */
+/**
+ * Crop editor / auto-fix target: 600×200px (3:1) JPEG under 500KB
+ * (PORTAL_IMAGE_MAX_BYTES).
+ */
 export async function fixGovtSignature(buffer: Buffer): Promise<{
   buffer: Buffer;
   width: number;
