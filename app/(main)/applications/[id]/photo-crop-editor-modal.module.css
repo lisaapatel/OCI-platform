@@ -1,0 +1,11 @@
+/* Dim outside crop (70% dark) — box-shadow on selection */
+.wrap :global(.ReactCrop__crop-selection) {
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+}
+
+.wrap :global(.ReactCrop__rule-of-thirds-vt:before),
+.wrap :global(.ReactCrop__rule-of-thirds-vt:after),
+.wrap :global(.ReactCrop__rule-of-thirds-hz:before),
+.wrap :global(.ReactCrop__rule-of-thirds-hz:after) {
+  display: none;
+}

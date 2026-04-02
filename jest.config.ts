@@ -12,6 +12,7 @@ const config: Config = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
     "^server-only$": "<rootDir>/__tests__/mocks/server-only.ts",
+    "\\.css$": "<rootDir>/__tests__/mocks/cssMock.ts",
   },
   globals: {
     "ts-jest": {

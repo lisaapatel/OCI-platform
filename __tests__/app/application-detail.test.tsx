@@ -275,6 +275,31 @@ describe("Application detail", () => {
     expect(fillLink).toHaveAttribute("href", "/applications/app-1/fill");
   });
 
+  test("Test 7a: Applicant photo card shows Edit Photo when uploaded", async () => {
+    const docs: Document[] = [
+      {
+        id: "d-photo",
+        application_id: "app-1",
+        doc_type: "applicant_photo",
+        file_name: "face.jpg",
+        drive_file_id: "drive-photo",
+        drive_view_url: "https://drive.google.com/file/d/drive-photo/view",
+        extraction_status: "pending",
+        failure_reason: null,
+        uploaded_at: "",
+      },
+    ];
+    const { ApplicationDetailClient } = await import(
+      "../../app/(main)/applications/[id]/application-detail-client"
+    );
+    await renderApplicationDetail(
+      <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
+    );
+    expect(
+      screen.getByRole("button", { name: /Edit Photo/i })
+    ).toBeInTheDocument();
+  });
+
   test("Test 7b: US Passport test shows minimal checklist uploads, not unsupported message", async () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"

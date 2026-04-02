@@ -26,6 +26,8 @@ import {
 } from "@/lib/portal-readiness";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
+import { PhotoCropEditorModal } from "./photo-crop-editor-modal";
+
 function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
   return {
     id: String(row.id),
@@ -210,6 +212,7 @@ export function ApplicationDetailClient({
   const [sigValLoading, setSigValLoading] = useState(false);
   const [fixingPhoto, setFixingPhoto] = useState(false);
   const [fixingSig, setFixingSig] = useState(false);
+  const [photoEditorDoc, setPhotoEditorDoc] = useState<Document | null>(null);
 
   const docByType = useMemo(() => {
     const m = new Map<string, Document>();
@@ -1564,6 +1567,7 @@ export function ApplicationDetailClient({
                 onUpload={(file) => uploadFile(item.doc_type, file)}
                 onRemove={removeDocument}
                 onRetryExtract={(d) => void retryExtractionForDoc(d)}
+                onEditPhoto={(d) => setPhotoEditorDoc(d)}
               />
             ))}
           </div>
@@ -1660,6 +1664,18 @@ export function ApplicationDetailClient({
           {renderGovtPortalReadinessHub()}
         </>
       )}
+
+      <PhotoCropEditorModal
+        open={photoEditorDoc != null}
+        onClose={() => setPhotoEditorDoc(null)}
+        applicationId={application.id}
+        document={photoEditorDoc}
+        onSaved={async () => {
+          const list = await loadDocuments();
+          setDocuments(list);
+          await loadPortalPrep();
+        }}
+      />
     </div>
   );
 }
@@ -1674,6 +1690,7 @@ function DocumentChecklistCard({
   onUpload,
   onRemove,
   onRetryExtract,
+  onEditPhoto,
 }: {
   item: ChecklistItem;
   document: Document | undefined;
@@ -1684,6 +1701,7 @@ function DocumentChecklistCard({
   onUpload: (file: File) => void;
   onRemove: (id: string) => void;
   onRetryExtract: (doc: Document) => void;
+  onEditPhoto?: (doc: Document) => void;
 }) {
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -1753,6 +1771,18 @@ function DocumentChecklistCard({
                   >
                     View in Drive
                   </a>
+                </>
+              ) : null}
+              {item.doc_type === "applicant_photo" && onEditPhoto ? (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={() => onEditPhoto(document)}
+                    className="text-[#2563eb] underline-offset-2 transition-colors duration-150 hover:text-blue-700"
+                  >
+                    Edit Photo
+                  </button>
                 </>
               ) : null}
             </div>
