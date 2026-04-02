@@ -1,6 +1,11 @@
 import sharp from "sharp";
 
 import {
+  OCI_APPLICANT_PHOTO_MAX_PX,
+  OCI_APPLICANT_PHOTO_MIN_PX,
+  OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX,
+} from "@/lib/oci-applicant-photo-rules";
+import {
   PORTAL_IMAGE_MAX_BYTES,
   PORTAL_IMAGE_MAX_KB,
 } from "@/lib/portal-constants";
@@ -9,10 +14,6 @@ import {
 export const GOVT_IMAGE_MAX_BYTES = PORTAL_IMAGE_MAX_BYTES;
 
 export type GovtImageType = "photo" | "signature";
-
-/** Photo: JPEG, square 1:1, min 200×200, max 1500×1500 (ociservices.gov.in). */
-const PHOTO_MIN = 200;
-const PHOTO_MAX = 1500;
 
 /** Signature: JPEG, 3:1 width:height, min 200×67, max 1500×500. */
 const SIG_RATIO = 3;
@@ -81,14 +82,18 @@ export async function validateGovtImage(
   if (!w || !h) {
     issues.push("Could not determine image dimensions.");
   } else if (imageType === "photo") {
-    if (Math.abs(w - h) > 2) {
+    if (Math.abs(w - h) > OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX) {
       issues.push(`Not square: ${w}×${h} (width and height must be equal).`);
     }
-    if (w < PHOTO_MIN || h < PHOTO_MIN) {
-      issues.push(`Dimensions below minimum: need at least ${PHOTO_MIN}×${PHOTO_MIN}px.`);
+    if (w < OCI_APPLICANT_PHOTO_MIN_PX || h < OCI_APPLICANT_PHOTO_MIN_PX) {
+      issues.push(
+        `Dimensions below minimum: need at least ${OCI_APPLICANT_PHOTO_MIN_PX}×${OCI_APPLICANT_PHOTO_MIN_PX}px.`
+      );
     }
-    if (w > PHOTO_MAX || h > PHOTO_MAX) {
-      issues.push(`Dimensions above maximum: at most ${PHOTO_MAX}×${PHOTO_MAX}px.`);
+    if (w > OCI_APPLICANT_PHOTO_MAX_PX || h > OCI_APPLICANT_PHOTO_MAX_PX) {
+      issues.push(
+        `Dimensions above maximum: at most ${OCI_APPLICANT_PHOTO_MAX_PX}×${OCI_APPLICANT_PHOTO_MAX_PX}px.`
+      );
     }
   } else {
     const ratio = w / h;

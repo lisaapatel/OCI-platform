@@ -14,6 +14,14 @@ import ReactCrop, {
 } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 
+import {
+  allOciApplicantPhotoChecksPass,
+  evaluateOciApplicantPhotoExportBlob,
+  OCI_APPLICANT_PHOTO_MAX_PX,
+  OCI_APPLICANT_PHOTO_MIN_PX,
+  OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX,
+  type OciApplicantPhotoExportChecks,
+} from "@/lib/oci-applicant-photo-rules";
 import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
 import type { Document } from "@/lib/types";
 
@@ -88,7 +96,7 @@ async function compressCanvasToLimit(
   const last = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob((b) => resolve(b), "image/jpeg", 0.28)
   );
-  if (last && last.size <= maxBytes * 1.02) return last;
+  if (last && last.size <= maxBytes) return last;
   throw new Error(
     `Could not compress under portal limit (${Math.round(maxBytes / 1024)}KB).`
   );
@@ -142,6 +150,14 @@ function applyCanvasFilters(
   return out;
 }
 
+/** Passport-style guides in selection-local coords (viewBox 0–100, y grows downward).
+ * Eye line: ~upper third — aligns with common 2×2 guidance (eyes ~1⅛–1⅜″ from *bottom*
+ * of a 2″ photo ≈ ~32–44% from top; we use ~40% so the line sits near eye level).
+ * Chin line: below mid-face, above collar (~76% from top; 85% sat too low on many crops).
+ */
+const GUIDE_EYES_Y = 40;
+const GUIDE_CHIN_Y = 76;
+
 function PassportGuidesOverlay() {
   return (
     <svg
@@ -152,28 +168,40 @@ function PassportGuidesOverlay() {
     >
       <line
         x1="0"
-        y1="60"
+        y1={GUIDE_EYES_Y}
         x2="100"
-        y2="60"
+        y2={GUIDE_EYES_Y}
         stroke="#2563eb"
         strokeWidth="0.35"
         vectorEffect="non-scaling-stroke"
         strokeDasharray="4 3"
       />
-      <text x="2" y="58" fill="#2563eb" fontSize="5" fontWeight="600">
+      <text
+        x="2"
+        y={GUIDE_EYES_Y - 2}
+        fill="#2563eb"
+        fontSize="5"
+        fontWeight="600"
+      >
         Eyes here
       </text>
       <line
         x1="0"
-        y1="85"
+        y1={GUIDE_CHIN_Y}
         x2="100"
-        y2="85"
+        y2={GUIDE_CHIN_Y}
         stroke="#2563eb"
         strokeWidth="0.35"
         vectorEffect="non-scaling-stroke"
         strokeDasharray="4 3"
       />
-      <text x="2" y="83" fill="#2563eb" fontSize="5" fontWeight="600">
+      <text
+        x="2"
+        y={GUIDE_CHIN_Y - 2}
+        fill="#2563eb"
+        fontSize="5"
+        fontWeight="600"
+      >
         Chin here
       </text>
       <line
@@ -188,12 +216,12 @@ function PassportGuidesOverlay() {
       />
       <ellipse
         cx="50"
-        cy="58"
-        rx="24"
-        ry="30"
+        cy={52}
+        rx="26"
+        ry="32"
         fill="none"
-        stroke="rgba(37,99,235,0.28)"
-        strokeWidth="0.4"
+        stroke="rgba(37,99,235,0.42)"
+        strokeWidth="0.5"
         vectorEffect="non-scaling-stroke"
       />
     </svg>
@@ -229,7 +257,8 @@ export function PhotoCropEditorModal({
     null
   );
   const [finalKb, setFinalKb] = useState<string>("—");
-  const [compressOk, setCompressOk] = useState(false);
+  const [portalExportChecks, setPortalExportChecks] =
+    useState<OciApplicantPhotoExportChecks | null>(null);
   const [compressError, setCompressError] = useState<string | null>(null);
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceHint, setFaceHint] = useState<string | null>(null);
@@ -280,7 +309,7 @@ export function PhotoCropEditorModal({
     setPreviewResultUrl(null);
     setPreviewOriginalUrl(null);
     setFinalKb("—");
-    setCompressOk(false);
+    setPortalExportChecks(null);
     setCompressError(null);
     cleanupUrls();
     setSourceObjectUrl(null);
@@ -369,7 +398,7 @@ export function PhotoCropEditorModal({
       setPreviewResultUrl(null);
       setPreviewOriginalUrl(null);
       setFinalKb("—");
-      setCompressOk(false);
+      setPortalExportChecks(null);
       setCompressError(null);
       return;
     }
@@ -416,11 +445,17 @@ export function PhotoCropEditorModal({
         PORTAL_IMAGE_MAX_BYTES
       );
       setFinalKb((outBlob.size / 1024).toFixed(1));
-      setCompressOk(true);
+      setPortalExportChecks(
+        await evaluateOciApplicantPhotoExportBlob(
+          outBlob,
+          filtered.width,
+          filtered.height
+        )
+      );
       setCompressError(null);
     } catch (e) {
       setFinalKb("—");
-      setCompressOk(false);
+      setPortalExportChecks(null);
       setCompressError(e instanceof Error ? e.message : String(e));
     }
   }, [buildFilteredExportCanvas]);
@@ -598,13 +633,9 @@ export function PhotoCropEditorModal({
     onClose();
   }, [cleanupUrls, onClose]);
 
-  const squareOk = true;
-  const minOk = EXPORT_SIZE >= 200;
-  const maxOk = EXPORT_SIZE <= 1500;
-  const jpegOk = true;
-  const sizeOk = compressOk;
-  const allPortalGreen =
-    squareOk && minOk && maxOk && jpegOk && sizeOk && !compressError;
+  const meetsOciPortalExport =
+    !compressError && allOciApplicantPhotoChecksPass(portalExportChecks);
+  const c = portalExportChecks;
 
   useEffect(() => {
     if (!open) return;
@@ -632,7 +663,7 @@ export function PhotoCropEditorModal({
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (allPortalGreen && displayUrl && crop?.width) {
+        if (meetsOciPortalExport && displayUrl && crop?.width) {
           void onApplyDownload();
         }
         return;
@@ -658,7 +689,7 @@ export function PhotoCropEditorModal({
     open,
     saveBusy,
     handleClose,
-    allPortalGreen,
+    meetsOciPortalExport,
     displayUrl,
     crop?.width,
     nudgeCrop,
@@ -911,10 +942,10 @@ export function PhotoCropEditorModal({
                     <p
                       className={clsx(
                         "mt-1 text-xs font-semibold",
-                        allPortalGreen ? "text-green-700" : "text-red-700"
+                        meetsOciPortalExport ? "text-green-700" : "text-red-700"
                       )}
                     >
-                      {allPortalGreen
+                      {meetsOciPortalExport
                         ? "✅ Meets OCI requirements"
                         : "❌ Adjust crop or brightness — see checklist below"}
                     </p>
@@ -1015,7 +1046,7 @@ export function PhotoCropEditorModal({
               <div
                 className={clsx(
                   "rounded-lg border px-3 py-2 text-xs",
-                  allPortalGreen
+                  meetsOciPortalExport
                     ? "border-green-200 bg-green-50/80"
                     : "border-amber-200 bg-amber-50/80"
                 )}
@@ -1025,21 +1056,24 @@ export function PhotoCropEditorModal({
                 </p>
                 <ul className="space-y-0.5 text-slate-700">
                   <li>
-                    {squareOk ? "✅" : "❌"} Square ratio (1:1)
+                    {c?.square ? "✅" : "❌"} Square ratio (1:1, ±
+                    {OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX}px)
                   </li>
                   <li>
-                    {minOk ? "✅" : "❌"} Min 200×200px
+                    {c?.minDim ? "✅" : "❌"} Min {OCI_APPLICANT_PHOTO_MIN_PX}×
+                    {OCI_APPLICANT_PHOTO_MIN_PX}px
                   </li>
                   <li>
-                    {maxOk ? "✅" : "❌"} Max 1500×1500px
+                    {c?.maxDim ? "✅" : "❌"} Max {OCI_APPLICANT_PHOTO_MAX_PX}×
+                    {OCI_APPLICANT_PHOTO_MAX_PX}px
                   </li>
                   <li>
-                    {sizeOk ? "✅" : "❌"} Under {PORTAL_MAX_KB}KB
+                    {c?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}KB
                     {compressError ? (
                       <span className="ml-1 text-red-600">({compressError})</span>
                     ) : null}
                   </li>
-                  <li>{jpegOk ? "✅" : "❌"} JPEG format</li>
+                  <li>{c?.jpeg ? "✅" : "❌"} JPEG format</li>
                 </ul>
               </div>
             </div>
@@ -1057,7 +1091,7 @@ export function PhotoCropEditorModal({
           <button
             type="button"
             disabled={
-              !displayUrl || !crop?.width || !allPortalGreen || saveBusy
+              !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
             }
             onClick={() => void onApplyDownload()}
             className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
@@ -1067,7 +1101,7 @@ export function PhotoCropEditorModal({
           <button
             type="button"
             disabled={
-              !displayUrl || !crop?.width || !allPortalGreen || saveBusy
+              !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
             }
             onClick={() => void onApplySave()}
             className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
