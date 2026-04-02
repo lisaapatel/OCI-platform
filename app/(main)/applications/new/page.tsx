@@ -3,7 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-type ServiceType = "oci_new" | "oci_renewal" | "passport_renewal";
+type ServiceType =
+  | "oci_new"
+  | "oci_renewal"
+  | "passport_renewal"
+  | "passport_us_renewal_test";
 
 export default function NewApplicationPage() {
   const router = useRouter();
@@ -155,9 +159,13 @@ export default function NewApplicationPage() {
                 <option value="passport_renewal" disabled>
                   Passport Renewal — Coming Soon
                 </option>
+                <option value="passport_us_renewal_test">
+                  US Passport renewal (DS-82) — PDF test only
+                </option>
               </select>
               <p className="mt-2 text-xs text-[#64748b]">
-                Passport Renewal is disabled for now.
+                Passport Renewal is disabled for now. The DS-82 option is an
+                internal POC for filled PDF generation.
               </p>
             </div>
           </section>

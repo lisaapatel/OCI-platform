@@ -8,6 +8,7 @@ import type { ExtractionFailureCode } from "@/lib/extraction-failure-reasons";
 import { FAILURE_REASON_LABELS } from "@/lib/extraction-failure-reasons";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { getOciChecklistLabel, shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { ExtractSingleResultBody } from "@/lib/types";
 
@@ -244,6 +245,10 @@ async function runExtraction(args: {
       document_id: docId,
     };
   }
+
+  void reconcileApplication(application_id).catch((e) =>
+    console.error("reconcileApplication after extract/single:", e)
+  );
 
   return {
     ok: true,

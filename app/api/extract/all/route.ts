@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { extractFieldsFromDocument } from "@/lib/claude";
 import { getFileAsBase64 } from "@/lib/google-drive";
+import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -128,6 +129,10 @@ export async function POST(req: Request) {
           .eq("id", doc.id);
       }
     }
+
+    void reconcileApplication(application_id).catch((e) =>
+      console.error("reconcileApplication after extract/all:", e)
+    );
 
     return NextResponse.json(
       { ok: true, docs_processed: docsProcessed, fields_extracted: fieldsExtracted },

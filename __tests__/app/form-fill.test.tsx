@@ -109,7 +109,7 @@ describe("Form fill page", () => {
     ).toBeInTheDocument();
   });
 
-  test("Test 2: Extracted values use large readable text", async () => {
+  test("Test 2: Extracted values show in large readable inputs", async () => {
     const { FormFillPageClient } = await import(
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
@@ -117,10 +117,11 @@ describe("Form fill page", () => {
       <FormFillPageClient {...defaultProps} initialFields={buildFields()} />
     );
 
-    const valueEls = screen.getAllByText("Sample value");
+    const first = screen.getAllByDisplayValue("Sample value")[0];
+    expect(first.tagName).toBe("INPUT");
     expect(
-      valueEls[0].className.includes("text-lg") ||
-        valueEls[0].className.includes("text-xl")
+      first.className.includes("text-lg") ||
+        first.className.includes("text-xl")
     ).toBe(true);
   });
 
@@ -151,7 +152,7 @@ describe("Form fill page", () => {
     expect(screen.getByText(/Flagged:/i)).toBeInTheDocument();
   });
 
-  test("Test 5: Empty extracted fields show Fill manually badge", async () => {
+  test("Test 5: Empty extracted fields show manual-entry hint", async () => {
     const { FormFillPageClient } = await import(
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
@@ -161,11 +162,12 @@ describe("Form fill page", () => {
     });
     render(<FormFillPageClient {...defaultProps} initialFields={fields} />);
 
-    const badges = screen.getAllByText(/Fill manually/i);
-    expect(badges.length).toBeGreaterThanOrEqual(1);
+    const hints = screen.getAllByText(/No auto data — enter manually/i);
+    expect(hints.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/Fill manually/i)).not.toBeInTheDocument();
   });
 
-  test("Test 6: Progress shows X of 25 and manual banner when needed", async () => {
+  test("Test 6: Progress uses visible field count and manual banner when needed", async () => {
     const { FormFillPageClient } = await import(
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
@@ -179,6 +181,23 @@ describe("Form fill page", () => {
     expect(screen.getByTestId("form-fill-manual-banner")).toBeInTheDocument();
     expect(screen.getByTestId("form-fill-summary")).toHaveTextContent(
       "Last reviewed"
+    );
+  });
+
+  test("Test 6b: Spouse N/A hides spouse passport row and lowers count", async () => {
+    const { FormFillPageClient } = await import(
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
+    );
+    const fields = buildFields({
+      spouse_name: { value: "n/a" },
+    });
+    render(<FormFillPageClient {...defaultProps} initialFields={fields} />);
+
+    expect(
+      screen.queryByRole("textbox", { name: /Spouse's Passport No/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("form-fill-progress")).toHaveTextContent(
+      /of 24 fields have values/
     );
   });
 

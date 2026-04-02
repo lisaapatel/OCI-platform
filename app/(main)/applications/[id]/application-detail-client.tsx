@@ -114,7 +114,9 @@ function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
       ? "OCI New"
       : serviceType === "oci_renewal"
         ? "OCI Renewal"
-        : "Passport Renewal";
+        : serviceType === "passport_us_renewal_test"
+          ? "US Passport Test (DS-82)"
+          : "Passport Renewal";
   return (
     <span className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1e3a5f]">
       {label}
@@ -175,6 +177,7 @@ export function ApplicationDetailClient({
     {}
   );
   const [isProcessing, setIsProcessing] = useState(false);
+  const [pdfTestGenerating, setPdfTestGenerating] = useState(false);
   const [extractingDocId, setExtractingDocId] = useState<string | null>(null);
   const [extractionProgress, setExtractionProgress] = useState<{
     message: string;
@@ -630,6 +633,40 @@ export function ApplicationDetailClient({
     }
     refresh();
     return true;
+  }
+
+  async function downloadTestPassportPdf() {
+    setPatchError(null);
+    setPdfTestGenerating(true);
+    try {
+      const res = await fetch("/api/passport-us-test/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: application.id }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setPatchError(
+          typeof data.error === "string"
+            ? data.error
+            : "Failed to generate test PDF."
+        );
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "passport-ds82-test.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setPatchError(
+        e instanceof Error ? e.message : "Failed to generate test PDF."
+      );
+    } finally {
+      setPdfTestGenerating(false);
+    }
   }
 
   async function onNotesBlur() {
@@ -1345,6 +1382,18 @@ export function ApplicationDetailClient({
             >
               Open Google Drive Folder
             </a>
+          ) : null}
+          {application.service_type === "passport_us_renewal_test" ? (
+            <button
+              type="button"
+              onClick={() => void downloadTestPassportPdf()}
+              disabled={pdfTestGenerating}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#2563eb] bg-[#2563eb] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {pdfTestGenerating
+                ? "Generating…"
+                : "Generate Test Passport PDF"}
+            </button>
           ) : null}
           {application.status === "ready_to_submit" ? (
             <Link

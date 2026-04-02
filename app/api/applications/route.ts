@@ -21,7 +21,11 @@ export async function POST(req: Request) {
       customer_name?: string;
       customer_email?: string;
       customer_phone?: string;
-      service_type?: "oci_new" | "oci_renewal" | "passport_renewal";
+      service_type?:
+        | "oci_new"
+        | "oci_renewal"
+        | "passport_renewal"
+        | "passport_us_renewal_test";
       notes?: string;
     };
 
@@ -37,7 +41,13 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (!service_type || (service_type !== "oci_new" && service_type !== "oci_renewal" && service_type !== "passport_renewal")) {
+    if (
+      !service_type ||
+      (service_type !== "oci_new" &&
+        service_type !== "oci_renewal" &&
+        service_type !== "passport_renewal" &&
+        service_type !== "passport_us_renewal_test")
+    ) {
       return NextResponse.json(
         { error: "Service Type is required." },
         { status: 400 }

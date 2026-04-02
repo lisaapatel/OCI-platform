@@ -8,7 +8,7 @@ create table applications (
   customer_name text not null,
   customer_email text,
   customer_phone text,
-  service_type text not null check (service_type in ('oci_new', 'oci_renewal', 'passport_renewal')),
+  service_type text not null check (service_type in ('oci_new', 'oci_renewal', 'passport_renewal', 'passport_us_renewal_test')),
   status text not null default 'docs_pending' check (status in ('docs_pending', 'ready_for_review', 'ready_to_submit', 'submitted', 'on_hold')),
   drive_folder_id text,
   drive_folder_url text,

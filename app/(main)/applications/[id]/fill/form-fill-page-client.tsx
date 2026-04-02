@@ -14,6 +14,7 @@ import {
   isPortalPdfChecklistItem,
   type PortalReadinessSnapshot,
 } from "@/lib/portal-readiness";
+import { isSpouseNameNa } from "@/lib/form-fill-spouse-na";
 import {
   buildGivenName,
   buildNativePlace,
@@ -23,7 +24,6 @@ import {
   formatPortalDate,
   getRowByKeys,
   getValueByKeys,
-  OCI_GOVT_FILL_FIELD_COUNT,
 } from "@/lib/oci-govt-fill-resolve";
 import type { ExtractedField } from "@/lib/types";
 
@@ -49,14 +49,15 @@ function GovtPlaceholder({ label }: { label: string }) {
 type GovtFillRowConfig = {
   stableId: string;
   govtLabel: string;
-  /** Text shown and copied for plain fields */
-  displayText: string;
+  /** Copy / display source (extracted or local) */
   copyText: string;
-  showManualBadge: boolean;
+  /** Subtle hint when there was no auto-extracted value */
+  showNoAutoDataHint: boolean;
   flagMeta: FlagMeta;
-  mode?: "text" | "input" | "select";
+  mode: "input" | "select";
   inputValue?: string;
   onInputChange?: (v: string) => void;
+  onBlurPersist?: (value: string) => void | Promise<void>;
   inputPlaceholder?: string;
   selectValue?: string;
   onSelectChange?: (v: string) => void;
@@ -71,15 +72,15 @@ type GovtFillRowProps = GovtFillRowConfig & {
 function GovtFillRow({
   stableId,
   govtLabel,
-  displayText,
   copyText,
-  showManualBadge,
+  showNoAutoDataHint,
   flagMeta,
   copiedId,
   onCopy,
-  mode = "text",
+  mode,
   inputValue,
   onInputChange,
+  onBlurPersist,
   inputPlaceholder,
   selectValue,
   onSelectChange,
@@ -120,29 +121,6 @@ function GovtFillRow({
           {govtLabel}
         </span>
 
-        {mode === "text" ? (
-          <div className="flex flex-wrap items-start gap-3">
-            <p
-              className={clsx(
-                "min-w-0 flex-1 text-lg font-medium leading-snug print:text-black",
-                showManualBadge ? "text-slate-400" : "text-slate-900"
-              )}
-              data-empty={showManualBadge ? "true" : "false"}
-            >
-              {displayText}
-            </p>
-            {showCopy ? (
-              <button
-                type="button"
-                className="no-print shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 transition-colors hover:bg-blue-100"
-                onClick={handleCopy}
-              >
-                {isCopied ? "Copied!" : "Copy"}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-
         {mode === "input" ? (
           <div className="flex flex-wrap items-center gap-3">
             <input
@@ -150,8 +128,10 @@ function GovtFillRow({
               className="min-w-[200px] flex-1 max-w-lg rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-medium text-slate-900 print:border-slate-400"
               value={inputValue ?? ""}
               onChange={(e) => onInputChange?.(e.target.value)}
+              onBlur={(e) => void onBlurPersist?.(e.target.value)}
               placeholder={inputPlaceholder ?? ""}
               aria-label={govtLabel}
+              data-empty={showNoAutoDataHint ? "true" : "false"}
             />
             {showCopy ? (
               <button
@@ -171,6 +151,7 @@ function GovtFillRow({
               className="no-print min-w-[200px] max-w-md flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-medium text-slate-900 print:hidden"
               value={selectValue ?? ""}
               onChange={(e) => onSelectChange?.(e.target.value)}
+              onBlur={(e) => void onBlurPersist?.(e.target.value)}
               aria-label={govtLabel}
             >
               <option value="">{selectPlaceholder ?? "Select…"}</option>
@@ -197,10 +178,10 @@ function GovtFillRow({
           </div>
         ) : null}
 
-        {showManualBadge ? (
-          <span className="inline-flex w-fit items-center rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 print:border-amber-600">
-            ⚠ Fill manually
-          </span>
+        {showNoAutoDataHint ? (
+          <p className="text-xs text-slate-500 print:text-slate-600">
+            No auto data — enter manually
+          </p>
         ) : null}
 
         {flagMeta.flagged ? (
@@ -238,9 +219,14 @@ export function FormFillPageClient({
   initialFields: ExtractedField[];
   portalReadiness: PortalReadinessSnapshot;
 }) {
+  const [fields, setFields] = useState<ExtractedField[]>(initialFields);
+  useEffect(() => {
+    setFields(initialFields);
+  }, [initialFields]);
+
   const byName = useMemo(
-    () => buildExtractedFieldLookupMap(initialFields),
-    [initialFields]
+    () => buildExtractedFieldLookupMap(fields),
+    [fields]
   );
 
   const [fatherNationality, setFatherNationality] = useState("INDIA");
@@ -249,6 +235,17 @@ export function FormFillPageClient({
   const [spousePassport, setSpousePassport] = useState("");
   const [occupation, setOccupation] = useState("");
   const [employerAddress, setEmployerAddress] = useState("");
+  const [localEmail, setLocalEmail] = useState(() =>
+    (customerEmail ?? "").trim()
+  );
+  const [localPhone, setLocalPhone] = useState(() =>
+    (customerPhone ?? "").trim()
+  );
+
+  useEffect(() => {
+    setLocalEmail((customerEmail ?? "").trim());
+    setLocalPhone((customerPhone ?? "").trim());
+  }, [customerEmail, customerPhone]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [portalPrepOpen, setPortalPrepOpen] = useState(false);
@@ -268,302 +265,306 @@ export function FormFillPageClient({
     }
   }, []);
 
+  const persistExtractedField = useCallback(
+    async (fieldId: string, value: string) => {
+      const res = await fetch(`/api/fields/${fieldId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          field_value: value,
+          is_flagged: false,
+          flag_note: "",
+        }),
+      });
+      if (!res.ok) return;
+      const rec = await fetch("/api/reconcile/application", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: applicationId }),
+      });
+      const j = (await rec.json()) as { fields?: ExtractedField[] };
+      if (rec.ok && Array.isArray(j.fields)) setFields(j.fields);
+    },
+    [applicationId]
+  );
+
   const rowPropsList = useMemo((): GovtFillRowConfig[] => {
     const by = byName;
-    const surname = getValueByKeys(by, [
-      "last_name",
-      "surname",
-      "family_name",
-    ]);
     const given = buildGivenName(by);
     const prev = buildPreviousName(by);
-    const gender = getValueByKeys(by, ["gender", "sex"]);
-    const dobRaw = getValueByKeys(by, [
-      "date_of_birth",
-      "dob",
-      "birth_date",
-    ]);
-    const dob = formatPortalDate(dobRaw) || dobRaw;
-    const countryBirth = getValueByKeys(by, [
-      "country_of_birth",
-      "birth_country",
-      "place_of_birth_country",
-    ]);
-    const placeBirth = getValueByKeys(by, [
-      "place_of_birth",
-      "birth_place",
-      "pob",
-    ]);
-    const nationality = getValueByKeys(by, [
-      "current_nationality",
-      "nationality",
-      "citizenship",
-    ]);
-    const marital = getValueByKeys(by, ["marital_status", "marital"]);
-    const passportNo = getValueByKeys(by, [
-      "passport_number",
-      "passport_no",
-      "passport_num",
-      "document_number",
-    ]);
-    const issueRaw = getValueByKeys(by, [
-      "passport_issue_date",
-      "issue_date",
-      "date_of_issue",
-      "doi",
-    ]);
-    const issueFmt = formatPortalDate(issueRaw) || issueRaw;
-    const placeIssue = getValueByKeys(by, [
-      "place_of_issue",
-      "issuing_authority",
-      "issuing_office",
-      "poi",
-    ]);
-    const father = getValueByKeys(by, [
-      "father_full_name",
-      "father_name",
-      "fathers_name",
-      "father",
-    ]);
-    const mother = getValueByKeys(by, [
-      "mother_full_name",
-      "mother_name",
-      "mothers_name",
-      "mother",
-    ]);
-    const spouse = getValueByKeys(by, [
+    const spouseFromKeys = getValueByKeys(by, [
       "spouse_name",
       "spouse_full_name",
       "husband_name",
       "wife_name",
     ]);
-    const spouseDisplay = spouse.trim() ? spouse : "N/A";
+    const spouseRow = getRowByKeys(by, [
+      "spouse_name",
+      "spouse_full_name",
+      "husband_name",
+      "wife_name",
+    ]);
+    const spouseEffective = spouseRow
+      ? (fields.find((f) => f.id === spouseRow.id)?.field_value ??
+        spouseFromKeys)
+      : spouseFromKeys;
+    const hideSpousePassport = isSpouseNameNa(spouseEffective);
     const present = buildPresentAddress(by);
     const native = buildNativePlace(by);
-    const email = (customerEmail ?? "").trim();
-    const phone = (customerPhone ?? "").trim();
 
-    const textRow = (
-      id: string,
+    const givenFirstRow = getRowByKeys(by, [
+      "first_name",
+      "given_name",
+      "forename",
+    ]);
+    const givenFirstFieldVal = givenFirstRow
+      ? fields.find((f) => f.id === givenFirstRow.id)?.field_value
+      : undefined;
+
+    const extInput = (
+      stableId: string,
       label: string,
-      copy: string,
-      display: string,
-      showManual: boolean,
-      flag: FlagMeta
-    ): GovtFillRowConfig => ({
-      stableId: id,
-      govtLabel: label,
-      displayText: display,
-      copyText: copy,
-      showManualBadge: showManual,
-      flagMeta: flag,
-      mode: "text",
-    });
+      keys: string[],
+      flagRows: (ExtractedField | undefined)[],
+      opts?: { formatDisplay?: (raw: string) => string }
+    ): GovtFillRowConfig => {
+      const row = getRowByKeys(by, keys);
+      const raw = getValueByKeys(by, keys);
+      const shown = opts?.formatDisplay
+        ? opts.formatDisplay(raw) || raw
+        : raw;
+      const current = row
+        ? fields.find((f) => f.id === row.id)
+        : undefined;
+      const inputValue = current?.field_value ?? "";
+      const hasValueInForm = !!inputValue.trim();
+      const hasValueFromMap = !!raw.trim();
+      return {
+        stableId,
+        govtLabel: label,
+        copyText: shown || raw,
+        showNoAutoDataHint: !hasValueFromMap && !hasValueInForm,
+        flagMeta: collectFlagMeta(flagRows),
+        mode: "input",
+        inputValue,
+        onInputChange: row
+          ? (v) =>
+              setFields((prev) =>
+                prev.map((f) =>
+                  f.id === row.id ? { ...f, field_value: v } : f
+                )
+              )
+          : undefined,
+        onBlurPersist: row
+          ? (v) => void persistExtractedField(row.id, v)
+          : undefined,
+        inputPlaceholder: "",
+      };
+    };
 
-    return [
-      textRow(
-        "f1",
-        "Surname",
-        surname,
-        surname.trim() ? surname : "—",
-        !surname.trim(),
-        collectFlagMeta([getRowByKeys(by, ["last_name", "surname", "family_name"])])
-      ),
-      textRow(
-        "f2",
-        "Given Name",
-        given.text,
-        given.text.trim() ? given.text : "—",
-        !given.text.trim(),
-        collectFlagMeta(given.rows)
-      ),
-      textRow(
+    const allRows: GovtFillRowConfig[] = [
+      extInput("f1", "Surname", ["last_name", "surname", "family_name"], [
+        getRowByKeys(by, ["last_name", "surname", "family_name"]),
+      ]),
+      {
+        stableId: "f2",
+        govtLabel: "Given Name",
+        copyText: given.text,
+        showNoAutoDataHint: !given.text.trim(),
+        flagMeta: collectFlagMeta(given.rows),
+        mode: "input",
+        inputValue: givenFirstRow ? (givenFirstFieldVal ?? "") : given.text,
+        onInputChange: givenFirstRow
+          ? (v) =>
+              setFields((prev) =>
+                prev.map((f) =>
+                  f.id === givenFirstRow.id ? { ...f, field_value: v } : f
+                )
+              )
+          : undefined,
+        onBlurPersist: givenFirstRow
+          ? (v) => void persistExtractedField(givenFirstRow.id, v)
+          : undefined,
+        inputPlaceholder: "",
+      },
+      extInput(
         "f3",
         "Previous Name",
-        prev.text,
-        prev.text,
-        false,
-        collectFlagMeta(prev.rows)
+        [
+          "previous_name",
+          "maiden_name",
+          "former_name",
+          "name_changed_from",
+        ],
+        prev.rows
       ),
-      textRow(
-        "f4",
-        "Sex",
-        gender,
-        gender.trim() ? gender : "—",
-        !gender.trim(),
-        collectFlagMeta([getRowByKeys(by, ["gender", "sex"])])
-      ),
-      textRow(
+      extInput("f4", "Sex", ["gender", "sex"], [
+        getRowByKeys(by, ["gender", "sex"]),
+      ]),
+      extInput(
         "f5",
         "Date of Birth",
-        dob,
-        dob.trim() ? dob : "—",
-        !dob.trim(),
-        collectFlagMeta([
-          getRowByKeys(by, ["date_of_birth", "dob", "birth_date"]),
-        ])
+        ["date_of_birth", "dob", "birth_date"],
+        [getRowByKeys(by, ["date_of_birth", "dob", "birth_date"])],
+        { formatDisplay: (r) => formatPortalDate(r) || r }
       ),
-      textRow(
+      extInput(
         "f6",
         "Country of Birth",
-        countryBirth,
-        countryBirth.trim() ? countryBirth : "—",
-        !countryBirth.trim(),
-        collectFlagMeta([
+        [
+          "country_of_birth",
+          "birth_country",
+          "place_of_birth_country",
+        ],
+        [
           getRowByKeys(by, [
             "country_of_birth",
             "birth_country",
             "place_of_birth_country",
           ]),
-        ])
+        ]
       ),
-      textRow(
+      extInput(
         "f7",
         "Place of Birth",
-        placeBirth,
-        placeBirth.trim() ? placeBirth : "—",
-        !placeBirth.trim(),
-        collectFlagMeta([
-          getRowByKeys(by, ["place_of_birth", "birth_place", "pob"]),
-        ])
+        ["place_of_birth", "birth_place", "pob"],
+        [getRowByKeys(by, ["place_of_birth", "birth_place", "pob"])]
       ),
-      textRow(
+      extInput(
         "f8",
         "Current Nationality",
-        nationality,
-        nationality.trim() ? nationality : "—",
-        !nationality.trim(),
-        collectFlagMeta([
+        ["current_nationality", "nationality", "citizenship"],
+        [
           getRowByKeys(by, [
             "current_nationality",
             "nationality",
             "citizenship",
           ]),
-        ])
+        ]
       ),
       {
         stableId: "f9",
         govtLabel: "Visible Mark",
-        displayText: "",
         copyText: visibleMark,
-        showManualBadge: !visibleMark.trim(),
+        showNoAutoDataHint: !visibleMark.trim(),
         flagMeta: { flagged: false, notes: [] },
         mode: "input",
         inputValue: visibleMark,
         onInputChange: setVisibleMark,
-        inputPlaceholder: "Team fills manually",
+        inputPlaceholder: "Optional — team use",
       },
-      textRow(
-        "f10",
-        "Marital Status",
-        marital,
-        marital.trim() ? marital : "—",
-        !marital.trim(),
-        collectFlagMeta([getRowByKeys(by, ["marital_status", "marital"])])
-      ),
-      textRow(
+      extInput("f10", "Marital Status", ["marital_status", "marital"], [
+        getRowByKeys(by, ["marital_status", "marital"]),
+      ]),
+      extInput(
         "f11",
         "Passport Number",
-        passportNo,
-        passportNo.trim() ? passportNo : "—",
-        !passportNo.trim(),
-        collectFlagMeta([
+        ["passport_number", "passport_no", "passport_num", "document_number"],
+        [
           getRowByKeys(by, [
             "passport_number",
             "passport_no",
             "document_number",
           ]),
-        ])
+        ]
       ),
-      textRow(
+      extInput(
         "f12",
         "Date of Issue",
-        issueFmt,
-        issueFmt.trim() ? issueFmt : "—",
-        !issueFmt.trim(),
-        collectFlagMeta([
+        [
+          "passport_issue_date",
+          "issue_date",
+          "date_of_issue",
+          "doi",
+        ],
+        [
           getRowByKeys(by, [
             "passport_issue_date",
             "issue_date",
             "date_of_issue",
           ]),
-        ])
+        ],
+        { formatDisplay: (r) => formatPortalDate(r) || r }
       ),
-      textRow(
+      extInput(
         "f13",
         "Place of Issue",
-        placeIssue,
-        placeIssue.trim() ? placeIssue : "—",
-        !placeIssue.trim(),
-        collectFlagMeta([
-          getRowByKeys(by, ["place_of_issue", "issuing_authority", "poi"]),
-        ])
+        ["place_of_issue", "issuing_authority", "issuing_office", "poi"],
+        [getRowByKeys(by, ["place_of_issue", "issuing_authority", "poi"])]
       ),
-      textRow(
+      extInput(
         "f14",
         "Father's Name",
-        father,
-        father.trim() ? father : "—",
-        !father.trim(),
-        collectFlagMeta([
-          getRowByKeys(by, ["father_full_name", "father_name", "father"]),
-        ])
+        ["father_full_name", "father_name", "fathers_name", "father"],
+        [getRowByKeys(by, ["father_full_name", "father_name", "father"])]
       ),
       {
         stableId: "f15",
         govtLabel: "Father's Nationality",
-        displayText: "",
         copyText: fatherNationality,
-        showManualBadge: !fatherNationality.trim(),
+        showNoAutoDataHint: !fatherNationality.trim(),
         flagMeta: { flagged: false, notes: [] },
         mode: "input",
         inputValue: fatherNationality,
         onInputChange: setFatherNationality,
         inputPlaceholder: "Nationality",
       },
-      textRow(
+      extInput(
         "f16",
         "Mother's Name",
-        mother,
-        mother.trim() ? mother : "—",
-        !mother.trim(),
-        collectFlagMeta([
-          getRowByKeys(by, ["mother_full_name", "mother_name", "mother"]),
-        ])
+        ["mother_full_name", "mother_name", "mothers_name", "mother"],
+        [getRowByKeys(by, ["mother_full_name", "mother_name", "mother"])]
       ),
       {
         stableId: "f17",
         govtLabel: "Mother's Nationality",
-        displayText: "",
         copyText: motherNationality,
-        showManualBadge: !motherNationality.trim(),
+        showNoAutoDataHint: !motherNationality.trim(),
         flagMeta: { flagged: false, notes: [] },
         mode: "input",
         inputValue: motherNationality,
         onInputChange: setMotherNationality,
         inputPlaceholder: "Nationality",
       },
-      textRow(
-        "f18",
-        "Spouse's Name",
-        spouseDisplay,
-        spouseDisplay,
-        false,
-        collectFlagMeta([
+      {
+        stableId: "f18",
+        govtLabel: "Spouse's Name",
+        copyText: spouseEffective.trim() ? spouseEffective : "N/A",
+        showNoAutoDataHint:
+          !spouseFromKeys.trim() &&
+          !(fields.find((f) => f.id === spouseRow?.id)?.field_value ?? "")
+            .trim(),
+        flagMeta: collectFlagMeta([
           getRowByKeys(by, [
             "spouse_name",
             "spouse_full_name",
             "husband_name",
             "wife_name",
           ]),
-        ])
-      ),
+        ]),
+        mode: "input",
+        inputValue: spouseRow
+          ? (fields.find((f) => f.id === spouseRow.id)?.field_value ??
+            spouseFromKeys)
+          : spouseFromKeys,
+        onInputChange: spouseRow
+          ? (v) =>
+              setFields((prev) =>
+                prev.map((f) =>
+                  f.id === spouseRow.id ? { ...f, field_value: v } : f
+                )
+              )
+          : undefined,
+        onBlurPersist: spouseRow
+          ? (v) => void persistExtractedField(spouseRow.id, v)
+          : undefined,
+        inputPlaceholder: "N/A if not married",
+      },
       {
         stableId: "f19",
         govtLabel: "Spouse's Passport No",
-        displayText: "",
         copyText: spousePassport,
-        showManualBadge: !spousePassport.trim(),
+        showNoAutoDataHint: !spousePassport.trim(),
         flagMeta: { flagged: false, notes: [] },
         mode: "input",
         inputValue: spousePassport,
@@ -573,9 +574,8 @@ export function FormFillPageClient({
       {
         stableId: "f20",
         govtLabel: "Occupation",
-        displayText: "",
         copyText: occupation,
-        showManualBadge: !occupation.trim(),
+        showNoAutoDataHint: !occupation.trim(),
         flagMeta: { flagged: false, notes: [] },
         mode: "select",
         selectValue: occupation,
@@ -585,59 +585,137 @@ export function FormFillPageClient({
       {
         stableId: "f21",
         govtLabel: "Address of Employer",
-        displayText: "",
         copyText: employerAddress,
-        showManualBadge: !employerAddress.trim(),
+        showNoAutoDataHint: !employerAddress.trim(),
         flagMeta: { flagged: false, notes: [] },
         mode: "input",
         inputValue: employerAddress,
         onInputChange: setEmployerAddress,
         inputPlaceholder: "Employer address",
       },
-      textRow(
-        "f22",
-        "Present Address",
-        present.text,
-        present.text.trim() ? present.text : "—",
-        !present.text.trim(),
-        collectFlagMeta(present.rows)
-      ),
-      textRow(
-        "f23",
-        "Mobile No",
-        phone,
-        phone ? phone : "—",
-        !phone,
-        { flagged: false, notes: [] }
-      ),
-      textRow(
-        "f24",
-        "Email",
-        email,
-        email ? email : "—",
-        !email,
-        { flagged: false, notes: [] }
-      ),
-      textRow(
-        "f25",
-        "Native Place Address",
-        native.text,
-        native.text.trim() ? native.text : "—",
-        !native.text.trim(),
-        collectFlagMeta(native.rows)
-      ),
+      (() => {
+        const pr = present.rows[0];
+        const prVal = pr
+          ? fields.find((f) => f.id === pr.id)?.field_value
+          : undefined;
+        return {
+          stableId: "f22",
+          govtLabel: "Present Address",
+          copyText: present.text,
+          showNoAutoDataHint:
+            !present.text.trim() && !(prVal ?? "").trim(),
+          flagMeta: collectFlagMeta(present.rows),
+          mode: "input" as const,
+          inputValue: pr ? (prVal ?? "") : present.text,
+          onInputChange: pr
+            ? (v) =>
+                setFields((prev) =>
+                  prev.map((f) =>
+                    f.id === pr.id ? { ...f, field_value: v } : f
+                  )
+                )
+            : undefined,
+          onBlurPersist: pr
+            ? (v) => void persistExtractedField(pr.id, v)
+            : undefined,
+          inputPlaceholder: "",
+        };
+      })(),
+      {
+        stableId: "f23",
+        govtLabel: "Mobile No",
+        copyText: localPhone,
+        showNoAutoDataHint: !localPhone.trim(),
+        flagMeta: { flagged: false, notes: [] },
+        mode: "input",
+        inputValue: localPhone,
+        onInputChange: setLocalPhone,
+        inputPlaceholder: "Customer mobile",
+      },
+      {
+        stableId: "f24",
+        govtLabel: "Email",
+        copyText: localEmail,
+        showNoAutoDataHint: !localEmail.trim(),
+        flagMeta: { flagged: false, notes: [] },
+        mode: "input",
+        inputValue: localEmail,
+        onInputChange: setLocalEmail,
+        inputPlaceholder: "Customer email",
+      },
+      (() => {
+        const nr = native.rows[0];
+        const nrVal = nr
+          ? fields.find((f) => f.id === nr.id)?.field_value
+          : undefined;
+        return {
+          stableId: "f25",
+          govtLabel: "Native Place Address",
+          copyText: native.text,
+          showNoAutoDataHint:
+            !native.text.trim() && !(nrVal ?? "").trim(),
+          flagMeta: collectFlagMeta(native.rows),
+          mode: "input" as const,
+          inputValue: nr ? (nrVal ?? "") : native.text,
+          onInputChange: nr
+            ? (v) =>
+                setFields((prev) =>
+                  prev.map((f) =>
+                    f.id === nr.id ? { ...f, field_value: v } : f
+                  )
+                )
+            : undefined,
+          onBlurPersist: nr
+            ? (v) => void persistExtractedField(nr.id, v)
+            : undefined,
+          inputPlaceholder: "",
+        };
+      })(),
     ];
+
+    return allRows.filter(
+      (r) => r.stableId !== "f19" || !hideSpousePassport
+    );
   }, [
     byName,
-    customerEmail,
-    customerPhone,
+    fields,
     visibleMark,
     spousePassport,
     occupation,
     employerAddress,
     fatherNationality,
     motherNationality,
+    persistExtractedField,
+    localEmail,
+    localPhone,
   ]);
+
+  const visibleFieldCount = rowPropsList.length;
+
+  const sectionRows = useMemo(() => {
+    const m = new Map(rowPropsList.map((r) => [r.stableId, r]));
+    const pick = (ids: string[]) =>
+      ids
+        .map((id) => m.get(id))
+        .filter((r): r is GovtFillRowConfig => r != null);
+    return {
+      personal: pick([
+        "f1",
+        "f2",
+        "f3",
+        "f4",
+        "f5",
+        "f6",
+        "f7",
+        "f8",
+        "f9",
+        "f10",
+      ]),
+      passport: pick(["f11", "f12", "f13"]),
+      family: pick(["f14", "f15", "f16", "f17", "f18", "f19"]),
+      occupation: pick(["f20", "f21", "f22", "f23", "f24", "f25"]),
+    };
+  }, [rowPropsList]);
 
   const { filled, manual } = useMemo(() => {
     let f = 0;
@@ -827,7 +905,7 @@ export function FormFillPageClient({
           className="text-base font-semibold text-slate-900"
           data-testid="form-fill-progress"
         >
-          {filled} of {OCI_GOVT_FILL_FIELD_COUNT} fields have values
+          {filled} of {visibleFieldCount} fields have values
         </p>
         {lastReviewedLabel !== "—" ? (
           <p className="mt-1 text-slate-600">
@@ -850,7 +928,7 @@ export function FormFillPageClient({
           {appNumber} · {customerName}
         </p>
         <p className="mt-1 text-[9pt] text-black/70">
-          {filled} of {OCI_GOVT_FILL_FIELD_COUNT} fields have values
+          {filled} of {visibleFieldCount} fields have values
           {lastReviewedLabel !== "—"
             ? ` · Last reviewed ${lastReviewedLabel}`
             : ""}
@@ -882,7 +960,7 @@ export function FormFillPageClient({
             Matches Part A of the govt form (order preserved).
           </p>
           <div className="divide-y divide-slate-100">
-            {rowPropsList.slice(0, 10).map(renderRow)}
+            {sectionRows.personal.map(renderRow)}
           </div>
         </section>
 
@@ -891,7 +969,7 @@ export function FormFillPageClient({
             SECTION 3 — Passport Details
           </h2>
           <div className="divide-y divide-slate-100">
-            {rowPropsList.slice(10, 13).map(renderRow)}
+            {sectionRows.passport.map(renderRow)}
           </div>
         </section>
 
@@ -900,7 +978,7 @@ export function FormFillPageClient({
             SECTION 4 — Family Details
           </h2>
           <div className="divide-y divide-slate-100">
-            {rowPropsList.slice(13, 19).map(renderRow)}
+            {sectionRows.family.map(renderRow)}
           </div>
         </section>
 
@@ -910,7 +988,7 @@ export function FormFillPageClient({
           </h2>
           <p className="mb-4 text-xs text-slate-500">Page II of the govt form.</p>
           <div className="divide-y divide-slate-100">
-            {rowPropsList.slice(19, 25).map(renderRow)}
+            {sectionRows.occupation.map(renderRow)}
           </div>
         </section>
       </div>

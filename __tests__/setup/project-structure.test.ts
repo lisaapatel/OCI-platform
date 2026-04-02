@@ -44,7 +44,10 @@ describe("project structure", () => {
     type _ServiceTypeAllowed = Assert<
       Equals<
         Application["service_type"],
-        "oci_new" | "oci_renewal" | "passport_renewal"
+        | "oci_new"
+        | "oci_renewal"
+        | "passport_renewal"
+        | "passport_us_renewal_test"
       >
     >;
 

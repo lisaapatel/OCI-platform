@@ -6,7 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
-type ServiceType = "oci_new" | "oci_renewal" | "passport_renewal";
+type ServiceType =
+  | "oci_new"
+  | "oci_renewal"
+  | "passport_renewal"
+  | "passport_us_renewal_test";
 type Status =
   | "docs_pending"
   | "ready_for_review"
@@ -45,7 +49,9 @@ function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
       ? "OCI New"
       : serviceType === "oci_renewal"
         ? "OCI Renewal"
-        : "Passport Renewal";
+        : serviceType === "passport_us_renewal_test"
+          ? "US Passport Test (DS-82)"
+          : "Passport Renewal";
 
   return (
     <span className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1e3a5f]">
@@ -250,6 +256,9 @@ export default function DashboardPage() {
                   <option value="oci_new">OCI New</option>
                   <option value="oci_renewal">OCI Renewal</option>
                   <option value="passport_renewal">Passport Renewal</option>
+                  <option value="passport_us_renewal_test">
+                    US Passport Test (DS-82)
+                  </option>
                 </select>
               </div>
             </div>

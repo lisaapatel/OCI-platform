@@ -10,6 +10,7 @@ import {
   type ExtractedFieldRow,
 } from "@/lib/extracted-fields-dedupe";
 import type { ExtractedField } from "@/lib/types";
+import { parseAutoReconNote } from "@/lib/cross-doc-reconcile/constants";
 import {
   REVIEW_SECTION_ORDER,
   documentTabLabel,
@@ -20,6 +21,27 @@ import {
   parseDriveFileId,
   sourceDocumentLabel,
 } from "@/lib/review-field-display";
+
+const AUTO_RECON_CONFLICT_PREFIX = "AUTO_RECON:conflict|";
+
+function flagNoteInputValue(flagNote: string | null | undefined): string {
+  const s = String(flagNote ?? "");
+  if (s.startsWith(AUTO_RECON_CONFLICT_PREFIX)) {
+    return s.slice(AUTO_RECON_CONFLICT_PREFIX.length);
+  }
+  return s;
+}
+
+function mergeFlagNoteInput(
+  previousNote: string | null | undefined,
+  humanInput: string,
+): string {
+  const prev = String(previousNote ?? "");
+  if (prev.startsWith(AUTO_RECON_CONFLICT_PREFIX)) {
+    return `${AUTO_RECON_CONFLICT_PREFIX}${humanInput}`;
+  }
+  return humanInput;
+}
 
 export type ReviewDocumentRow = {
   id: string;
@@ -94,6 +116,18 @@ export function ReviewPageClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(partial),
     });
+  }
+
+  async function refreshReconciliation() {
+    const res = await fetch("/api/reconcile/application", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ application_id: applicationId }),
+    });
+    const j = (await res.json()) as { ok?: boolean; fields?: ExtractedField[] };
+    if (res.ok && Array.isArray(j.fields)) {
+      setFields(j.fields);
+    }
   }
 
   function updateLocal(id: string, partial: Partial<ExtractedField>) {
@@ -228,12 +262,32 @@ export function ReviewPageClient({
                         data-flagged={f.is_flagged ? "true" : "false"}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <label
-                            className="text-sm font-semibold uppercase tracking-wide text-gray-500"
-                            htmlFor={`field-${f.id}`}
-                          >
-                            {label}
-                          </label>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label
+                              className="text-sm font-semibold uppercase tracking-wide text-gray-500"
+                              htmlFor={`field-${f.id}`}
+                            >
+                              {label}
+                            </label>
+                            {parseAutoReconNote(f.flag_note) === "confirmed" &&
+                            !f.is_flagged ? (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+                                Auto-confirmed
+                              </span>
+                            ) : null}
+                            {parseAutoReconNote(f.flag_note) === "single_source" &&
+                            !f.is_flagged ? (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                                Single source
+                              </span>
+                            ) : null}
+                            {parseAutoReconNote(f.flag_note) === "conflict" &&
+                            f.is_flagged ? (
+                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-200">
+                                Cross-doc conflict
+                              </span>
+                            ) : null}
+                          </div>
                           <button
                             type="button"
                             aria-label={`Flag field ${label}`}
@@ -249,10 +303,13 @@ export function ReviewPageClient({
                                 is_flagged: next,
                                 ...(!next ? { flag_note: "" } : {}),
                               });
-                              void saveField(f.id, {
-                                is_flagged: next,
-                                ...(!next ? { flag_note: "" } : {}),
-                              });
+                              void (async () => {
+                                await saveField(f.id, {
+                                  is_flagged: next,
+                                  ...(!next ? { flag_note: "" } : {}),
+                                });
+                                await refreshReconciliation();
+                              })();
                             }}
                           >
                             🚩
@@ -272,9 +329,12 @@ export function ReviewPageClient({
                             updateLocal(f.id, { field_value: e.target.value })
                           }
                           onBlur={(e) =>
-                            void saveField(f.id, {
-                              field_value: e.currentTarget.value,
-                            })
+                            void (async () => {
+                              await saveField(f.id, {
+                                field_value: e.currentTarget.value,
+                              });
+                              await refreshReconciliation();
+                            })()
                           }
                         />
                         <p className="mt-1.5 text-xs text-[#64748b]">
@@ -285,15 +345,27 @@ export function ReviewPageClient({
                             aria-label={`Flag note for ${f.field_name}`}
                             className="mt-2 w-full rounded-lg border border-red-400 bg-red-50 p-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-red-300/40"
                             placeholder="Flag note"
-                            value={f.flag_note ?? ""}
+                            value={flagNoteInputValue(f.flag_note)}
                             onChange={(e) =>
-                              updateLocal(f.id, { flag_note: e.target.value })
+                              updateLocal(f.id, {
+                                flag_note: mergeFlagNoteInput(
+                                  f.flag_note,
+                                  e.target.value
+                                ),
+                              })
                             }
                             onBlur={(e) =>
-                              void saveField(f.id, {
-                                is_flagged: true,
-                                flag_note: e.currentTarget.value,
-                              })
+                              void (async () => {
+                                const merged = mergeFlagNoteInput(
+                                  f.flag_note,
+                                  e.currentTarget.value
+                                );
+                                await saveField(f.id, {
+                                  is_flagged: true,
+                                  flag_note: merged,
+                                });
+                                await refreshReconciliation();
+                              })()
                             }
                           />
                         ) : null}

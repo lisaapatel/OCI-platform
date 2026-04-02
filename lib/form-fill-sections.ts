@@ -10,7 +10,7 @@ export type FormFillFieldDef = {
 };
 
 /** Groups of JSON keys that mean the same thing from different models/docs. */
-const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
+export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
   ["first_name", "given_name", "forename", "given_names"],
   ["middle_name", "middle_names", "middle"],
   ["last_name", "surname", "family_name"],
@@ -49,12 +49,12 @@ const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
   ],
 ];
 
-function normalizeStoredFieldKey(name: string): string {
+export function normalizeStoredFieldKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 /** All lookup aliases for one stored field_name from the DB. */
-function aliasesForStoredName(fieldName: string): string[] {
+export function aliasesForStoredName(fieldName: string): string[] {
   const n = normalizeStoredFieldKey(fieldName);
   const out = new Set<string>([fieldName.trim(), n]);
   for (const group of EXTRACTED_KEY_SYNONYMS) {

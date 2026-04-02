@@ -4,7 +4,11 @@ export interface Application {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
-  service_type: "oci_new" | "oci_renewal" | "passport_renewal";
+  service_type:
+    | "oci_new"
+    | "oci_renewal"
+    | "passport_renewal"
+    | "passport_us_renewal_test";
   status:
     | "docs_pending"
     | "ready_for_review"
