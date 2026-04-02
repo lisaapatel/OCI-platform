@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { useEffect, useMemo, useState } from "react";
 
@@ -18,6 +19,8 @@ type Status =
   | "submitted"
   | "on_hold";
 
+type PaymentRow = "unpaid" | "partial" | "paid";
+
 type DashboardApplication = {
   id: string;
   app_number: string;
@@ -27,6 +30,7 @@ type DashboardApplication = {
   service_type: ServiceType;
   status: Status;
   created_at: string;
+  payment_status?: PaymentRow | null;
 };
 
 function formatCreatedAt(createdAt: string) {
@@ -56,6 +60,39 @@ function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
   return (
     <span className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1e3a5f]">
       {label}
+    </span>
+  );
+}
+
+function PaymentBadge({
+  paymentStatus,
+}: {
+  paymentStatus: PaymentRow | null | undefined;
+}) {
+  if (paymentStatus == null) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+        Not set
+      </span>
+    );
+  }
+  if (paymentStatus === "unpaid") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-xs font-medium text-red-800 ring-1 ring-inset ring-red-200">
+        Unpaid
+      </span>
+    );
+  }
+  if (paymentStatus === "partial") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
+        Partial
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-xs font-medium text-green-800 ring-1 ring-inset ring-green-200">
+      Paid
     </span>
   );
 }
@@ -114,6 +151,9 @@ export default function DashboardPage() {
   const [status, setStatus] = useState<"" | Status>("");
   const [serviceType, setServiceType] = useState<"" | ServiceType>("");
 
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -128,6 +168,21 @@ export default function DashboardPage() {
       alive = false;
     };
   }, []);
+
+  async function handleLogout() {
+    setSigningOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      router.push("/login");
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("Logout failed:", e);
+      alert("Logout failed. Please try again.");
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -178,12 +233,22 @@ export default function DashboardPage() {
             (PDFs, photo, signature) is complete.
           </p>
         </div>
-        <Link
-          href="/applications/new"
-          className="inline-flex h-10 items-center justify-center rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-blue-700"
-        >
-          New Application
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/applications/new"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-blue-700"
+          >
+            New Application
+          </Link>
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            disabled={signingOut}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-4 text-sm font-medium text-[#1e293b] transition-colors duration-150 hover:bg-[#f8fafc] disabled:opacity-60"
+          >
+            {signingOut ? "Logging out…" : "Logout"}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -270,13 +335,14 @@ export default function DashboardPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
+          <table className="w-full min-w-[1040px] text-left text-sm">
             <thead className="bg-[#f8fafc] text-xs font-semibold uppercase tracking-wide text-[#64748b]">
               <tr>
                 <th className="px-4 py-3">App #</th>
                 <th className="px-4 py-3">Customer Name</th>
                 <th className="px-4 py-3">Service Type</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Payment</th>
                 <th className="px-4 py-3">Created Date</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -284,13 +350,13 @@ export default function DashboardPage() {
             <tbody className="divide-y divide-[#e2e8f0]">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={6}>
+                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={7}>
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={6}>
+                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={7}>
                     No applications found.
                   </td>
                 </tr>
@@ -309,6 +375,9 @@ export default function DashboardPage() {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={app.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <PaymentBadge paymentStatus={app.payment_status} />
                     </td>
                     <td className="px-4 py-3 text-[#64748b]">
                       {formatCreatedAt(app.created_at)}

@@ -15,13 +15,19 @@ export const GOVT_IMAGE_MAX_BYTES = PORTAL_IMAGE_MAX_BYTES;
 
 export type GovtImageType = "photo" | "signature";
 
-/** Signature: JPEG, 3:1 width:height, min 200×67, max 1500×500. */
-const SIG_RATIO = 3;
-const SIG_RATIO_TOL = 0.06;
-const SIG_W_MIN = 200;
-const SIG_W_MAX = 1500;
-const SIG_H_MIN = 67;
-const SIG_H_MAX = 500;
+export const SIGNATURE_SPECS = {
+  /** Sharp metadata reports `jpeg` for JPG/JPEG. */
+  format: "image/jpeg",
+  maxSizeKB: PORTAL_IMAGE_MAX_KB,
+  /** 3:1 width:height */
+  aspectRatio: { width: 3, height: 1 },
+  /** abs(actualRatio-expectedRatio)/expectedRatio <= 0.02 (±2%). */
+  ratioTolerancePct: 0.02,
+  minWidth: 200,
+  minHeight: 67,
+  maxWidth: 1500,
+  maxHeight: 500,
+} as const;
 
 export type GovtImageValidation = {
   valid: boolean;
@@ -29,6 +35,7 @@ export type GovtImageValidation = {
   current_size_kb: number;
   current_dimensions: string;
   current_format: string;
+  checks?: { rule: string; passed: boolean }[];
 };
 
 function kb(bytes: number): number {
@@ -41,6 +48,48 @@ function formatLabel(fmt: string | undefined): string {
   if (fmt === "png") return "PNG";
   if (fmt === "webp") return "WebP";
   return fmt;
+}
+
+function computeGovtSignatureChecks(params: {
+  width: number;
+  height: number;
+  format: string | undefined;
+  fileSizeBytes: number;
+}): { rule: string; passed: boolean }[] {
+  const { width: w, height: h, format: fmt, fileSizeBytes } = params;
+
+  const jpegPassed = fmt === "jpeg";
+
+  const expectedRatio =
+    SIGNATURE_SPECS.aspectRatio.width / SIGNATURE_SPECS.aspectRatio.height;
+  const ratioPassed =
+    w > 0 &&
+    h > 0 &&
+    Math.abs(w / h - expectedRatio) / expectedRatio <=
+      SIGNATURE_SPECS.ratioTolerancePct;
+
+  const minPassed =
+    w >= SIGNATURE_SPECS.minWidth && h >= SIGNATURE_SPECS.minHeight;
+  const maxPassed =
+    w <= SIGNATURE_SPECS.maxWidth && h <= SIGNATURE_SPECS.maxHeight;
+  const underByteLimitPassed = fileSizeBytes <= PORTAL_IMAGE_MAX_BYTES;
+
+  return [
+    { rule: "3:1 ratio", passed: ratioPassed },
+    {
+      rule: `Min ${SIGNATURE_SPECS.minWidth}\u00d7${SIGNATURE_SPECS.minHeight}`,
+      passed: minPassed,
+    },
+    {
+      rule: `Max ${SIGNATURE_SPECS.maxWidth}\u00d7${SIGNATURE_SPECS.maxHeight}`,
+      passed: maxPassed,
+    },
+    {
+      rule: `Under ${SIGNATURE_SPECS.maxSizeKB}KB`,
+      passed: underByteLimitPassed,
+    },
+    { rule: "JPEG format", passed: jpegPassed },
+  ];
 }
 
 export async function validateGovtImage(
@@ -67,11 +116,22 @@ export async function validateGovtImage(
   const dimStr = w && h ? `${w}×${h}px` : "—";
   const sizeKb = kb(buffer.length);
 
-  if (fmt && fmt !== "jpeg") {
+  if (fmt !== "jpeg") {
     issues.push(
       `Format is ${formatLabel(fmt)}; govt portal requires JPG/JPEG only.`
     );
   }
+
+  const signatureChecks = computeGovtSignatureChecks({
+    width: w,
+    height: h,
+    format: fmt,
+    fileSizeBytes: buffer.length,
+  });
+
+  const ratioOk = signatureChecks[0]!.passed;
+  const minOk = signatureChecks[1]!.passed;
+  const maxOk = signatureChecks[2]!.passed;
 
   if (buffer.length > PORTAL_IMAGE_MAX_BYTES) {
     issues.push(
@@ -96,30 +156,35 @@ export async function validateGovtImage(
       );
     }
   } else {
-    const ratio = w / h;
-    if (Math.abs(ratio - SIG_RATIO) > SIG_RATIO_TOL) {
+    if (!ratioOk) {
       issues.push(
-        `Aspect ratio is ${(w / h).toFixed(2)}:1 (width:height); OCI portal expects 3:1 within ${SIG_W_MIN}×${SIG_H_MIN}–${SIG_W_MAX}×${SIG_H_MAX}px (e.g. 600×200).`
+        `Aspect ratio is ${(w / h).toFixed(2)}:1 (width:height); OCI portal expects 3:1 within ±${Math.round(
+          SIGNATURE_SPECS.ratioTolerancePct * 100
+        )}% (e.g. 600×200).`
       );
     }
-    if (w < SIG_W_MIN || h < SIG_H_MIN) {
+    if (!minOk) {
       issues.push(
-        `Below minimum size: at least ${SIG_W_MIN}×${SIG_H_MIN}px (wide signature).`
+        `Below minimum size: at least ${SIGNATURE_SPECS.minWidth}\u00d7${SIGNATURE_SPECS.minHeight}px (wide signature).`
       );
     }
-    if (w > SIG_W_MAX || h > SIG_H_MAX) {
+    if (!maxOk) {
       issues.push(
-        `Above maximum size: at most ${SIG_W_MAX}×${SIG_H_MAX}px.`
+        `Above maximum size: at most ${SIGNATURE_SPECS.maxWidth}\u00d7${SIGNATURE_SPECS.maxHeight}px.`
       );
     }
   }
 
   return {
-    valid: issues.length === 0,
+    valid:
+      imageType === "signature"
+        ? signatureChecks.every((c) => c.passed)
+        : issues.length === 0,
     issues,
     current_size_kb: sizeKb,
     current_dimensions: dimStr,
     current_format: formatLabel(fmt),
+    checks: imageType === "signature" ? signatureChecks : undefined,
   };
 }
 

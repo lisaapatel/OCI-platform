@@ -93,16 +93,6 @@ export async function POST(req: Request) {
     }
 
     if (clientCropPath) {
-      if (image_type !== "photo") {
-        return NextResponse.json(
-          {
-            error:
-              "Client-provided image is only supported for image_type 'photo'.",
-          },
-          { status: 400 }
-        );
-      }
-
       const document_id = String(body.document_id ?? "").trim();
       const { data: row, error: docErr } = await supabaseAdmin
         .from("documents")
@@ -118,10 +108,10 @@ export async function POST(req: Request) {
         );
       }
 
-      if (String(row.doc_type) !== "applicant_photo") {
+      if (String(row.doc_type) !== expectedDocType) {
         return NextResponse.json(
           {
-            error: `Expected applicant_photo; got "${row.doc_type}".`,
+            error: `Expected ${expectedDocType}; got "${row.doc_type}".`,
           },
           { status: 400 }
         );

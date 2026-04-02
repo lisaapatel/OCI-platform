@@ -233,7 +233,7 @@ describe("Application detail", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: /Process Documents with AI/i,
+        name: /Process documents/i,
       })
     ).toBeInTheDocument();
   });

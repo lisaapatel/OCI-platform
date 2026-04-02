@@ -1,3 +1,5 @@
+export type PaymentStatus = "unpaid" | "partial" | "paid";
+
 export interface Application {
   id: string;
   app_number: string;
@@ -20,6 +22,12 @@ export interface Application {
   notes: string;
   created_at: string;
   created_by: string;
+  vfs_tracking_number?: string | null;
+  govt_tracking_number?: string | null;
+  customer_price?: number | null;
+  our_cost?: number | null;
+  /** Omitted on legacy rows; null if unknown */
+  payment_status?: PaymentStatus | null;
 }
 
 export interface Document {

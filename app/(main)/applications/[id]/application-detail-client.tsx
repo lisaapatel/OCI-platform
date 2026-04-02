@@ -26,7 +26,9 @@ import {
 } from "@/lib/portal-readiness";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
+import { BillingTrackingSection } from "./billing-tracking-section";
 import { PhotoCropEditorModal } from "./photo-crop-editor-modal";
+import { SignatureCropEditorModal } from "./signature-crop-editor-modal";
 
 function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
   return {
@@ -213,6 +215,9 @@ export function ApplicationDetailClient({
   const [fixingPhoto, setFixingPhoto] = useState(false);
   const [fixingSig, setFixingSig] = useState(false);
   const [photoEditorDoc, setPhotoEditorDoc] = useState<Document | null>(null);
+  const [signatureEditorDoc, setSignatureEditorDoc] = useState<Document | null>(
+    null
+  );
 
   const docByType = useMemo(() => {
     const m = new Map<string, Document>();
@@ -940,6 +945,9 @@ export function ApplicationDetailClient({
     if (!showPhotoSigCard) return null;
     const photoDoc = docByType.get("applicant_photo");
     const sigDoc = docByType.get("applicant_signature");
+    const canEditSignature =
+      application.service_type === "oci_new" ||
+      application.service_type === "oci_renewal";
 
     function renderColumn(
       title: string,
@@ -1002,6 +1010,15 @@ export function ApplicationDetailClient({
                   className="inline-flex w-full items-center justify-center rounded-lg border-2 border-[#2563eb] bg-[#eff6ff] px-4 py-2.5 text-sm font-semibold text-[#1e3a8a] shadow-sm transition-colors hover:bg-[#dbeafe]"
                 >
                   Edit Photo
+                </button>
+              ) : null}
+              {imageType === "signature" && canEditSignature ? (
+                <button
+                  type="button"
+                  onClick={() => setSignatureEditorDoc(doc)}
+                  className="inline-flex w-full items-center justify-center rounded-lg border-2 border-[#2563eb] bg-[#eff6ff] px-4 py-2.5 text-sm font-semibold text-[#1e3a8a] shadow-sm transition-colors hover:bg-[#dbeafe]"
+                >
+                  Edit Signature
                 </button>
               ) : null}
               <button
@@ -1622,7 +1639,7 @@ export function ApplicationDetailClient({
                 disabled={isProcessing}
                 className="w-full rounded-lg bg-[#1e3a5f] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[#2d4d73] disabled:opacity-60"
               >
-                {isProcessing ? "Processing…" : "Process Documents with AI →"}
+                {isProcessing ? "Processing…" : "Process documents"}
               </button>
               <p className="mt-2 text-center text-xs text-[#64748b]">
                 Runs OCR + extraction on pending documents only. Retry failed
@@ -1674,11 +1691,28 @@ export function ApplicationDetailClient({
         </>
       )}
 
+      <BillingTrackingSection
+        application={application}
+        onApplicationUpdated={setApplication}
+      />
+
       <PhotoCropEditorModal
         open={photoEditorDoc != null}
         onClose={() => setPhotoEditorDoc(null)}
         applicationId={application.id}
         document={photoEditorDoc}
+        onSaved={async () => {
+          const list = await loadDocuments();
+          setDocuments(list);
+          await loadPortalPrep();
+        }}
+      />
+
+      <SignatureCropEditorModal
+        open={signatureEditorDoc != null}
+        onClose={() => setSignatureEditorDoc(null)}
+        applicationId={application.id}
+        document={signatureEditorDoc}
         onSaved={async () => {
           const list = await loadDocuments();
           setDocuments(list);

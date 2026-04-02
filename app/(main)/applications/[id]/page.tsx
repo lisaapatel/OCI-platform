@@ -1,28 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { applicationFromDbRow } from "@/lib/application-from-row";
 import { coerceExtractionStatus } from "@/lib/document-utils";
 import type { Application, Document } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 import { ApplicationDetailClient } from "./application-detail-client";
-
-function mapApplication(row: Record<string, unknown>): Application {
-  return {
-    id: String(row.id),
-    app_number: String(row.app_number ?? ""),
-    customer_name: String(row.customer_name ?? ""),
-    customer_email: String(row.customer_email ?? ""),
-    customer_phone: String(row.customer_phone ?? ""),
-    service_type: row.service_type as Application["service_type"],
-    status: row.status as Application["status"],
-    drive_folder_id: String(row.drive_folder_id ?? ""),
-    drive_folder_url: String(row.drive_folder_url ?? ""),
-    notes: String(row.notes ?? ""),
-    created_at: String(row.created_at ?? ""),
-    created_by: String(row.created_by ?? ""),
-  };
-}
 
 function mapDocuments(rows: Record<string, unknown>[]): Document[] {
   return rows.map((row) => ({
@@ -102,7 +86,7 @@ export default async function ApplicationDetailPage({
     );
   }
 
-  const application = mapApplication(appRow as Record<string, unknown>);
+  const application = applicationFromDbRow(appRow as Record<string, unknown>);
   const documents = mapDocuments(
     (docRows ?? []) as Record<string, unknown>[]
   );

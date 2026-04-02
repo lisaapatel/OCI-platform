@@ -21,11 +21,14 @@ export async function POST(req: Request) {
       application_id?: string;
       drive_file_id?: string;
       image_type?: string;
+      imageType?: string;
     };
 
     const application_id = String(body.application_id ?? "").trim();
     const drive_file_id = String(body.drive_file_id ?? "").trim();
-    const image_type = String(body.image_type ?? "").trim() as GovtImageType;
+    const image_type = String(
+      body.image_type ?? body.imageType ?? ""
+    ).trim() as GovtImageType;
 
     if (!application_id || !drive_file_id) {
       return NextResponse.json(

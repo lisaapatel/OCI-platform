@@ -17,6 +17,7 @@ jest.mock("@/lib/supabase", () => ({
               service_type: "oci_new",
               status: "docs_pending",
               created_at: "2026-03-01T00:00:00Z",
+              payment_status: "unpaid",
             },
             {
               id: "2",
@@ -27,6 +28,7 @@ jest.mock("@/lib/supabase", () => ({
               service_type: "oci_renewal",
               status: "ready_for_review",
               created_at: "2026-03-05T00:00:00Z",
+              payment_status: "partial",
             },
             {
               id: "3",
@@ -37,6 +39,7 @@ jest.mock("@/lib/supabase", () => ({
               service_type: "oci_new",
               status: "submitted",
               created_at: "2026-03-10T00:00:00Z",
+              payment_status: "paid",
             },
           ],
           error: null,
