@@ -33,7 +33,14 @@ export type FormFillSectionBlock = {
 export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
   ["first_name", "given_name", "forename", "given_names"],
   ["middle_name", "middle_names", "middle"],
-  ["last_name", "surname", "family_name"],
+  [
+    "last_name",
+    "surname",
+    "family_name",
+    "passport_surname",
+    "primary_surname",
+    "surname_line",
+  ],
   ["full_name", "complete_name", "name_in_full", "applicant_full_name", "name", "applicant_name"],
   ["date_of_birth", "dob", "birth_date"],
   [
@@ -44,6 +51,10 @@ export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
     "town_of_birth",
     "pob",
     "place_of_birth_city",
+    "birth_city",
+    "birth_town",
+    "place_of_birth_town",
+    "place_of_birth_locality",
   ],
   ["country_of_birth", "birth_country", "place_of_birth_country", "country_birth"],
   ["gender", "sex"],
@@ -174,9 +185,30 @@ export function getValueByKeysAndSources(
   return findRowByKeysAndSources(fields, keys, sourceOrder)?.field_value?.trim() ?? "";
 }
 
+const PASSPORT_FIRST_NAME_KEYS = [
+  "first_name",
+  "given_name",
+  "forename",
+  "given_names",
+] as const;
+const PASSPORT_MIDDLE_NAME_KEYS = [
+  "middle_name",
+  "middle_names",
+  "middle",
+] as const;
+const PASSPORT_LAST_NAME_KEYS = [
+  "last_name",
+  "surname",
+  "family_name",
+  "passport_surname",
+  "primary_surname",
+  "surname_line",
+] as const;
+
 /**
- * Full name from current passport only: prefer full_name / name / applicant_name rows,
- * else concatenate first + middle + last from the same document type.
+ * Full name from current passport only: full_name, then name, then applicant_name (exact keys);
+ * if `name`/`applicant_name` omits a separate surname row, prefer composed first+middle+last.
+ * Else concatenate first/given + middle + last/surname/… from current_passport only.
  */
 export function resolvePassportFullName(fields: ExtractedField[]): {
   value: string;
@@ -186,47 +218,92 @@ export function resolvePassportFullName(fields: ExtractedField[]): {
   const pp = DOC_TYPE_CURRENT_PASSPORT;
   const passportRows = fields.filter((f) => f.source_doc_type === pp);
 
-  const exactOrder = ["full_name", "name", "applicant_name"] as const;
-  for (const key of exactOrder) {
+  const rowByExactKey = (key: string): ExtractedField | undefined => {
     const want = normalizeStoredFieldKey(key);
-    for (const r of passportRows) {
-      if (normalizeStoredFieldKey(r.field_name) !== want) continue;
-      const v = String(r.field_value ?? "").trim();
-      if (v) return { value: v, row: r, flagRows: [r] };
+    return passportRows.find(
+      (r) => normalizeStoredFieldKey(r.field_name) === want,
+    );
+  };
+
+  const buildComposed = (): {
+    value: string;
+    row?: ExtractedField;
+    flagRows: ExtractedField[];
+  } => {
+    const first = findRowByKeysAndSources(
+      fields,
+      [...PASSPORT_FIRST_NAME_KEYS],
+      [pp],
+    );
+    const middle = findRowByKeysAndSources(
+      fields,
+      [...PASSPORT_MIDDLE_NAME_KEYS],
+      [pp],
+    );
+    const last = findRowByKeysAndSources(
+      fields,
+      [...PASSPORT_LAST_NAME_KEYS],
+      [pp],
+    );
+    const parts = [
+      first?.field_value?.trim(),
+      middle?.field_value?.trim(),
+      last?.field_value?.trim(),
+    ].filter(Boolean) as string[];
+    const contributors = [first, middle, last].filter(
+      (r): r is ExtractedField =>
+        Boolean(r && String(r.field_value ?? "").trim()),
+    );
+    if (parts.length === 0) {
+      return { value: "", row: undefined, flagRows: [] };
     }
+    return {
+      value: parts.join(" "),
+      row: contributors[0],
+      flagRows: contributors,
+    };
+  };
+
+  const fullRow = rowByExactKey("full_name");
+  const fullVal = fullRow?.field_value?.trim();
+  if (fullVal)
+    return { value: fullVal, row: fullRow, flagRows: fullRow ? [fullRow] : [] };
+
+  const composed = buildComposed();
+  const lastForHeuristic = findRowByKeysAndSources(
+    fields,
+    [...PASSPORT_LAST_NAME_KEYS],
+    [pp],
+  );
+  const lastVal = lastForHeuristic?.field_value?.trim() ?? "";
+
+  const preferComposedOver = (
+    wholeRow: ExtractedField | undefined,
+    wholeVal: string,
+  ) => {
+    if (!wholeVal || !composed.value.trim()) return false;
+    if (!lastVal) return false;
+    const w = wholeVal.toLowerCase();
+    const l = lastVal.toLowerCase();
+    if (w.includes(l)) return false;
+    return composed.value.trim().length > wholeVal.trim().length;
+  };
+
+  for (const key of ["name", "applicant_name"] as const) {
+    const r = rowByExactKey(key);
+    const v = r?.field_value?.trim() ?? "";
+    if (!v) continue;
+    if (preferComposedOver(r, v)) {
+      return {
+        value: composed.value,
+        row: composed.row ?? r,
+        flagRows: composed.flagRows.length ? composed.flagRows : r ? [r] : [],
+      };
+    }
+    return { value: v, row: r, flagRows: r ? [r] : [] };
   }
 
-  const first = findRowByKeysAndSources(
-    fields,
-    ["first_name", "given_name", "forename", "given_names"],
-    [pp],
-  );
-  const middle = findRowByKeysAndSources(
-    fields,
-    ["middle_name", "middle_names", "middle"],
-    [pp],
-  );
-  const last = findRowByKeysAndSources(
-    fields,
-    ["last_name", "surname", "family_name"],
-    [pp],
-  );
-  const parts = [
-    first?.field_value?.trim(),
-    middle?.field_value?.trim(),
-    last?.field_value?.trim(),
-  ].filter(Boolean) as string[];
-  const contributors = [first, middle, last].filter(
-    (r): r is ExtractedField => Boolean(r && String(r.field_value ?? "").trim()),
-  );
-  if (parts.length === 0) {
-    return { value: "", row: undefined, flagRows: [] };
-  }
-  return {
-    value: parts.join(" "),
-    row: contributors[0],
-    flagRows: contributors,
-  };
+  return composed;
 }
 
 /**
@@ -344,6 +421,7 @@ When you see one long address line, split into address_line_1, city, state_provi
 
 export const CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA = `
 Passport biodata: extract country_of_birth (country name as printed) whenever it appears—labeled "Country of birth", in MRZ-adjacent fields, or clearly part of place-of-birth (city + country). Use null only if no country is shown for birth.
+Always output place_of_birth when the biodata page shows a place, city, or locality of birth (US passports: the "Place of Birth" field)—use the city/locality text as printed, with key place_of_birth.
 Also use these exact keys whenever the values appear on the passport biodata page: first_name, middle_name, last_name, full_name, date_of_birth, place_of_birth (do not substitute other key names for those concepts).
 `.trim();
 
@@ -663,7 +741,12 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       ),
       f(
         "Father's Indian passport number",
-        ["father_indian_passport_number", "father_passport_number"],
+        [
+          "father_indian_passport_number",
+          "father_passport_number",
+          "passport_number",
+          "passport_no",
+        ],
         [...SRC_PARENT_PASSPORT_ONLY]
       ),
       f(
@@ -683,7 +766,12 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       ),
       f(
         "Mother's Indian passport number",
-        ["mother_indian_passport_number", "mother_passport_number"],
+        [
+          "mother_indian_passport_number",
+          "mother_passport_number",
+          "passport_number",
+          "passport_no",
+        ],
         [...SRC_PARENT_PASSPORT_ONLY]
       ),
       f(

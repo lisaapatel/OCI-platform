@@ -223,10 +223,10 @@ function GovtFillRow({
 
         {flagMeta.flagged ? (
           <div
-            className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 print:border-red-600"
+            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 print:border-amber-600"
             role="alert"
           >
-            <span className="font-semibold">⚠ Flagged:</span>{" "}
+            <span className="font-semibold">Flagged (review):</span>{" "}
             {flagMeta.notes.length
               ? flagMeta.notes.join(" · ")
               : "See review notes."}

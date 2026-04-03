@@ -152,7 +152,7 @@ describe("Form fill page", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
   });
 
-  test("Test 4: Flagged fields show red banner with flag note", async () => {
+  test("Test 4: Manual flagged fields show amber banner with flag note", async () => {
     const { FormFillPageClient } = await import(
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
@@ -162,8 +162,25 @@ describe("Form fill page", () => {
     render(<FormFillPageClient {...defaultProps} initialFields={fields} />);
 
     const banner = screen.getByText(/Verify spelling/i);
-    expect(banner.closest(".bg-red-50")).toBeTruthy();
-    expect(screen.getByText(/Flagged:/i)).toBeInTheDocument();
+    expect(banner.closest(".bg-amber-50")).toBeTruthy();
+    expect(screen.getByText(/Flagged \(review\):/i)).toBeInTheDocument();
+  });
+
+  test("Test 4b: AUTO_RECON flag notes are hidden on fill page", async () => {
+    const { FormFillPageClient } = await import(
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
+    );
+    const fields = buildFields({
+      full_name: {
+        value: "X",
+        flagged: true,
+        note: "AUTO_RECON:conflict|passport vs birth cert",
+      },
+    });
+    render(<FormFillPageClient {...defaultProps} initialFields={fields} />);
+
+    expect(screen.queryByText(/AUTO_RECON/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Flagged \(review\):/i)).not.toBeInTheDocument();
   });
 
   test("Test 5: Empty extracted fields show manual-entry hint", async () => {

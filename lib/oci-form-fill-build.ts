@@ -11,7 +11,10 @@ import {
   type FormFillFieldDef,
   type FormFillSourceTag,
 } from "@/lib/form-fill-sections";
-import { collectFlagMeta, formatPortalDate } from "@/lib/oci-govt-fill-resolve";
+import {
+  collectFlagMetaForFillPage,
+  formatPortalDate,
+} from "@/lib/oci-govt-fill-resolve";
 import type { ExtractedField } from "@/lib/types";
 
 export type GovtFillRowConfig = {
@@ -197,7 +200,7 @@ export function buildOciFormFillPlan(args: {
 
     const sourceTag = formFillSourceTagForRow(row, fillCtx);
 
-    const flagMeta = collectFlagMeta(flagSourceRows);
+    const flagMeta = collectFlagMetaForFillPage(flagSourceRows);
 
     const isPresentPhoneOrEmail =
       blockId === "present_address" &&
