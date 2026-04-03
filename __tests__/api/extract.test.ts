@@ -56,33 +56,19 @@ describe("POST /api/extract/all", () => {
     expect(res.status).toBe(400);
   });
 
-  test("Test 2: Fetches all pending documents for the application", async () => {
-    const eq2 = jest.fn().mockResolvedValue({
+  test("Test 2: Fetches all documents for the application and processes pending only", async () => {
+    const docsEq = jest.fn().mockResolvedValue({
       data: [
         {
           id: "d1",
           drive_file_id: "file-1",
           doc_type: "current_passport",
+          extraction_status: "pending",
         },
       ],
       error: null,
     });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-
-    const headSingleEq = jest.fn().mockResolvedValue({ count: 1, error: null });
-    const headSelectSingle = jest.fn().mockReturnValue({ eq: headSingleEq });
-
-    const documentsSelect = jest.fn((cols: string, opts?: { head?: boolean }) => {
-      if (opts?.head) {
-        return cols === "id" ? headSelectSingle() : headSelect();
-      }
-      return selectStar();
-    });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "documents") {
@@ -101,6 +87,13 @@ describe("POST /api/extract/all", () => {
       }
       if (table === "applications") {
         return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -112,37 +105,40 @@ describe("POST /api/extract/all", () => {
     getFileAsBase64.mockResolvedValue("YmFzZTY0");
     extractFieldsFromDocument.mockResolvedValue({ name: "A" });
 
-    await POST(req({ application_id: "app-1" }));
+    const res = await POST(req({ application_id: "app-1" }));
+    const body = (await res.json()) as {
+      skipped_not_uploaded?: { doc_type: string }[];
+      document_results?: { status: string }[];
+    };
 
     expect(documentsSelect).toHaveBeenCalledWith("*");
-    expect(eq1).toHaveBeenCalledWith("application_id", "app-1");
-    expect(eq2).toHaveBeenCalledWith("extraction_status", "pending");
+    expect(docsEq).toHaveBeenCalledWith("application_id", "app-1");
+    expect(body.skipped_not_uploaded?.length).toBeGreaterThan(0);
+    expect(body.document_results?.some((r) => r.status === "extracted")).toBe(true);
   });
 
   test("Test 3: Calls Claude API once per document", async () => {
     const docs = [
-      { id: "d1", drive_file_id: "f1", doc_type: "a" },
-      { id: "d2", drive_file_id: "f2", doc_type: "b" },
+      {
+        id: "d1",
+        drive_file_id: "f1",
+        doc_type: "a",
+        extraction_status: "pending",
+      },
+      {
+        id: "d2",
+        drive_file_id: "f2",
+        doc_type: "b",
+        extraction_status: "pending",
+      },
     ];
-    const eq2 = jest.fn().mockResolvedValue({ data: docs, error: null });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-    const headSingleEq = jest.fn().mockResolvedValue({ count: 2, error: null });
-    const headSelectSingle = jest.fn().mockReturnValue({ eq: headSingleEq });
+    const docsEq = jest.fn().mockResolvedValue({ data: docs, error: null });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "documents") {
         return {
-          select: jest.fn((cols: string, opts?: { head?: boolean }) => {
-            if (opts?.head) {
-              return cols === "id" ? headSelectSingle() : headSelect();
-            }
-            return selectStar();
-          }),
+          select: documentsSelect,
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -156,6 +152,13 @@ describe("POST /api/extract/all", () => {
       }
       if (table === "applications") {
         return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -174,27 +177,23 @@ describe("POST /api/extract/all", () => {
 
   test("Test 4: Saves extracted fields to Supabase extracted_fields table", async () => {
     const insert = jest.fn().mockResolvedValue({ error: null });
-    const eq2 = jest.fn().mockResolvedValue({
-      data: [{ id: "d1", drive_file_id: "f1", doc_type: "passport" }],
+    const docsEq = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: "d1",
+          drive_file_id: "f1",
+          doc_type: "passport",
+          extraction_status: "pending",
+        },
+      ],
       error: null,
     });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-    const headSingleEq = jest.fn().mockResolvedValue({ count: 1, error: null });
-    const headSelectSingle = jest.fn().mockReturnValue({ eq: headSingleEq });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "documents") {
         return {
-          select: jest.fn((cols: string, opts?: { head?: boolean }) => {
-            if (opts?.head) {
-              return cols === "id" ? headSelectSingle() : headSelect();
-            }
-            return selectStar();
-          }),
+          select: documentsSelect,
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -205,6 +204,13 @@ describe("POST /api/extract/all", () => {
       }
       if (table === "applications") {
         return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -232,27 +238,23 @@ describe("POST /api/extract/all", () => {
     const update = jest.fn(() => ({
       eq: jest.fn().mockResolvedValue({ error: null }),
     }));
-    const eq2 = jest.fn().mockResolvedValue({
-      data: [{ id: "d1", drive_file_id: "f1", doc_type: "p" }],
+    const docsEq = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: "d1",
+          drive_file_id: "f1",
+          doc_type: "p",
+          extraction_status: "pending",
+        },
+      ],
       error: null,
     });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-    const headSingleEq = jest.fn().mockResolvedValue({ count: 1, error: null });
-    const headSelectSingle = jest.fn().mockReturnValue({ eq: headSingleEq });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "documents") {
         return {
-          select: jest.fn((cols: string, opts?: { head?: boolean }) => {
-            if (opts?.head) {
-              return cols === "id" ? headSelectSingle() : headSelect();
-            }
-            return selectStar();
-          }),
+          select: documentsSelect,
           update,
         };
       }
@@ -264,6 +266,13 @@ describe("POST /api/extract/all", () => {
       }
       if (table === "applications") {
         return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -283,27 +292,23 @@ describe("POST /api/extract/all", () => {
 
   test("Test 6: If Claude returns null for a field, it still saves the field with null value", async () => {
     const insert = jest.fn().mockResolvedValue({ error: null });
-    const eq2 = jest.fn().mockResolvedValue({
-      data: [{ id: "d1", drive_file_id: "f1", doc_type: "p" }],
+    const docsEq = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: "d1",
+          drive_file_id: "f1",
+          doc_type: "p",
+          extraction_status: "pending",
+        },
+      ],
       error: null,
     });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-    const headSingleEq = jest.fn().mockResolvedValue({ count: 1, error: null });
-    const headSelectSingle = jest.fn().mockReturnValue({ eq: headSingleEq });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "documents") {
         return {
-          select: jest.fn((cols: string, opts?: { head?: boolean }) => {
-            if (opts?.head) {
-              return cols === "id" ? headSelectSingle() : headSelect();
-            }
-            return selectStar();
-          }),
+          select: documentsSelect,
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -314,6 +319,13 @@ describe("POST /api/extract/all", () => {
       }
       if (table === "applications") {
         return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),
@@ -340,27 +352,26 @@ describe("POST /api/extract/all", () => {
       eq: jest.fn().mockResolvedValue({ error: null }),
     }));
     const docs = [
-      { id: "d1", drive_file_id: "f1", doc_type: "a" },
-      { id: "d2", drive_file_id: "f2", doc_type: "b" },
+      {
+        id: "d1",
+        drive_file_id: "f1",
+        doc_type: "a",
+        extraction_status: "pending",
+      },
+      {
+        id: "d2",
+        drive_file_id: "f2",
+        doc_type: "b",
+        extraction_status: "pending",
+      },
     ];
-    const eq2 = jest.fn().mockResolvedValue({ data: docs, error: null });
-    const eq1 = jest.fn().mockReturnValue({ eq: eq2 });
-    const selectStar = jest.fn().mockReturnValue({ eq: eq1 });
-    const headChain2 = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const headChain1 = jest.fn().mockReturnValue({ eq: headChain2 });
-    const headSelect = jest.fn().mockReturnValue({ eq: headChain1 });
-    const headSingleEq = jest.fn().mockResolvedValue({ count: 2, error: null });
-    const headSelectSingle = jest.fn().mockReturnValue({ eq: headSingleEq });
+    const docsEq = jest.fn().mockResolvedValue({ data: docs, error: null });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
 
     fromMock.mockImplementation((table: string) => {
       if (table === "documents") {
         return {
-          select: jest.fn((cols: string, opts?: { head?: boolean }) => {
-            if (opts?.head) {
-              return cols === "id" ? headSelectSingle() : headSelect();
-            }
-            return selectStar();
-          }),
+          select: documentsSelect,
           update,
         };
       }
@@ -372,6 +383,13 @@ describe("POST /api/extract/all", () => {
       }
       if (table === "applications") {
         return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
           update: jest.fn(() => ({
             eq: jest.fn().mockResolvedValue({ error: null }),
           })),

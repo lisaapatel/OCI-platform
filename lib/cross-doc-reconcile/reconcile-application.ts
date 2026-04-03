@@ -26,7 +26,14 @@ export async function reconcileApplication(
     }
 
     const list = (rows ?? []) as ReconRow[];
-    const updates = computeReconciliationUpdates(list);
+    const { updates, skippedDueToAllowedDocTypes } =
+      computeReconciliationUpdates(list);
+
+    for (const s of skippedDueToAllowedDocTypes) {
+      console.warn(
+        `[reconcile] skipped cross-doc reconciliation for "${s.logicalKey}": ${s.count} extracted_field row(s) with source_doc_type="${s.sourceDocType}" (allowed: ${s.allowedDocTypes.join(", ")})`,
+      );
+    }
 
     for (const u of updates) {
       const { error: upErr } = await supabaseAdmin

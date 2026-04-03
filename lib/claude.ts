@@ -39,7 +39,9 @@ export async function callClaudeExtractFieldsRaw(input: {
           },
         } as any);
   const passportExtra =
-    input.docType === "current_passport" || input.docType === "old_passport"
+    input.docType === "current_passport" ||
+    input.docType === "old_passport" ||
+    input.docType === "former_indian_passport"
       ? `\n\n${CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA}`
       : "";
   const userPromptText = `You extract structured data from a document.

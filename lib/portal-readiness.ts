@@ -8,6 +8,9 @@ import { PORTAL_PDF_MAX_BYTES } from "@/lib/portal-constants";
 /** Filled by `getPortalReadinessSnapshot` (server) for fill page / API consumers. */
 export type PortalReadinessSnapshot = {
   required_docs_complete: boolean;
+  /** OCI: at least one of parent passport / parent OCI / legacy parent doc uploaded. */
+  oci_parent_doc_for_submission: boolean;
+  uploaded_doc_types: string[];
   checklist_pdfs_ready: boolean;
   checklist_pdfs_ok: number;
   checklist_pdfs_uploaded: number;

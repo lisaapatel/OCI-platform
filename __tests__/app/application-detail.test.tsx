@@ -105,7 +105,7 @@ describe("Application detail", () => {
     expect(screen.getByText("Docs Pending", { selector: "span" })).toBeInTheDocument();
   });
 
-  test("Test 2: Document checklist shows all 6 required OCI documents", async () => {
+  test("Test 2: Document checklist shows OCI new items (required + optional)", async () => {
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
     );
@@ -114,13 +114,14 @@ describe("Application detail", () => {
     );
 
     expect(screen.getByText("Current Passport")).toBeInTheDocument();
-    expect(screen.getByText("Old/Previous Passport")).toBeInTheDocument();
-    expect(screen.getByText("Birth Certificate")).toBeInTheDocument();
-    expect(screen.getByText("Address Proof")).toBeInTheDocument();
-    expect(screen.getByText("Applicant Photo")).toBeInTheDocument();
     expect(
-      screen.getByText("Parent's Indian Passport or OCI Card")
+      screen.getByText("Applicant's Former Indian Passport (if any)")
     ).toBeInTheDocument();
+    expect(screen.getByText("Birth Certificate")).toBeInTheDocument();
+    expect(screen.getByText(/Address Proof/i)).toBeInTheDocument();
+    expect(screen.getByText("Applicant Photo")).toBeInTheDocument();
+    expect(screen.getByText("Parent's Indian Passport")).toBeInTheDocument();
+    expect(screen.getByText("Parent's OCI Card")).toBeInTheDocument();
   });
 
   test("Test 3: Uploaded documents show green checkmark, missing ones show upload button", async () => {
@@ -159,7 +160,7 @@ describe("Application detail", () => {
     ).toBeInTheDocument();
   });
 
-  test("Test 4: Progress bar shows correct count (e.g. 2 of 6 required documents uploaded)", async () => {
+  test("Test 4: Progress bar shows correct count (e.g. 2 of 4 required documents uploaded)", async () => {
     const docs: Document[] = [
       {
         id: "d1",
@@ -175,7 +176,7 @@ describe("Application detail", () => {
       {
         id: "d2",
         application_id: "app-1",
-        doc_type: "old_passport",
+        doc_type: "birth_certificate",
         file_name: "b.pdf",
         drive_file_id: "2",
         drive_view_url: "",
@@ -192,11 +193,11 @@ describe("Application detail", () => {
     );
 
     expect(
-      screen.getByText(/2 of 6 required documents uploaded/i)
+      screen.getByText(/2 of 4 required documents uploaded/i)
     ).toBeInTheDocument();
   });
 
-  test("Test 5: Process Documents button only appears when all required docs are uploaded", async () => {
+  test("Test 5: Process AI button appears when at least one document is uploaded", async () => {
     const requiredTypes = [
       "current_passport",
       "old_passport",
@@ -205,7 +206,7 @@ describe("Application detail", () => {
       "applicant_photo",
       "parent_indian_doc",
     ];
-    const docs: Document[] = requiredTypes.map((doc_type, i) => ({
+    const fullDocs: Document[] = requiredTypes.map((doc_type, i) => ({
       id: `d${i}`,
       application_id: "app-1",
       doc_type,
@@ -216,6 +217,7 @@ describe("Application detail", () => {
       failure_reason: null,
       uploaded_at: "",
     }));
+    const partialDocs: Document[] = fullDocs.slice(0, 2);
 
     const { ApplicationDetailClient } = await import(
       "../../app/(main)/applications/[id]/application-detail-client"
@@ -224,16 +226,36 @@ describe("Application detail", () => {
       <ApplicationDetailClient application={baseApp()} initialDocuments={[]} />
     );
     expect(
-      screen.queryByRole("button", { name: /Process Documents/i })
+      screen.queryByRole("button", {
+        name: /Process Uploaded Documents with AI/i,
+      })
     ).not.toBeInTheDocument();
     unmount();
 
-    await renderApplicationDetail(
-      <ApplicationDetailClient application={baseApp()} initialDocuments={docs} />
+    const { unmount: unmountPartial } = await renderApplicationDetail(
+      <ApplicationDetailClient
+        application={baseApp()}
+        initialDocuments={partialDocs}
+      />
     );
     expect(
       screen.getByRole("button", {
-        name: /Process documents/i,
+        name: /Process Uploaded Documents with AI/i,
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Some required documents haven't been uploaded yet/i
+      )
+    ).toBeInTheDocument();
+
+    unmountPartial();
+    await renderApplicationDetail(
+      <ApplicationDetailClient application={baseApp()} initialDocuments={fullDocs} />
+    );
+    expect(
+      screen.getByRole("button", {
+        name: /Process Uploaded Documents with AI/i,
       })
     ).toBeInTheDocument();
   });

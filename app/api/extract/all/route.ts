@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { getChecklistForServiceType } from "@/lib/application-checklist";
 import { extractFieldsFromDocument } from "@/lib/claude";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Application } from "@/lib/types";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -54,11 +56,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: docs, error: listError } = await supabaseAdmin
+    const { data: appRow } = await supabaseAdmin
+      .from("applications")
+      .select("service_type")
+      .eq("id", application_id)
+      .maybeSingle();
+
+    const { data: allDocRows, error: listError } = await supabaseAdmin
       .from("documents")
       .select("*")
-      .eq("application_id", application_id)
-      .eq("extraction_status", "pending");
+      .eq("application_id", application_id);
 
     if (listError) {
       return NextResponse.json(
@@ -67,9 +74,30 @@ export async function POST(req: Request) {
       );
     }
 
-    const pending = docs ?? [];
+    const allDocs = allDocRows ?? [];
+    const byType = new Map(
+      allDocs.map((d) => [String((d as { doc_type?: string }).doc_type ?? ""), d]),
+    );
+
+    const serviceType = (appRow?.service_type as Application["service_type"]) ?? "oci_new";
+    const checklist = getChecklistForServiceType(serviceType);
+    const skipped_not_uploaded = checklist
+      .filter((item) => !byType.has(item.doc_type))
+      .map((item) => ({
+        doc_type: item.doc_type,
+        label: item.label,
+        reason: "not_uploaded" as const,
+      }));
+
+    const pending = allDocs.filter((d) => d.extraction_status === "pending");
     let docsProcessed = 0;
     let fieldsExtracted = 0;
+
+    const document_results: Array<{
+      document_id: string;
+      doc_type: string;
+      status: "extracted" | "failed";
+    }> = [];
 
     for (const doc of pending) {
       try {
@@ -84,6 +112,11 @@ export async function POST(req: Request) {
             .from("documents")
             .update({ extraction_status: "failed" })
             .eq("id", doc.id);
+          document_results.push({
+            document_id: String(doc.id),
+            doc_type: String(doc.doc_type ?? ""),
+            status: "failed",
+          });
           continue;
         }
 
@@ -122,11 +155,21 @@ export async function POST(req: Request) {
           .update({ extraction_status: "done" })
           .eq("id", doc.id);
         docsProcessed += 1;
+        document_results.push({
+          document_id: String(doc.id),
+          doc_type: String(doc.doc_type ?? ""),
+          status: "extracted",
+        });
       } catch {
         await supabaseAdmin
           .from("documents")
           .update({ extraction_status: "failed" })
           .eq("id", doc.id);
+        document_results.push({
+          document_id: String(doc.id),
+          doc_type: String(doc.doc_type ?? ""),
+          status: "failed",
+        });
       }
     }
 
@@ -135,7 +178,13 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json(
-      { ok: true, docs_processed: docsProcessed, fields_extracted: fieldsExtracted },
+      {
+        ok: true,
+        docs_processed: docsProcessed,
+        fields_extracted: fieldsExtracted,
+        skipped_not_uploaded,
+        document_results,
+      },
       { status: 200 }
     );
   } catch (err) {

@@ -65,6 +65,8 @@ const defaultPortalReadiness = {
   applicant_photo_valid: true as boolean | null,
   applicant_signature_valid: null as boolean | null,
   all_portal_green: true,
+  oci_parent_doc_for_submission: true,
+  uploaded_doc_types: ["parent_passport"] as string[],
 };
 
 const defaultProps = {
@@ -99,13 +101,25 @@ describe("Form fill page", () => {
       screen.getByRole("heading", { name: /SECTION 2 — Personal Details/i })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /SECTION 3 — Passport Details/i })
+      screen.getByRole("heading", {
+        name: /SECTION 3 — Current Passport \(Foreign\)/i,
+      })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /SECTION 4 — Family Details/i })
+      screen.getByRole("button", {
+        name: /SECTION 4 — Former Indian Passport/i,
+      })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /SECTION 5 — Occupation & Address/i })
+      screen.getByRole("heading", { name: /SECTION 5 — Present Address/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /SECTION 6 — Permanent Address/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: /SECTION 7 — Parent \/ Spouse Details/i,
+      })
     ).toBeInTheDocument();
   });
 
@@ -143,7 +157,7 @@ describe("Form fill page", () => {
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
     const fields = buildFields({
-      first_name: { value: "X", flagged: true, note: "Verify spelling" },
+      full_name: { value: "X", flagged: true, note: "Verify spelling" },
     });
     render(<FormFillPageClient {...defaultProps} initialFields={fields} />);
 
@@ -176,7 +190,7 @@ describe("Form fill page", () => {
     );
 
     expect(screen.getByTestId("form-fill-progress")).toHaveTextContent(
-      /of 25 fields have values/
+      /of 45 fields have values/
     );
     expect(screen.getByTestId("form-fill-manual-banner")).toBeInTheDocument();
     expect(screen.getByTestId("form-fill-summary")).toHaveTextContent(
@@ -184,21 +198,29 @@ describe("Form fill page", () => {
     );
   });
 
-  test("Test 6b: Spouse N/A hides spouse passport row and lowers count", async () => {
+  test("Test 6b: Married shows spouse rows; unmarried does not", async () => {
     const { FormFillPageClient } = await import(
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
-    const fields = buildFields({
-      spouse_name: { value: "n/a" },
+    const unmarried = buildFields({
+      marital_status: { value: "Unmarried" },
     });
-    render(<FormFillPageClient {...defaultProps} initialFields={fields} />);
+    const { rerender } = render(
+      <FormFillPageClient {...defaultProps} initialFields={unmarried} />
+    );
 
     expect(
-      screen.queryByRole("textbox", { name: /Spouse's Passport No/i })
+      screen.queryByRole("textbox", { name: /^Spouse name$/i })
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId("form-fill-progress")).toHaveTextContent(
-      /of 24 fields have values/
-    );
+
+    const married = buildFields({
+      marital_status: { value: "Married" },
+    });
+    rerender(<FormFillPageClient {...defaultProps} initialFields={married} />);
+
+    expect(
+      screen.getByRole("textbox", { name: /^Spouse name$/i })
+    ).toBeInTheDocument();
   });
 
   test("Test 7: Print styles hide chrome", async () => {

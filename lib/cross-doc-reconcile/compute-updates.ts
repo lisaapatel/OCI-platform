@@ -5,9 +5,10 @@ import {
 } from "@/lib/cross-doc-reconcile/constants";
 import { normalizeFieldValue } from "@/lib/cross-doc-reconcile/normalize";
 import {
-  getNamePartSynonyms,
-  RECON_SEEDS,
-  synonymSetForSeed,
+  RECON_ATOMIC_RULES,
+  isAddressProofApplicantNameRow,
+  synonymSetForAtomicRule,
+  allowedDocTypeSet,
   type ReconLogicalKey,
 } from "@/lib/cross-doc-reconcile/config";
 import { normalizeStoredFieldKey } from "@/lib/form-fill-sections";
@@ -29,38 +30,95 @@ export type ReconFieldUpdate = {
   flag_note: string;
 };
 
+export type AllowedDocTypeSkipEvent = {
+  logicalKey: string;
+  sourceDocType: string;
+  count: number;
+  allowedDocTypes: readonly string[];
+};
+
+export type ReconciliationComputeResult = {
+  updates: ReconFieldUpdate[];
+  skippedDueToAllowedDocTypes: AllowedDocTypeSkipEvent[];
+};
+
 function hasManualOperatorFlag(r: ReconRow): boolean {
   if (!r.is_flagged) return false;
   return !isAutoReconNote(r.flag_note);
 }
 
 function filterRows(rows: ReconRow[]): ReconRow[] {
-  return rows.filter((r) => !shouldSkipAiExtraction(r.source_doc_type));
-}
-
-function docTypes(rows: ReconRow[]): string[] {
-  return [...new Set(filterRows(rows).map((r) => r.source_doc_type))];
+  return rows.filter(
+    (r) =>
+      !shouldSkipAiExtraction(r.source_doc_type) &&
+      !isAddressProofApplicantNameRow(r),
+  );
 }
 
 function labelDoc(dt: string): string {
   return resolveDocTypeChecklistLabel(dt);
 }
 
+/** Heuristic: document-specific identifiers must never participate in cross-doc reconciliation. */
+export function looksLikeDocumentSpecificIdentifier(
+  fieldKeyNormalized: string,
+): boolean {
+  const k = fieldKeyNormalized.toLowerCase();
+  if (k.includes("certificate")) return true;
+  if (k.includes("reference")) return true;
+  if (k.includes("registration")) return true;
+  if (k.includes("number")) return true;
+  if (
+    k === "id" ||
+    k.endsWith("_id") ||
+    k.includes("_id_") ||
+    k.startsWith("id_")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function bumpSkip(
+  skips: Map<string, AllowedDocTypeSkipEvent>,
+  logicalKey: string,
+  sourceDocType: string,
+  allowed: readonly string[],
+) {
+  const mapKey = `${logicalKey}::${sourceDocType}`;
+  const prev = skips.get(mapKey);
+  if (prev) {
+    prev.count += 1;
+  } else {
+    skips.set(mapKey, {
+      logicalKey,
+      sourceDocType,
+      count: 1,
+      allowedDocTypes: allowed,
+    });
+  }
+}
+
 /** Per doc_type: first non-empty value among synonym rows + all contributing row ids. */
 function gatherAtomicByDoc(
   rows: ReconRow[],
-  synonymKeys: Set<string>,
-  logicalKey: ReconLogicalKey,
-): Map<
-  string,
-  { norm: string; display: string; ids: string[] }
-> {
+  rule: (typeof RECON_ATOMIC_RULES)[number],
+  skipMap: Map<string, AllowedDocTypeSkipEvent>,
+): Map<string, { norm: string; display: string; ids: string[] }> {
+  const logicalKey = rule.seed;
+  const synonymKeys = synonymSetForAtomicRule(rule);
+  const allowedTypes = allowedDocTypeSet(rule.allowedDocTypes);
   const out = new Map<string, { norm: string; display: string; ids: string[] }>();
   const byDocNorms = new Map<string, Map<string, { display: string; ids: string[] }>>();
 
   for (const r of filterRows(rows)) {
     const fn = normalizeStoredFieldKey(r.field_name);
     if (!synonymKeys.has(fn)) continue;
+    if (looksLikeDocumentSpecificIdentifier(fn)) continue;
+    if (!allowedTypes.has(r.source_doc_type)) {
+      bumpSkip(skipMap, logicalKey, r.source_doc_type, rule.allowedDocTypes);
+      continue;
+    }
     const raw = String(r.field_value ?? "").trim();
     if (!raw) continue;
     const norm = normalizeFieldValue(raw, logicalKey);
@@ -102,36 +160,6 @@ function gatherAtomicByDoc(
   return out;
 }
 
-function gatherFullNameByDoc(
-  rows: ReconRow[],
-): Map<string, { norm: string; display: string; ids: string[] }> {
-  const { first, middle, last } = getNamePartSynonyms();
-  const out = new Map<string, { norm: string; display: string; ids: string[] }>();
-
-  for (const dt of docTypes(rows)) {
-    const docRows = filterRows(rows).filter((r) => r.source_doc_type === dt);
-    const pick = (syn: Set<string>): { v: string; id: string } | null => {
-      for (const r of docRows) {
-        if (!syn.has(normalizeStoredFieldKey(r.field_name))) continue;
-        const v = String(r.field_value ?? "").trim();
-        if (v) return { v, id: r.id };
-      }
-      return null;
-    };
-    const f = pick(first);
-    const m = pick(middle);
-    const l = pick(last);
-    const parts = [f?.v, m?.v, l?.v].filter(Boolean) as string[];
-    const ids = [f?.id, m?.id, l?.id].filter(Boolean) as string[];
-    if (parts.length === 0) continue;
-    const display = parts.join(" ");
-    const norm = normalizeFieldValue(display, "full_name");
-    if (!norm) continue;
-    out.set(dt, { norm, display, ids: [...new Set(ids)] });
-  }
-  return out;
-}
-
 function participantIdsFromByDoc(
   byDoc: Map<string, { ids: string[] }>,
 ): string[] {
@@ -166,9 +194,9 @@ function applyOutcomeToIds(
  */
 export function computeReconciliationUpdates(
   rows: ReconRow[],
-): ReconFieldUpdate[] {
+): ReconciliationComputeResult {
   const updates = new Map<string, ReconFieldUpdate>();
-  const filtered = filterRows(rows);
+  const skipMap = new Map<string, AllowedDocTypeSkipEvent>();
 
   const runLogical = (
     logicalKey: ReconLogicalKey,
@@ -227,14 +255,14 @@ export function computeReconciliationUpdates(
     );
   };
 
-  for (const seed of RECON_SEEDS) {
-    const syn = synonymSetForSeed(seed);
-    const byDoc = gatherAtomicByDoc(filtered, syn, seed);
-    runLogical(seed, byDoc);
+  for (const rule of RECON_ATOMIC_RULES) {
+    if (!rule.allowedDocTypes?.length) continue;
+    const byDoc = gatherAtomicByDoc(rows, rule, skipMap);
+    runLogical(rule.seed, byDoc);
   }
 
-  const byName = gatherFullNameByDoc(rows);
-  runLogical("full_name", byName);
-
-  return [...updates.values()];
+  return {
+    updates: [...updates.values()],
+    skippedDueToAllowedDocTypes: [...skipMap.values()],
+  };
 }

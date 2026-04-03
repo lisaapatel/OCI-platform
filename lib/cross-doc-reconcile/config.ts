@@ -1,37 +1,90 @@
-import { EXTRACTED_KEY_SYNONYMS, normalizeStoredFieldKey } from "@/lib/form-fill-sections";
+import {
+  EXTRACTED_KEY_SYNONYMS,
+  normalizeStoredFieldKey,
+} from "@/lib/form-fill-sections";
 
-/** Logical reconciliation targets (extend by adding seeds). */
-export const RECON_SEEDS = [
-  "date_of_birth",
-  "passport_number",
-  "place_of_birth",
-  "current_nationality",
+/** Atomic fields reconciled only across these doc types (never passport vs birth-cert numbers, etc.). */
+export type ReconAtomicRule = {
+  seed: ReconLogicalKeyAtomic;
+  /** Normalized keys treated as this logical field for reconciliation. */
+  synonyms: readonly string[];
+  allowedDocTypes: readonly string[];
+};
+
+export type ReconLogicalKeyAtomic =
+  | "date_of_birth"
+  | "place_of_birth"
+  | "current_nationality";
+
+export type ReconLogicalKey = ReconLogicalKeyAtomic;
+
+/** Identity / demographic fields that may legitimately appear on multiple uploaded documents. */
+export const RECON_ATOMIC_RULES: readonly ReconAtomicRule[] = [
+  {
+    seed: "date_of_birth",
+    synonyms: ["date_of_birth", "dob", "birth_date"],
+    allowedDocTypes: ["current_passport", "birth_certificate"],
+  },
+  {
+    seed: "place_of_birth",
+    synonyms: ["place_of_birth", "birth_place", "pob"],
+    allowedDocTypes: ["current_passport", "birth_certificate"],
+  },
+  {
+    seed: "current_nationality",
+    synonyms: ["current_nationality", "nationality", "citizenship"],
+    allowedDocTypes: ["current_passport"],
+  },
 ] as const;
 
-export type ReconLogicalKey =
-  | (typeof RECON_SEEDS)[number]
-  | "full_name";
+export function synonymSetForAtomicRule(rule: ReconAtomicRule): Set<string> {
+  return new Set(rule.synonyms.map((k) => normalizeStoredFieldKey(k)));
+}
 
-export function synonymSetForSeed(seed: string): Set<string> {
-  const n = normalizeStoredFieldKey(seed);
+function synonymSetForGroupContaining(canonical: string): Set<string> {
+  const n = normalizeStoredFieldKey(canonical);
   for (const group of EXTRACTED_KEY_SYNONYMS) {
-    if (group.some((g) => g === n)) return new Set(group);
+    if (group.some((g) => normalizeStoredFieldKey(g) === n)) {
+      return new Set(group.map((g) => normalizeStoredFieldKey(g)));
+    }
   }
   return new Set([n]);
 }
 
-const FIRST_NAME_SYN = synonymSetForSeed("first_name");
-const MIDDLE_NAME_SYN = synonymSetForSeed("middle_name");
-const LAST_NAME_SYN = synonymSetForSeed("last_name");
+/** Applicant name keys — never reconcile from address_proof (parent names on utility bills, etc.). */
+const APPLICANT_NAME_GROUP_HEADS = [
+  "first_name",
+  "middle_name",
+  "last_name",
+  "full_name",
+] as const;
 
-export function getNamePartSynonyms(): {
-  first: Set<string>;
-  middle: Set<string>;
-  last: Set<string>;
-} {
-  return {
-    first: FIRST_NAME_SYN,
-    middle: MIDDLE_NAME_SYN,
-    last: LAST_NAME_SYN,
-  };
+function buildApplicantNameSynonymsForAddressProofExclusion(): Set<string> {
+  const s = new Set<string>();
+  for (const head of APPLICANT_NAME_GROUP_HEADS) {
+    for (const x of synonymSetForGroupContaining(head)) s.add(x);
+  }
+  for (const x of ["name", "applicant_name", "child_name", "legal_name"]) {
+    s.add(normalizeStoredFieldKey(x));
+  }
+  return s;
+}
+
+const ADDRESS_PROOF_APPLICANT_NAME_KEYS =
+  buildApplicantNameSynonymsForAddressProofExclusion();
+
+export function isAddressProofApplicantNameRow(row: {
+  source_doc_type: string;
+  field_name: string;
+}): boolean {
+  if (row.source_doc_type !== "address_proof") return false;
+  return ADDRESS_PROOF_APPLICANT_NAME_KEYS.has(
+    normalizeStoredFieldKey(row.field_name),
+  );
+}
+
+export function allowedDocTypeSet(
+  types: readonly string[],
+): Set<string> {
+  return new Set(types);
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { ociParentRequirementMet } from "@/lib/oci-new-checklist";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Application } from "@/lib/types";
 
 type Status =
   | "docs_pending"
@@ -44,6 +46,39 @@ export async function PATCH(
         { error: "Provide status and/or notes." },
         { status: 400 }
       );
+    }
+
+    if (body.status === "ready_to_submit") {
+      const { data: appRow } = await supabaseAdmin
+        .from("applications")
+        .select("service_type")
+        .eq("id", id)
+        .maybeSingle();
+      const st = appRow?.service_type as Application["service_type"] | undefined;
+      if (st === "oci_new" || st === "oci_renewal") {
+        const { data: docs, error: docErr } = await supabaseAdmin
+          .from("documents")
+          .select("doc_type")
+          .eq("application_id", id);
+        if (docErr) {
+          return NextResponse.json(
+            { error: `Could not verify documents: ${docErr.message}` },
+            { status: 500 }
+          );
+        }
+        const present = new Set(
+          (docs ?? []).map((d) => String(d.doc_type ?? "").trim()).filter(Boolean),
+        );
+        if (!ociParentRequirementMet(present)) {
+          return NextResponse.json(
+            {
+              error:
+                "OCI applications require at least one parent document: upload Parent's Indian Passport or Parent's OCI card before Ready to Submit.",
+            },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     const { error } = await supabaseAdmin

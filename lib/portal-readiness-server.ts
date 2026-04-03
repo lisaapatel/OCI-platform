@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getChecklistForServiceType } from "@/lib/application-checklist";
+import { ociParentRequirementMet } from "@/lib/oci-new-checklist";
 import { getDriveFileMetadata, getFileAsBase64 } from "@/lib/google-drive";
 import { validateGovtImage } from "@/lib/govt-photo-signature";
 import {
@@ -56,6 +57,8 @@ export async function getPortalReadinessSnapshot(
 
   const present = new Set(byType.keys());
   const required_docs_complete = allRequiredDocumentsUploaded(present, checklist);
+  const oci_parent_doc_for_submission = ociParentRequirementMet(present);
+  const uploaded_doc_types = [...present];
 
   let checklist_pdfs_ok = 0;
   let checklist_pdfs_uploaded = 0;
@@ -113,14 +116,22 @@ export async function getPortalReadinessSnapshot(
     !present.has("applicant_signature") ||
     applicant_signature_valid === true;
 
+  const serviceType =
+    (appRow?.service_type as Application["service_type"] | undefined) ?? "oci_new";
+  const isOciFlow =
+    serviceType === "oci_new" || serviceType === "oci_renewal";
+
   const all_portal_green =
     required_docs_complete &&
     checklist_pdfs_ready &&
     applicant_photo_valid === true &&
-    signatureOk;
+    signatureOk &&
+    (!isOciFlow || oci_parent_doc_for_submission);
 
   return {
     required_docs_complete,
+    oci_parent_doc_for_submission,
+    uploaded_doc_types,
     checklist_pdfs_ready,
     checklist_pdfs_ok,
     checklist_pdfs_uploaded,
@@ -133,6 +144,8 @@ export async function getPortalReadinessSnapshot(
 function emptySnapshot(): PortalReadinessSnapshot {
   return {
     required_docs_complete: false,
+    oci_parent_doc_for_submission: false,
+    uploaded_doc_types: [],
     checklist_pdfs_ready: false,
     checklist_pdfs_ok: 0,
     checklist_pdfs_uploaded: 0,

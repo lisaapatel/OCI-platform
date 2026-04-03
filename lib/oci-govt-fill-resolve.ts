@@ -1,8 +1,10 @@
 import { format, isValid, parseISO } from "date-fns";
 
+import { FORM_FILL_ALL_FIELDS } from "@/lib/form-fill-sections";
 import type { ExtractedField } from "@/lib/types";
 
-export const OCI_GOVT_FILL_FIELD_COUNT = 25;
+/** Upper bound for progress (actual visible rows may be fewer when spouse / parent fields hidden). */
+export const OCI_GOVT_FILL_FIELD_COUNT = FORM_FILL_ALL_FIELDS.length;
 
 export function formatPortalDate(raw: string | null | undefined): string | null {
   if (!raw?.trim()) return null;

@@ -97,12 +97,15 @@ function startCase(value: string): string {
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   current_passport: "Current Passport",
-  old_passport: "Old Passport",
+  former_indian_passport: "Former Indian Passport",
+  old_passport: "Old Passport (legacy)",
   birth_certificate: "Birth Certificate",
   address_proof: "Address Proof",
   applicant_photo: "Applicant Photo",
   applicant_signature: "Applicant Signature",
-  parent_indian_doc: "Parent Indian Document",
+  parent_passport: "Parent's Indian Passport",
+  parent_oci: "Parent's OCI Card",
+  parent_indian_doc: "Parent Indian Document (legacy)",
   marriage_certificate: "Marriage Certificate",
 };
 

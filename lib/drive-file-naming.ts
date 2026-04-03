@@ -6,11 +6,14 @@
 /** Maps checklist `doc_type` → short Drive prefix (e.g. current_passport → passport_current). */
 export const DOC_TYPE_DRIVE_PREFIX: Record<string, string> = {
   current_passport: "passport_current",
+  former_indian_passport: "passport_india_former",
   old_passport: "passport_old",
   birth_certificate: "certificate_birth",
   address_proof: "proof_address",
   applicant_photo: "photo_applicant",
   applicant_signature: "signature_applicant",
+  parent_passport: "parent_passport_in",
+  parent_oci: "parent_oci",
   parent_indian_doc: "parent_indian",
   marriage_certificate: "certificate_marriage",
 };

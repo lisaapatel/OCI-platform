@@ -1,3 +1,10 @@
+import {
+  RECON_ATOMIC_RULES,
+  synonymSetForAtomicRule,
+  type ReconLogicalKey,
+  type ReconLogicalKeyAtomic,
+} from "@/lib/cross-doc-reconcile/config";
+
 const COUNTRY_ABBREV: Record<string, string> = {
   "u.s.a": "usa",
   "u.s.": "usa",
@@ -104,8 +111,35 @@ export function normalizeFieldValue(
     const d = normalizeDateForCompare(t);
     if (d) return d;
   }
-  if (logicalKey === "passport_number") {
-    return normalizeTextForCompare(t).replace(/\s+/g, "");
-  }
   return normalizeTextForCompare(t);
+}
+
+/**
+ * True when both doc types may participate in the same cross-doc reconciliation bucket for this logical key.
+ */
+export function rowsComparableForCrossDocReconciliation(
+  docTypeA: string,
+  docTypeB: string,
+  logicalKey: ReconLogicalKey,
+): boolean {
+  if (docTypeA === docTypeB) return true;
+  const rule = RECON_ATOMIC_RULES.find((r) => r.seed === logicalKey);
+  if (!rule?.allowedDocTypes?.length) return false;
+  const s = new Set<string>(rule.allowedDocTypes);
+  return s.has(docTypeA) && s.has(docTypeB);
+}
+
+/**
+ * Row matches an atomic seed's synonyms but its source_doc_type is not allowed for that seed — do not compare or flag with other docs.
+ */
+export function atomicFieldNonComparableForDocType(
+  fieldKeyNormalized: string,
+  sourceDocType: string,
+  logicalKey: ReconLogicalKeyAtomic,
+): boolean {
+  const rule = RECON_ATOMIC_RULES.find((r) => r.seed === logicalKey);
+  if (!rule?.allowedDocTypes?.length) return true;
+  const syn = synonymSetForAtomicRule(rule);
+  if (!syn.has(fieldKeyNormalized)) return false;
+  return !new Set<string>(rule.allowedDocTypes).has(sourceDocType);
 }

@@ -11,6 +11,7 @@ import { labelForFailureReason } from "@/lib/extraction-failure-reasons";
 import {
   getChecklistForServiceType,
   checklistRequiredCount,
+  resolveDocTypeChecklistLabel,
   type ChecklistItem,
 } from "@/lib/application-checklist";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
@@ -74,6 +75,21 @@ function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
 
 type ServiceType = Application["service_type"];
 type Status = Application["status"];
+
+type BulkExtractRowStatus =
+  | "skipped_not_uploaded"
+  | "extracted"
+  | "queued"
+  | "extracting"
+  | "extracted_now"
+  | "failed";
+
+type BulkExtractRow = {
+  key: string;
+  label: string;
+  doc?: Document;
+  status: BulkExtractRowStatus;
+};
 
 type PortalPrepDoc = {
   id: string;
@@ -191,6 +207,9 @@ export function ApplicationDetailClient({
     docIndex: number;
     docTotal: number;
   } | null>(null);
+  const [bulkExtractRows, setBulkExtractRows] = useState<BulkExtractRow[] | null>(
+    null
+  );
   const [skipNotice, setSkipNotice] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -699,6 +718,7 @@ export function ApplicationDetailClient({
     setSkipNotice(null);
     setIsProcessing(true);
     setExtractionProgress(null);
+    setBulkExtractRows(null);
 
     if (pollRef.current != null) {
       window.clearInterval(pollRef.current);
@@ -709,28 +729,69 @@ export function ApplicationDetailClient({
       const fresh = await loadDocuments();
       setDocuments(fresh);
 
-      const byType = new Map(fresh.map((d) => [d.doc_type, d]));
-      const checklistDocs = activeChecklist
-        .map((i) => byType.get(i.doc_type))
-        .filter((d): d is Document => Boolean(d));
+      if (fresh.length === 0) {
+        setIsProcessing(false);
+        alert("No documents to process.");
+        return;
+      }
 
-      const alreadyDone = checklistDocs.filter((d) => d.extraction_status === "done");
+      const byType = new Map(fresh.map((d) => [d.doc_type, d]));
+      const checklistTypeSet = new Set(
+        activeChecklist.map((i) => i.doc_type)
+      );
+
+      function statusForUploadedDoc(d: Document): BulkExtractRowStatus {
+        if (d.extraction_status === "done") return "extracted";
+        if (d.extraction_status === "failed") return "failed";
+        if (d.extraction_status === "processing") return "queued";
+        return "queued";
+      }
+
+      const initialRows: BulkExtractRow[] = [
+        ...activeChecklist.map((item) => {
+          const doc = byType.get(item.doc_type);
+          return {
+            key: item.doc_type,
+            label: item.label,
+            doc,
+            status: doc ? statusForUploadedDoc(doc) : "skipped_not_uploaded",
+          };
+        }),
+        ...fresh
+          .filter((d) => !checklistTypeSet.has(d.doc_type))
+          .map((d) => ({
+            key: d.id,
+            label: resolveDocTypeChecklistLabel(d.doc_type),
+            doc: d,
+            status: statusForUploadedDoc(d),
+          })),
+      ];
+      setBulkExtractRows(initialRows);
+
+      const alreadyDone = fresh.filter((d) => d.extraction_status === "done");
       if (alreadyDone.length > 0) {
         setSkipNotice(
           `Skipping ${alreadyDone.length} already extracted doc${alreadyDone.length === 1 ? "" : "s"}`
         );
       }
 
-      const toProcess = checklistDocs.filter((d) => d.extraction_status === "pending");
+      const checklistOrder = new Map(
+        activeChecklist.map((i, idx) => [i.doc_type, idx])
+      );
+      const toProcess = fresh
+        .filter((d) => d.extraction_status === "pending")
+        .sort((a, b) => {
+          const ia = checklistOrder.has(a.doc_type)
+            ? checklistOrder.get(a.doc_type)!
+            : 999;
+          const ib = checklistOrder.has(b.doc_type)
+            ? checklistOrder.get(b.doc_type)!
+            : 999;
+          return ia - ib;
+        });
 
       if (toProcess.length === 0) {
-        if (checklistDocs.length === 0) {
-          setIsProcessing(false);
-          setExtractionProgress(null);
-          alert("No documents to process.");
-          return;
-        }
-        const hasFailed = checklistDocs.some((d) => d.extraction_status === "failed");
+        const hasFailed = fresh.some((d) => d.extraction_status === "failed");
         if (hasFailed) {
           setPatchError(
             "No pending documents. Retry failed items with ↺ Retry on each card, or continue to review with the fields you have."
@@ -749,8 +810,17 @@ export function ApplicationDetailClient({
       const total = toProcess.length;
       let failureCount = 0;
 
+      const bumpRow = (docId: string, status: BulkExtractRowStatus) => {
+        setBulkExtractRows((prev) =>
+          (prev ?? []).map((row) =>
+            row.doc?.id === docId ? { ...row, status } : row
+          )
+        );
+      };
+
       for (let i = 0; i < total; i++) {
         const doc = toProcess[i]!;
+        bumpRow(doc.id, "extracting");
         setExtractingDocId(doc.id);
         try {
           const result = await extractSingleStreaming(
@@ -759,11 +829,17 @@ export function ApplicationDetailClient({
             total,
             (p) => setExtractionProgress(p)
           );
-          if (result.status === "failed") failureCount += 1;
+          if (result.status === "failed") {
+            failureCount += 1;
+            bumpRow(doc.id, "failed");
+          } else {
+            bumpRow(doc.id, "extracted_now");
+          }
         } catch (err) {
           failureCount += 1;
           const msg = err instanceof Error ? err.message : String(err);
           console.error("Extraction request error:", msg);
+          bumpRow(doc.id, "failed");
         }
 
         try {
@@ -1626,8 +1702,20 @@ export function ApplicationDetailClient({
 
           {renderGovtPortalReadinessHub()}
 
-          {allRequiredUploaded ? (
+          {documents.length > 0 ? (
             <div className="rounded-xl border border-[#e2e8f0] bg-[#eff6ff] p-4 shadow-sm">
+              {showDocumentChecklist &&
+              documents.length > 0 &&
+              !allRequiredUploaded ? (
+                <div
+                  className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
+                  role="status"
+                >
+                  <span aria-hidden>⚠️</span> Some required documents
+                  haven&apos;t been uploaded yet. You can still run AI extraction
+                  on the documents that are ready.
+                </div>
+              ) : null}
               {skipNotice ? (
                 <p className="mb-2 text-center text-xs text-[#1e3a5f]/80">
                   {skipNotice}
@@ -1636,14 +1724,16 @@ export function ApplicationDetailClient({
               <button
                 type="button"
                 onClick={() => void processDocuments()}
-                disabled={isProcessing}
+                disabled={isProcessing || documents.length === 0}
                 className="w-full rounded-lg bg-[#1e3a5f] px-4 py-3 text-center text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[#2d4d73] disabled:opacity-60"
               >
-                {isProcessing ? "Processing…" : "Process documents"}
+                {isProcessing
+                  ? "Processing…"
+                  : "Process Uploaded Documents with AI →"}
               </button>
               <p className="mt-2 text-center text-xs text-[#64748b]">
-                Runs OCR + extraction on pending documents only. Retry failed
-                docs from each card.
+                Runs OCR + extraction on pending uploads only. Missing slots are
+                skipped. Retry failed docs from each card or below.
               </p>
               {isProcessing && extractionProgress ? (
                 <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50/90 p-3 text-left">
@@ -1676,6 +1766,56 @@ export function ApplicationDetailClient({
                     {extractionProgress.docTotal}
                   </p>
                 </div>
+              ) : null}
+              {bulkExtractRows && bulkExtractRows.length > 0 ? (
+                <ul className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-white/90 p-3 text-left text-sm">
+                  {bulkExtractRows.map((row) => (
+                    <li
+                      key={row.key}
+                      className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0"
+                    >
+                      <span className="min-w-0 font-medium text-[#1e293b]">
+                        {row.label}
+                      </span>
+                      <span className="shrink-0 text-xs">
+                        {row.status === "skipped_not_uploaded" ? (
+                          <span className="text-slate-500">
+                            <span aria-hidden>⏭</span> Skipped — not uploaded
+                          </span>
+                        ) : row.status === "extracted" ||
+                          row.status === "extracted_now" ? (
+                          <span className="font-medium text-emerald-700">
+                            <span aria-hidden>✅</span> Extracted
+                          </span>
+                        ) : row.status === "queued" ? (
+                          <span className="text-slate-500">Waiting…</span>
+                        ) : row.status === "extracting" ? (
+                          <span className="animate-pulse font-medium text-blue-700">
+                            <span aria-hidden>🔄</span> Extracting…
+                          </span>
+                        ) : row.status === "failed" ? (
+                          <span className="flex flex-col items-end gap-1">
+                            <span className="font-medium text-red-700">
+                              <span aria-hidden>❌</span> Failed
+                            </span>
+                            {row.doc ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void retryExtractionForDoc(row.doc!)
+                                }
+                                disabled={isProcessing}
+                                className="inline-flex items-center rounded border border-red-200 bg-white px-2 py-0.5 text-[11px] font-medium text-red-800 hover:bg-red-50 disabled:opacity-50"
+                              >
+                                ↺ Retry
+                              </button>
+                            ) : null}
+                          </span>
+                        ) : null}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </div>
           ) : null}
