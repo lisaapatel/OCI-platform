@@ -7,8 +7,8 @@ export default function Home() {
     <div className="flex min-h-screen flex-1 flex-col items-center justify-center bg-oci-page p-8">
       <div className="w-full max-w-md space-y-2 rounded-xl border border-oci-border bg-white p-8 shadow-sm transition-shadow duration-150 hover:shadow-md">
         <BrandLogo variant="card" />
-        <h1 className="text-center text-2xl font-semibold tracking-tight text-brand font-brand-serif">
-          OCI Platform
+        <h1 className="text-center text-2xl font-semibold tracking-tight text-slate-900">
+          Visa servicing
         </h1>
         <p className="text-center text-sm text-oci-muted">
           Start by logging in to access your dashboard.

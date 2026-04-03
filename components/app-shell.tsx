@@ -26,7 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <BrandLogo variant="sidebar" />
           </Link>
           <p className="mt-3 px-1 text-xs leading-snug text-white/70">
-            OCI application helper
+            Visa servicing
           </p>
         </div>
         <nav className="flex flex-col gap-1 p-3">

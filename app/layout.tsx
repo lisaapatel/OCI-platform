@@ -19,8 +19,8 @@ const brandSerif = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "OCI Platform · Akshar Travels",
-  description: "OCI application helper by Akshar Travels",
+  title: "Visa servicing · Akshar Travels",
+  description: "Visa servicing portal by Akshar Travels",
 };
 
 export default function RootLayout({

@@ -23,7 +23,7 @@ export function BrandLogo({ variant }: { variant: BrandLogoVariant }) {
 
   if (variant === "login") {
     return (
-      <div className="relative mx-auto mb-8 h-[4.5rem] w-full max-w-[min(100%,320px)]">
+      <div className="relative mx-auto mb-7 h-[4.5rem] w-full max-w-[min(100%,320px)] drop-shadow-[0_2px_12px_rgba(0,0,0,0.2)]">
         <Image
           src={BANNER_SRC}
           alt="Akshar Travels"

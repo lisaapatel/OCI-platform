@@ -34,21 +34,21 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-brand px-6 py-10">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-brand via-brand to-[#152174] px-6 py-12">
       <BrandLogo variant="login" />
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
-        <h1 className="text-center text-3xl font-semibold tracking-tight text-brand font-brand-serif">
-          OCI Platform
+      <div className="w-full max-w-[400px] rounded-2xl border border-white/10 bg-white p-8 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.35)] ring-1 ring-slate-200/60">
+        <h1 className="text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-[1.65rem]">
+          Visa servicing
         </h1>
-        <p className="mt-2 text-center text-sm text-oci-muted">
+        <p className="mt-2.5 text-center text-sm leading-relaxed text-slate-500">
           Sign in to your account
         </p>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit} noValidate>
+        <form className="mt-7 space-y-5" onSubmit={handleSubmit} noValidate>
           <div>
             <label
               htmlFor="email"
-              className="mb-1 block text-sm font-medium text-oci-muted"
+              className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500"
             >
               Email
             </label>
@@ -59,7 +59,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-oci-border px-3 py-2 text-sm text-oci-ink outline-none transition-colors duration-150 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-all duration-150 placeholder:text-slate-400 focus:border-brand-accent focus:bg-white focus:ring-2 focus:ring-brand-accent/25"
               placeholder="you@example.com"
             />
           </div>
@@ -67,7 +67,7 @@ export default function LoginPage() {
           <div>
             <label
               htmlFor="password"
-              className="mb-1 block text-sm font-medium text-oci-muted"
+              className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-slate-500"
             >
               Password
             </label>
@@ -78,12 +78,12 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-oci-border px-3 py-2 text-sm text-oci-ink outline-none transition-colors duration-150 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/30"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition-all duration-150 focus:border-brand-accent focus:bg-white focus:ring-2 focus:ring-brand-accent/25"
             />
           </div>
 
           {error ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-oci-danger">
+            <p className="rounded-xl border border-red-200/80 bg-red-50 px-3 py-2.5 text-sm text-red-800">
               {error}
             </p>
           ) : null}
@@ -91,13 +91,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-brand-accent py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-brand-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-brand-accent py-3 text-sm font-semibold text-white shadow-md shadow-brand-accent/25 transition-all duration-150 hover:bg-brand-accent-hover hover:shadow-lg hover:shadow-brand-accent/30 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none disabled:active:scale-100"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>
-      <p className="mt-8 text-center text-xs text-white/60">
+      <p className="mt-10 text-center text-[11px] font-medium uppercase tracking-[0.2em] text-white/45">
         Akshar Travels
       </p>
     </main>
