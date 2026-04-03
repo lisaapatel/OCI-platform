@@ -368,7 +368,10 @@ describe("Application detail", () => {
     );
 
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByLabelText(/^status$/i), "ready_for_review");
+    await user.selectOptions(
+      screen.getByLabelText(/^application status$/i),
+      "ready_for_review"
+    );
 
     expect(global.fetch).toHaveBeenCalledWith(
       "/api/applications/app-1",

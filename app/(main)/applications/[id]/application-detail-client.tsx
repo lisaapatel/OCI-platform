@@ -284,6 +284,7 @@ export function ApplicationDetailClient({
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [minorSaving, setMinorSaving] = useState(false);
   const [portalPrep, setPortalPrep] = useState<{
     documents: PortalPrepDoc[];
     summary: { ready: number; total: number };
@@ -776,6 +777,16 @@ export function ApplicationDetailClient({
     }
     refresh();
     return true;
+  }
+
+  async function setMinorApplicant(next: boolean) {
+    if (next === (application.is_minor === true)) return;
+    setMinorSaving(true);
+    try {
+      await patchApplication({ is_minor: next });
+    } finally {
+      setMinorSaving(false);
+    }
   }
 
   async function downloadTestPassportPdf() {
@@ -1789,109 +1800,164 @@ export function ApplicationDetailClient({
           </a>
         </div>
       ) : null}
-      <div className="flex flex-col gap-6 rounded-xl border border-slate-200 border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
-        <div className="flex flex-col gap-6 border-b border-slate-100 pb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-6 rounded-xl border border-slate-200/90 border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm ring-1 ring-slate-100 transition-shadow duration-200 hover:shadow-md">
+        <div className="flex flex-col gap-8 border-b border-slate-100/90 pb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-8 lg:gap-10">
+        <div className="min-w-0 flex-1 pr-0 sm:pr-2">
           <Link
             href="/dashboard"
-            className="text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:text-blue-700"
+            className="inline-flex items-center gap-1 text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:text-blue-800"
           >
-            ← Dashboard
+            <span aria-hidden className="text-base leading-none">←</span>
+            Dashboard
           </Link>
-          <h1 className="mt-2 text-2xl font-bold leading-tight tracking-tight text-slate-900">
-            {application.app_number}{" "}
-            <span className="font-normal text-slate-500">·</span>{" "}
-            {application.customer_name}
-          </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="text-2xl font-bold leading-tight tracking-tight text-slate-900">
+              {application.app_number}{" "}
+              <span className="font-normal text-slate-400">·</span>{" "}
+              {application.customer_name}
+            </h1>
+            {application.is_minor === true ? (
+              <span className="inline-flex items-center rounded-full border border-violet-200/90 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-900">
+                Minor
+              </span>
+            ) : null}
+          </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm leading-relaxed text-slate-600">
             {application.customer_email ? (
               <span>{application.customer_email}</span>
             ) : (
-              <span className="text-[#94a3b8]">No email</span>
+              <span className="text-slate-400">No email</span>
             )}
-            <span className="hidden sm:inline">·</span>
+            <span className="hidden text-slate-300 sm:inline">·</span>
             {application.customer_phone ? (
               <span>{application.customer_phone}</span>
             ) : (
-              <span className="text-[#94a3b8]">No phone</span>
+              <span className="text-slate-400">No phone</span>
             )}
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <ServiceTypeBadge serviceType={application.service_type} />
             <StatusBadge status={application.status} />
           </div>
         </div>
-        <div className="flex shrink-0 flex-col gap-4 sm:items-end">
-          {application.drive_folder_url ? (
-            <a
-              href={application.drive_folder_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-4 text-sm font-medium text-[#1e293b] transition-colors duration-150 hover:bg-[#eff6ff]"
-            >
-              Open Google Drive Folder
-            </a>
-          ) : null}
-          {application.service_type === "passport_us_renewal_test" ? (
-            <button
-              type="button"
-              onClick={() => void downloadTestPassportPdf()}
-              disabled={pdfTestGenerating}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#2563eb] bg-[#2563eb] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pdfTestGenerating
-                ? "Generating…"
-                : "Generate Test Passport PDF"}
-            </button>
-          ) : null}
-          {application.status === "ready_to_submit" ? (
-            <Link
-              href={`/applications/${application.id}/fill`}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#2563eb] bg-[#2563eb] px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700"
-            >
-              Govt form (print)
-            </Link>
-          ) : null}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-[#64748b]" htmlFor="status">
-              Status
-            </label>
-            <select
-              id="status"
-              value={application.status}
-              onChange={(e) =>
-                patchApplication({ status: e.target.value as Status })
-              }
-              className="h-10 min-w-[200px] rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
-            >
-              <option value="docs_pending">Docs Pending</option>
-              <option value="ready_for_review">Ready for Review</option>
-              <option value="ready_to_submit">Ready to Submit</option>
-              <option value="submitted">Submitted</option>
-              <option value="on_hold">On Hold</option>
-            </select>
+        <div className="flex w-full min-w-0 shrink-0 flex-col gap-4 sm:w-72 sm:max-w-full sm:self-start">
+          <div className="flex w-full flex-col gap-2.5">
+            {application.drive_folder_url ? (
+              <a
+                href={application.drive_folder_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 shadow-sm transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50"
+              >
+                Open Google Drive Folder
+              </a>
+            ) : null}
+            {application.service_type === "passport_us_renewal_test" ? (
+              <button
+                type="button"
+                onClick={() => void downloadTestPassportPdf()}
+                disabled={pdfTestGenerating}
+                className="flex h-10 w-full items-center justify-center rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pdfTestGenerating
+                  ? "Generating…"
+                  : "Generate Test Passport PDF"}
+              </button>
+            ) : null}
+            {application.status === "ready_to_submit" ? (
+              <Link
+                href={`/applications/${application.id}/fill`}
+                className="flex h-10 w-full items-center justify-center rounded-lg bg-[#1e3a5f] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-[#2d4d73]"
+              >
+                Govt form (print)
+              </Link>
+            ) : null}
           </div>
-          <div className="flex flex-col gap-1">
-            <label
-              className="text-xs font-medium text-[#64748b]"
-              htmlFor="is_minor"
-            >
-              Minor applicant
-            </label>
-            <select
-              id="is_minor"
-              value={application.is_minor === true ? "yes" : "no"}
-              onChange={(e) => {
-                const next = e.target.value === "yes";
-                if (next === (application.is_minor === true)) return;
-                void patchApplication({ is_minor: next });
-              }}
-              className="h-10 min-w-[200px] rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
-            >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
-            </select>
+
+          <div className="relative z-0 w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/50 p-4 shadow-sm">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Status &amp; flags
+            </p>
+            <div className="mt-3 space-y-4">
+              <div>
+                <label
+                  className="mb-1.5 block text-xs font-medium text-slate-600"
+                  htmlFor="status"
+                >
+                  Application status
+                </label>
+                <div className="relative">
+                  <select
+                    id="status"
+                    value={application.status}
+                    onChange={(e) =>
+                      patchApplication({ status: e.target.value as Status })
+                    }
+                    className="h-9 w-full cursor-pointer appearance-none rounded-lg border border-slate-200/90 bg-white py-2 pl-3 pr-9 text-sm text-slate-800 shadow-sm outline-none transition-all duration-150 hover:border-slate-300 focus:border-[#1e3a5f] focus:ring-2 focus:ring-[#1e3a5f]/15"
+                  >
+                    <option value="docs_pending">Docs Pending</option>
+                    <option value="ready_for_review">Ready for Review</option>
+                    <option value="ready_to_submit">Ready to Submit</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="on_hold">On Hold</option>
+                  </select>
+                  <span
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"
+                    aria-hidden
+                  >
+                    ▾
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-slate-600">
+                  Minor applicant
+                </span>
+                <div
+                  className="flex w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100 p-0.5"
+                  role="group"
+                  aria-label="Minor applicant"
+                >
+                  <button
+                    type="button"
+                    disabled={minorSaving}
+                    aria-pressed={application.is_minor !== true}
+                    onClick={() => void setMinorApplicant(false)}
+                    className={clsx(
+                      "min-h-10 min-w-0 flex-1 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-150 outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/30 focus-visible:ring-offset-1 disabled:opacity-50",
+                      application.is_minor !== true
+                        ? "border border-slate-200 bg-white text-slate-900 shadow-sm"
+                        : "border border-transparent bg-transparent text-slate-600 hover:bg-white/70 hover:text-slate-800"
+                    )}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    disabled={minorSaving}
+                    aria-pressed={application.is_minor === true}
+                    onClick={() => void setMinorApplicant(true)}
+                    className={clsx(
+                      "min-h-10 min-w-0 flex-1 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-150 outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-1 disabled:opacity-50",
+                      application.is_minor === true
+                        ? "border border-violet-700/20 bg-violet-600 text-white shadow-sm"
+                        : "border border-transparent bg-transparent text-slate-600 hover:bg-white/70 hover:text-slate-800"
+                    )}
+                  >
+                    Yes
+                  </button>
+                </div>
+                {minorSaving ? (
+                  <p className="mt-1.5 text-[11px] text-slate-400">Saving…</p>
+                ) : null}
+                <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                  Under 18: parent passport and address slots appear on the
+                  checklist.
+                </p>
+              </div>
+            </div>
           </div>
+
           {application.archived_at ? (
             <button
               type="button"
@@ -1906,7 +1972,7 @@ export function ApplicationDetailClient({
                   }
                 })();
               }}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#16a34a] bg-green-50 px-4 text-sm font-medium text-green-900 transition-colors duration-150 hover:bg-green-100 disabled:opacity-60"
+              className="mt-1 flex h-10 w-full shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-medium text-emerald-900 transition-colors duration-150 hover:bg-emerald-100 disabled:opacity-60"
             >
               {archiving ? "Restoring…" : "Restore to dashboard"}
             </button>
@@ -1931,7 +1997,7 @@ export function ApplicationDetailClient({
                   }
                 })();
               }}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#cbd5e1] bg-white px-4 text-sm font-medium text-[#64748b] transition-colors duration-150 hover:border-[#94a3b8] hover:bg-[#f8fafc] disabled:opacity-60"
+              className="mt-1 flex h-10 w-full shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
             >
               {archiving ? "Archiving…" : "Archive (hide from dashboard)"}
             </button>
@@ -1940,11 +2006,11 @@ export function ApplicationDetailClient({
         </div>
         {application.archived_at ? (
           <div
-            className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+            className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3.5 text-sm text-slate-800"
             role="status"
           >
             <p className="font-semibold text-slate-900">Archived</p>
-            <p className="mt-1 text-slate-700">
+            <p className="mt-1 text-slate-600">
               Hidden from the dashboard and excluded from all dashboard totals.
               Bookmark this page to manage or restore.
             </p>
@@ -1952,16 +2018,26 @@ export function ApplicationDetailClient({
         ) : null}
         {showReadyToSubmitPortalWarning ? (
           <div
-            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            className="flex gap-3 rounded-xl border border-amber-200/90 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-50/40 px-4 py-3.5 text-sm text-amber-950 shadow-sm"
             role="status"
           >
-            <p className="font-semibold">Govt portal checks incomplete</p>
-            <p className="mt-1 text-amber-900/95">
-              Status is <strong>Ready to Submit</strong>, but PDF sizes,
-              applicant photo, or signature may still need work. Review{" "}
-              <strong>Govt portal readiness</strong> below before uploading on
-              the official portal.
-            </p>
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-800"
+              aria-hidden
+            >
+              !
+            </div>
+            <div className="min-w-0 pt-0.5">
+              <p className="font-semibold text-amber-950">
+                Govt portal checks incomplete
+              </p>
+              <p className="mt-1 leading-relaxed text-amber-900/90">
+                Status is <strong>Ready to Submit</strong>, but PDF sizes,
+                applicant photo, or signature may still need work. Review{" "}
+                <strong>Govt portal readiness</strong> below before uploading on
+                the official portal.
+              </p>
+            </div>
           </div>
         ) : null}
       </div>
