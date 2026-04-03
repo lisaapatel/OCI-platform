@@ -107,9 +107,16 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   applicant_photo: "Applicant Photo",
   applicant_signature: "Applicant Signature",
   parent_passport: "Parent's Indian Passport",
+  parent_passport_father: "Father's Passport / OCI",
+  parent_passport_mother: "Mother's Passport / OCI",
+  parent_address_proof: "Parent's Address Proof",
   parent_oci: "Parent's OCI Card",
   parent_indian_doc: "Parent Indian Document (legacy)",
   marriage_certificate: "Marriage Certificate",
+  indian_citizenship_relinquishment: "Citizenship Relinquishment / Surrender",
+  applicant_oci_card: "Applicant OCI Card",
+  photo: "Photo",
+  signature: "Signature",
 };
 
 export function fieldSectionId(fieldName: string): string {

@@ -110,6 +110,8 @@ describe("Review page", () => {
       screen.getByRole("tab", { name: /Birth Certificate/i })
     ).toBeInTheDocument();
     expect(screen.getByTestId("document-viewer")).toBeInTheDocument();
+    expect(screen.getByTestId("review-summary-strip")).toBeInTheDocument();
+    expect(screen.getByText(/Review focus/i)).toBeInTheDocument();
   });
 
   test("Test 2: Extracted fields display correctly with their values", async () => {
@@ -195,7 +197,7 @@ describe("Review page", () => {
     ).toBeInTheDocument();
   });
 
-  test("Test 6: Mark as Ready to Submit stays enabled when fields are flagged; shows warning banner", async () => {
+  test("Test 6: Mark as Ready to Submit stays enabled when fields are flagged", async () => {
     const flagged = [
       { ...baseFields[0], is_flagged: true, flag_note: "check" },
       baseFields[1],
@@ -214,8 +216,7 @@ describe("Review page", () => {
     expect(
       screen.getByRole("button", { name: /Mark as Ready to Submit/i })
     ).not.toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(/flagged/i);
-    expect(screen.getByRole("status")).toHaveTextContent(/still proceed/i);
+    expect(screen.getByText(/1 field flagged/i)).toBeInTheDocument();
   });
 
   test("Test 7: Mark as Ready to Submit button is enabled when zero fields are flagged", async () => {
@@ -312,7 +313,96 @@ describe("Review page", () => {
     });
   });
 
-  test("Test 11: Mark as Ready redirects to fill page on success", async () => {
+  test("Test 11: Preview toolbar rotate and reset are present", async () => {
+    const { ReviewPageClient } = await import(
+      "../../app/(main)/applications/[id]/review/review-page-client"
+    );
+    render(
+      <ReviewPageClient
+        applicationId="app-1"
+        documents={[documents[0]]}
+        initialFields={[baseFields[0]]}
+      />
+    );
+
+    expect(screen.getByTestId("review-preview-toolbar")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Rotate preview left/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Reset preview view/i })
+    ).toBeInTheDocument();
+  });
+
+  test("Test 12: Conflict row shows stacked sources", async () => {
+    const conflictField = {
+      id: "efc",
+      application_id: "app-1",
+      field_name: "full_name",
+      field_value: "Pick Me",
+      source_doc_type: "current_passport",
+      is_flagged: true,
+      flag_note:
+        "AUTO_RECON:conflict|Passport: John | Birth: Jane | Other: Jim",
+      reviewed_by: "",
+      reviewed_at: "",
+    };
+    const { ReviewPageClient } = await import(
+      "../../app/(main)/applications/[id]/review/review-page-client"
+    );
+    render(
+      <ReviewPageClient
+        applicationId="app-1"
+        documents={[documents[0]]}
+        initialFields={[conflictField]}
+      />
+    );
+
+    expect(screen.getByText(/Value to submit/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sources \(extracted\)/i)).toBeInTheDocument();
+    expect(screen.getByText("Passport: John")).toBeInTheDocument();
+    expect(screen.getByText("Birth: Jane")).toBeInTheDocument();
+    expect(screen.getByText("Other: Jim")).toBeInTheDocument();
+  });
+
+  test("Test 13: Hide empty toggles via segmented control", async () => {
+    const fields = [
+      baseFields[0],
+      {
+        id: "ef-empty",
+        application_id: "app-1",
+        field_name: "middle_name",
+        field_value: "",
+        source_doc_type: "current_passport",
+        is_flagged: false,
+        flag_note: "",
+        reviewed_by: "",
+        reviewed_at: "",
+      },
+    ];
+    const { ReviewPageClient } = await import(
+      "../../app/(main)/applications/[id]/review/review-page-client"
+    );
+    render(
+      <ReviewPageClient
+        applicationId="app-1"
+        documents={[documents[0]]}
+        initialFields={fields}
+      />
+    );
+
+    expect(screen.getByLabelText(/Field value for middle_name/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Hide empty$/i }));
+    expect(
+      screen.queryByLabelText(/Field value for middle_name/i)
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /^Show all fields$/i })
+    );
+    expect(screen.getByLabelText(/Field value for middle_name/i)).toBeInTheDocument();
+  });
+
+  test("Test 14: Mark as Ready redirects to fill page on success", async () => {
     const { ReviewPageClient } = await import(
       "../../app/(main)/applications/[id]/review/review-page-client"
     );
@@ -333,3 +423,4 @@ describe("Review page", () => {
     });
   });
 });
+
