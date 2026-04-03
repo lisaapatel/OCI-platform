@@ -5,14 +5,14 @@ export const PARENT_DOCUMENTS = [
   {
     doc_type: "parent_passport_father",
     label: "Father's Passport",
-    note: "Indian or foreign passport — first and last page",
+    note: "Passport (Indian or foreign, first and last page) or OCI card (front and back)",
     shouldSkipAiExtraction: false,
     required: true,
   },
   {
     doc_type: "parent_passport_mother",
     label: "Mother's Passport",
-    note: "Indian or foreign passport — first and last page",
+    note: "Passport (Indian or foreign, first and last page) or OCI card (front and back)",
     shouldSkipAiExtraction: false,
     required: false,
   },
@@ -27,7 +27,7 @@ export const PARENT_DOCUMENTS = [
 
 /** Shown above parent document slots on the application detail checklist. */
 export const PARENT_PASSPORT_BANNER =
-  "At least one parent passport (father or mother) is required.";
+  "At least one parent's passport or OCI card (father or mother slot) is required.";
 
 /**
  * Checklist rows for minors: father/mother `required: false` (at least one enforced

@@ -173,6 +173,91 @@ describe("POST /api/applications", () => {
     );
   });
 
+  test("inserts oci_intake_variant when provided for oci_new", async () => {
+    createApplicationFolder.mockResolvedValue({
+      id: "drive-folder-id",
+      url: "https://drive.google.com/drive/folders/drive-folder-id",
+    });
+
+    const insertPayloads: unknown[] = [];
+    const countSelect = jest.fn().mockResolvedValue({ count: 0, error: null });
+    const insertSingle = jest
+      .fn()
+      .mockResolvedValue({ data: { id: "variant-app" }, error: null });
+    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
+    const insert = jest.fn((payload) => {
+      insertPayloads.push(payload);
+      return { select: insertSelect };
+    });
+
+    supabaseAdminFrom.mockReturnValue({
+      select: countSelect,
+      insert,
+    });
+
+    const req = new Request("http://localhost/api/applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: "A B",
+        service_type: "oci_new",
+        oci_intake_variant: "new_foreign_birth",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(insertPayloads[0]).toEqual(
+      expect.objectContaining({
+        oci_intake_variant: "new_foreign_birth",
+      })
+    );
+  });
+
+  test("returns 400 for invalid oci_intake_variant string", async () => {
+    supabaseAdminFrom.mockReturnValue({
+      select: jest.fn(),
+      insert: jest.fn(),
+    });
+
+    const req = new Request("http://localhost/api/applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: "X",
+        service_type: "oci_new",
+        oci_intake_variant: "not_a_variant",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(String(body.error)).toMatch(/oci_intake_variant must be one of/i);
+  });
+
+  test("returns 400 when oci_intake_variant set for non-OCI service", async () => {
+    supabaseAdminFrom.mockReturnValue({
+      select: jest.fn(),
+      insert: jest.fn(),
+    });
+
+    const req = new Request("http://localhost/api/applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: "X",
+        service_type: "passport_renewal",
+        oci_intake_variant: "misc_reissue",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(String(body.error)).toMatch(/only valid for OCI applications/i);
+  });
+
   test("returns 400 when is_minor is not boolean", async () => {
     supabaseAdminFrom.mockReturnValue({
       select: jest.fn(),

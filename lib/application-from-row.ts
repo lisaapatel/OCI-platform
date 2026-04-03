@@ -1,3 +1,4 @@
+import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
 import type { Application, PaymentStatus } from "@/lib/types";
 
 function parsePaymentStatus(
@@ -47,5 +48,6 @@ export function applicationFromDbRow(row: Record<string, unknown>): Application 
       row.our_cost == null || row.our_cost === "" ? null : Number(row.our_cost),
     payment_status: parsePaymentStatus(row),
     is_minor: row.is_minor === true,
+    oci_intake_variant: normalizeStoredOciIntakeVariant(row.oci_intake_variant),
   };
 }

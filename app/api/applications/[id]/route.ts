@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  isOciServiceType,
+  normalizeStoredOciIntakeVariant,
+  parseOciIntakeVariantFromBody,
+} from "@/lib/oci-intake-variant";
 import { minorParentDocumentsMet } from "@/lib/parent-documents";
 import { ociParentRequirementMet } from "@/lib/oci-new-checklist";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -31,9 +36,74 @@ export async function PATCH(
       notes?: string | null;
       archived?: boolean;
       is_minor?: boolean;
+      oci_intake_variant?: string | null;
     };
 
     const patch: Record<string, unknown> = {};
+
+    if ("oci_intake_variant" in body) {
+      const parsed = parseOciIntakeVariantFromBody(body.oci_intake_variant);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      const next = parsed.value;
+
+      const { data: meta, error: metaErr } = await supabaseAdmin
+        .from("applications")
+        .select("service_type, oci_intake_variant")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (metaErr) {
+        return NextResponse.json(
+          { error: `Could not load application: ${metaErr.message}` },
+          { status: 500 }
+        );
+      }
+      if (!meta) {
+        return NextResponse.json({ error: "Application not found." }, {
+          status: 404,
+        });
+      }
+
+      const st = meta.service_type as Application["service_type"];
+      if (next !== null && !isOciServiceType(st)) {
+        return NextResponse.json(
+          {
+            error:
+              "oci_intake_variant is only valid for OCI applications (oci_new or oci_renewal).",
+          },
+          { status: 400 }
+        );
+      }
+
+      const prev = normalizeStoredOciIntakeVariant(meta.oci_intake_variant);
+      if (prev !== next) {
+        const { count, error: countErr } = await supabaseAdmin
+          .from("documents")
+          .select("id", { count: "exact", head: true })
+          .eq("application_id", id);
+
+        if (countErr) {
+          return NextResponse.json(
+            { error: `Could not verify documents: ${countErr.message}` },
+            { status: 500 }
+          );
+        }
+        if ((count ?? 0) > 0) {
+          return NextResponse.json(
+            {
+              error:
+                "Cannot change oci_intake_variant after documents have been uploaded.",
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      patch.oci_intake_variant = next;
+    }
+
     if (body.is_minor !== undefined) {
       if (typeof body.is_minor !== "boolean") {
         return NextResponse.json(
@@ -66,7 +136,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error:
-            "Provide status, notes, archived, and/or is_minor.",
+            "Provide status, notes, archived, is_minor, and/or oci_intake_variant.",
         },
         { status: 400 }
       );
@@ -103,12 +173,12 @@ export async function PATCH(
           return NextResponse.json(
             {
               error:
-                "Minor applicants need at least one parent passport (father or mother) and Parent's Address Proof before Ready to Submit.",
+                "Minor applicants need at least one parent's passport or OCI card (father or mother slot) and Parent's Address Proof before Ready to Submit.",
             },
             { status: 400 }
           );
         }
-      } else if (st === "oci_new" || st === "oci_renewal") {
+      } else if (isOciServiceType(st)) {
         if (!ociParentRequirementMet(present)) {
           return NextResponse.json(
             {

@@ -28,8 +28,37 @@ jest.mock("next/navigation", () => ({
 }));
 
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+/** OCI path that only needs Q1 (existing reissue) + default under-18 No */
+async function fillOciIntakeExistingReissue(user: ReturnType<typeof userEvent.setup>) {
+  const q1 = screen.getByRole("group", {
+    name: /first-time OCI registration or an existing/i,
+  });
+  await user.click(
+    within(q1).getByRole("radio", { name: /Existing OCI reissue \/ update/i })
+  );
+}
+
+async function fillOciIntakeFirstTimePrevIndian(
+  user: ReturnType<typeof userEvent.setup>
+) {
+  const q1 = screen.getByRole("group", {
+    name: /first-time OCI registration or an existing/i,
+  });
+  await user.click(
+    within(q1).getByRole("radio", { name: /First-time OCI registration/i })
+  );
+  const q2 = screen.getByRole("group", {
+    name: /For first-time registration, which applies/i,
+  });
+  await user.click(
+    within(q2).getByRole("radio", {
+      name: /Previously held Indian citizenship or Indian passport/i,
+    })
+  );
+}
 
 describe("New Application page", () => {
   beforeEach(() => {
@@ -78,7 +107,7 @@ describe("New Application page", () => {
     expect(select).toHaveValue("passport_renewal");
   });
 
-  test("Test 4: Submit button is disabled when customer name is empty", async () => {
+  test("Test 4: Submit disabled until OCI intake is complete when OCI is selected", async () => {
     const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
@@ -86,9 +115,10 @@ describe("New Application page", () => {
     expect(submit).toBeDisabled();
 
     await userEvent.selectOptions(screen.getByLabelText(/service type/i), "oci_new");
+    await userEvent.type(screen.getByLabelText(/full name/i), "A");
     expect(submit).toBeDisabled();
 
-    await userEvent.type(screen.getByLabelText(/full name/i), "A");
+    await fillOciIntakeExistingReissue(userEvent.setup());
     expect(submit).not.toBeDisabled();
   });
 
@@ -105,6 +135,7 @@ describe("New Application page", () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/full name/i), "Priya Sharma");
     await user.selectOptions(screen.getByLabelText(/service type/i), "oci_new");
+    await fillOciIntakeExistingReissue(user);
     await user.click(screen.getByRole("button", { name: /create application/i }));
 
     resolveFetch!({
@@ -133,6 +164,7 @@ describe("New Application page", () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/full name/i), "Priya Sharma");
     await user.selectOptions(screen.getByLabelText(/service type/i), "oci_new");
+    await fillOciIntakeExistingReissue(user);
     await user.click(screen.getByRole("button", { name: /create application/i }));
 
     expect(await screen.findByRole("button", { name: "Creating…" })).toBeDisabled();
@@ -158,13 +190,14 @@ describe("New Application page", () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/full name/i), "Priya Sharma");
     await user.selectOptions(screen.getByLabelText(/service type/i), "oci_new");
+    await fillOciIntakeExistingReissue(user);
     await user.click(screen.getByRole("button", { name: /create application/i }));
 
     expect(await screen.findByText(/boom/i)).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
 
-  test("Test 8: Submit sends is_minor true when minor applicant is checked", async () => {
+  test("Test 8: OCI submit sends is_minor true when under 18 Yes", async () => {
     const fetchMock = global.fetch as jest.Mock;
     fetchMock.mockResolvedValue({
       ok: true,
@@ -177,7 +210,9 @@ describe("New Application page", () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/full name/i), "Minor Case");
     await user.selectOptions(screen.getByLabelText(/service type/i), "oci_new");
-    await user.click(screen.getByLabelText(/minor applicant/i));
+    await fillOciIntakeExistingReissue(user);
+    const minorGroup = screen.getByRole("group", { name: /under 18/i });
+    await user.click(within(minorGroup).getByRole("radio", { name: /^Yes$/i }));
     await user.click(screen.getByRole("button", { name: /create application/i }));
 
     await waitFor(() => {
@@ -187,5 +222,75 @@ describe("New Application page", () => {
     expect(call).toBeDefined();
     const body = JSON.parse(call![1].body as string);
     expect(body.is_minor).toBe(true);
+    expect(body.oci_intake_variant).toBe("misc_reissue");
+  });
+
+  test("OCI intake questions are hidden for non-OCI service", async () => {
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
+    render(<Page />);
+
+    await userEvent.selectOptions(
+      screen.getByLabelText(/service type/i),
+      "passport_renewal"
+    );
+
+    expect(
+      screen.queryByRole("group", {
+        name: /first-time OCI registration or an existing/i,
+      })
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/minor applicant/i)).toBeInTheDocument();
+  });
+
+  test("OCI submit sends oci_intake_variant from first-time + prev Indian path", async () => {
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "x" }),
+    });
+
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
+    render(<Page />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/full name/i), "Test User");
+    await user.selectOptions(screen.getByLabelText(/service type/i), "oci_renewal");
+    await fillOciIntakeFirstTimePrevIndian(user);
+    await user.click(screen.getByRole("button", { name: /create application/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/applications");
+    const body = JSON.parse(call![1].body as string);
+    expect(body.oci_intake_variant).toBe("new_prev_indian");
+    expect(body.service_type).toBe("oci_renewal");
+  });
+
+  test("Switching away from OCI clears intake; switching back requires answers again", async () => {
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
+    render(<Page />);
+
+    const user = userEvent.setup();
+    const select = screen.getByLabelText(/service type/i);
+    await user.selectOptions(select, "oci_new");
+    await user.type(screen.getByLabelText(/full name/i), "X");
+    await fillOciIntakeExistingReissue(user);
+    expect(
+      screen.getByRole("button", { name: /create application/i })
+    ).not.toBeDisabled();
+
+    await user.selectOptions(select, "passport_renewal");
+    expect(
+      screen.queryByRole("group", {
+        name: /first-time OCI registration or an existing/i,
+      })
+    ).not.toBeInTheDocument();
+
+    await user.selectOptions(select, "oci_new");
+    const submit = screen.getByRole("button", { name: /create application/i });
+    expect(submit).toBeDisabled();
+    await fillOciIntakeExistingReissue(user);
+    expect(submit).not.toBeDisabled();
   });
 });

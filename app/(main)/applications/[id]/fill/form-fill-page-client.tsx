@@ -4,7 +4,10 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { resolveDocTypeChecklistLabel } from "@/lib/application-checklist";
+import {
+  getChecklistForApplication,
+  resolveDocTypeChecklistLabel,
+} from "@/lib/application-checklist";
 import {
   getValueByKeysAndSources,
   normalizeStoredFieldKey,
@@ -14,10 +17,7 @@ import {
   PORTAL_IMAGE_MAX_KB,
   PORTAL_PDF_MAX_KB,
 } from "@/lib/portal-constants";
-import {
-  OCI_CHECKLIST_SUBMISSION_NOTE,
-  OCI_NEW_CHECKLIST,
-} from "@/lib/oci-new-checklist";
+import { OCI_CHECKLIST_SUBMISSION_NOTE } from "@/lib/oci-new-checklist";
 import {
   isPortalPdfChecklistItem,
   type PortalReadinessSnapshot,
@@ -296,6 +296,8 @@ export function FormFillPageClient({
   customerEmail,
   customerPhone,
   serviceType = "oci_new",
+  isMinor = false,
+  ociIntakeVariant = null,
   lastReviewedLabel,
   initialFields,
   portalReadiness,
@@ -306,6 +308,8 @@ export function FormFillPageClient({
   customerEmail: string;
   customerPhone: string;
   serviceType?: Application["service_type"];
+  isMinor?: boolean;
+  ociIntakeVariant?: Application["oci_intake_variant"];
   lastReviewedLabel: string;
   initialFields: ExtractedField[];
   portalReadiness: PortalReadinessSnapshot;
@@ -318,6 +322,16 @@ export function FormFillPageClient({
   const uploadedDocSet = useMemo(
     () => new Set(portalReadiness.uploaded_doc_types ?? []),
     [portalReadiness.uploaded_doc_types]
+  );
+
+  const suggestedPortalUploadOrder = useMemo(
+    () =>
+      getChecklistForApplication({
+        service_type: serviceType,
+        is_minor: isMinor,
+        oci_intake_variant: ociIntakeVariant ?? null,
+      }),
+    [serviceType, isMinor, ociIntakeVariant]
   );
 
   const hasFormerIndianExtracted = useMemo(() => {
@@ -793,7 +807,7 @@ export function FormFillPageClient({
                 Suggested portal upload order
               </h4>
               <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-slate-700">
-                {OCI_NEW_CHECKLIST.map((item) => (
+                {suggestedPortalUploadOrder.map((item) => (
                   <li key={item.doc_type}>
                     {item.label}
                     {item.required ? (

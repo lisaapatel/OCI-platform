@@ -9,11 +9,13 @@ import { useDropzone } from "react-dropzone";
 import { coerceExtractionStatus } from "@/lib/document-utils";
 import { labelForFailureReason } from "@/lib/extraction-failure-reasons";
 import {
+  getChecklistForApplication,
   getChecklistForServiceType,
   checklistRequiredCount,
   resolveDocTypeChecklistLabel,
   type ChecklistItem,
 } from "@/lib/application-checklist";
+import { composeOciChecklistCore } from "@/lib/oci-checklist-compose";
 import {
   PORTAL_IMAGE_MAX_KB,
   PORTAL_PDF_COMPRESS_TARGET_KB,
@@ -25,6 +27,11 @@ import {
   isPortalPdfChecklistItem,
 } from "@/lib/portal-readiness";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import {
+  formatOciIntakeVariantLabel,
+  OCI_INTAKE_VARIANT_LEGACY_DISPLAY,
+} from "@/lib/oci-intake-ui";
+import { isOciServiceType } from "@/lib/oci-intake-variant";
 import {
   PARENT_DOCUMENT_CHECKLIST_ITEMS,
   PARENT_PASSPORT_BANNER,
@@ -189,16 +196,15 @@ type GovtImageValResult = {
 };
 
 function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
-  const label =
-    serviceType === "oci_new"
+  const label = isOciServiceType(serviceType)
+    ? serviceType === "oci_new"
       ? "OCI New"
-      : serviceType === "oci_renewal"
-        ? "OCI Renewal"
-        : serviceType === "passport_renewal"
-          ? "Passport Renewal"
-          : serviceType === "passport_us_renewal_test"
-            ? "US Passport Test (DS-82)"
-            : "Service";
+      : "OCI Renewal"
+    : serviceType === "passport_renewal"
+      ? "Passport Renewal"
+      : serviceType === "passport_us_renewal_test"
+        ? "US Passport Test (DS-82)"
+        : "Service";
   const isPassportRenewal = serviceType === "passport_renewal";
   return (
     <span
@@ -317,16 +323,27 @@ export function ApplicationDetailClient({
     return m;
   }, [documents]);
 
-  const baseChecklist = useMemo(
-    () => getChecklistForServiceType(application.service_type),
-    [application.service_type]
-  );
+  const baseChecklist = useMemo(() => {
+    const st = application.service_type;
+    if (isOciServiceType(st)) {
+      return composeOciChecklistCore({
+        oci_intake_variant: application.oci_intake_variant ?? null,
+        is_minor: application.is_minor === true,
+      });
+    }
+    return getChecklistForServiceType(st);
+  }, [
+    application.service_type,
+    application.is_minor,
+    application.oci_intake_variant,
+  ]);
   const displayChecklist = useMemo(
-    () =>
-      application.is_minor
-        ? [...baseChecklist, ...PARENT_DOCUMENT_CHECKLIST_ITEMS]
-        : baseChecklist,
-    [baseChecklist, application.is_minor]
+    () => getChecklistForApplication(application),
+    [
+      application.service_type,
+      application.is_minor,
+      application.oci_intake_variant,
+    ]
   );
   const activeRequiredCount = useMemo(() => {
     const base = checklistRequiredCount(baseChecklist);
@@ -352,8 +369,7 @@ export function ApplicationDetailClient({
   }, [docByType, baseChecklist, application.is_minor, presentDocTypes]);
 
   const showDocumentChecklist =
-    application.service_type === "oci_new" ||
-    application.service_type === "oci_renewal" ||
+    isOciServiceType(application.service_type) ||
     application.service_type === "passport_renewal" ||
     application.service_type === "passport_us_renewal_test";
 
@@ -1148,9 +1164,7 @@ export function ApplicationDetailClient({
     const photoDoc = docByType.get("applicant_photo");
     const sigDoc = docByType.get("applicant_signature");
     const passportPhotoKbRange = `${PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–${PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}`;
-    const canEditSignature =
-      application.service_type === "oci_new" ||
-      application.service_type === "oci_renewal";
+    const canEditSignature = isOciServiceType(application.service_type);
 
     function renderColumn(
       title: string,
@@ -1839,6 +1853,13 @@ export function ApplicationDetailClient({
             <ServiceTypeBadge serviceType={application.service_type} />
             <StatusBadge status={application.status} />
           </div>
+          {isOciServiceType(application.service_type) ? (
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
+              <span className="font-medium text-slate-800">OCI intake: </span>
+              {formatOciIntakeVariantLabel(application.oci_intake_variant) ??
+                OCI_INTAKE_VARIANT_LEGACY_DISPLAY}
+            </p>
+          ) : null}
         </div>
         <div className="flex w-full min-w-0 shrink-0 flex-col gap-4 sm:w-72 sm:max-w-full sm:self-start">
           <div className="flex w-full flex-col gap-2.5">
@@ -1954,6 +1975,13 @@ export function ApplicationDetailClient({
                   Under 18: parent passport and address slots appear on the
                   checklist.
                 </p>
+                {isOciServiceType(application.service_type) &&
+                documents.length > 0 ? (
+                  <p className="mt-2 text-[11px] leading-snug text-amber-800/90">
+                    OCI intake type cannot be changed after documents are
+                    uploaded.
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>

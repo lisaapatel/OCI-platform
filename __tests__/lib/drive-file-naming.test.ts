@@ -15,6 +15,13 @@ describe("drive-file-naming", () => {
     expect(drivePrefixForDocType("current_passport")).toBe("passport_current");
   });
 
+  test("drivePrefixForDocType maps phase-1 OCI variant doc types", () => {
+    expect(drivePrefixForDocType("indian_citizenship_relinquishment")).toBe(
+      "citizenship_relinquishment_india"
+    );
+    expect(drivePrefixForDocType("applicant_oci_card")).toBe("oci_applicant_card");
+  });
+
   test("originalUploadDriveName prefixes customer file", () => {
     expect(originalUploadDriveName("current_passport", "passport 2.pdf")).toBe(
       "passport_current_passport_2.pdf"

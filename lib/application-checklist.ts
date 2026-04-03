@@ -1,9 +1,11 @@
 import type { Application } from "@/lib/types";
+import { composeOciChecklist } from "@/lib/oci-checklist-compose";
 import {
   getOciChecklistLabel,
   OCI_NEW_CHECKLIST,
   type ChecklistItem,
 } from "@/lib/oci-new-checklist";
+import { isOciServiceType } from "@/lib/oci-intake-variant";
 import { PARENT_DOCUMENT_CHECKLIST_ITEMS } from "@/lib/parent-documents";
 import { PASSPORT_RENEWAL_CHECKLIST } from "@/lib/passport-renewal-checklist";
 
@@ -38,6 +40,26 @@ export function getChecklistForServiceType(
   }
   if (serviceType === "passport_us_renewal_test") {
     return PASSPORT_US_RENEWAL_TEST_CHECKLIST;
+  }
+  return OCI_NEW_CHECKLIST;
+}
+
+/** OCI: composed checklist from variant + minor. Passport: service checklist + optional parent rows when minor. */
+export function getChecklistForApplication(
+  app: Pick<Application, "service_type" | "is_minor" | "oci_intake_variant">
+): ChecklistItem[] {
+  const st = app.service_type;
+  if (st === "passport_renewal" || st === "passport_us_renewal_test") {
+    const base = getChecklistForServiceType(st);
+    return app.is_minor === true
+      ? [...base, ...PARENT_DOCUMENT_CHECKLIST_ITEMS]
+      : base;
+  }
+  if (isOciServiceType(st)) {
+    return composeOciChecklist({
+      oci_intake_variant: app.oci_intake_variant ?? null,
+      is_minor: app.is_minor === true,
+    });
   }
   return OCI_NEW_CHECKLIST;
 }

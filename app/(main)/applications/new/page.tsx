@@ -3,6 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import {
+  ociIntakeVariantFromAnswers,
+  OCI_NEW_APP_INTAKE_COPY,
+  type OciFirstTimeTrack,
+  type OciRegistrationKind,
+} from "@/lib/oci-intake-ui";
+import { isOciServiceType } from "@/lib/oci-intake-variant";
+
 type ServiceType =
   | "oci_new"
   | "oci_renewal"
@@ -18,15 +26,37 @@ export default function NewApplicationPage() {
   const [serviceType, setServiceType] = useState<ServiceType | "">("");
   const [isMinor, setIsMinor] = useState(false);
   const [notes, setNotes] = useState("");
+  const [ociRegistrationKind, setOciRegistrationKind] = useState<
+    "" | OciRegistrationKind
+  >("");
+  const [ociFirstTimeTrack, setOciFirstTimeTrack] = useState<
+    "" | OciFirstTimeTrack
+  >("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const ociIntakeVariant = useMemo(
+    () => ociIntakeVariantFromAnswers(ociRegistrationKind, ociFirstTimeTrack),
+    [ociRegistrationKind, ociFirstTimeTrack]
+  );
+
+  const isOci = serviceType !== "" && isOciServiceType(serviceType);
+
   const canSubmit = useMemo(() => {
     if (!fullName.trim()) return false;
     if (!serviceType) return false;
+    if (isOci && ociIntakeVariant === null) return false;
     return true;
-  }, [fullName, serviceType]);
+  }, [fullName, serviceType, isOci, ociIntakeVariant]);
+
+  function onServiceTypeChange(next: ServiceType | "") {
+    setServiceType(next);
+    if (next === "" || !isOciServiceType(next)) {
+      setOciRegistrationKind("");
+      setOciFirstTimeTrack("");
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,17 +66,22 @@ export default function NewApplicationPage() {
     setError(null);
 
     try {
+      const payload: Record<string, unknown> = {
+        customer_name: fullName,
+        customer_email: email,
+        customer_phone: phone,
+        service_type: serviceType,
+        notes,
+        is_minor: isMinor,
+      };
+      if (isOci && ociIntakeVariant !== null) {
+        payload.oci_intake_variant = ociIntakeVariant;
+      }
+
       const res = await fetch("/api/applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer_name: fullName,
-          customer_email: email,
-          customer_phone: phone,
-          service_type: serviceType,
-          notes,
-          is_minor: isMinor,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = (await res.json()) as { id?: string; error?: string };
@@ -151,7 +186,9 @@ export default function NewApplicationPage() {
                 id="serviceType"
                 required
                 value={serviceType}
-                onChange={(e) => setServiceType(e.target.value as any)}
+                onChange={(e) =>
+                  onServiceTypeChange(e.target.value as ServiceType | "")
+                }
                 className="h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
               >
                 <option value="">Select a service…</option>
@@ -170,27 +207,134 @@ export default function NewApplicationPage() {
                 generation.
               </p>
             </div>
-            <div className="mt-4 flex items-start gap-3 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3">
-              <input
-                id="isMinor"
-                type="checkbox"
-                checked={isMinor}
-                onChange={(e) => setIsMinor(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-[#cbd5e1] text-[#2563eb] focus:ring-[#2563eb]/25"
-              />
-              <div>
-                <label
-                  htmlFor="isMinor"
-                  className="text-sm font-medium text-[#1e293b]"
-                >
-                  Minor applicant
-                </label>
-                <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
-                  When checked, we collect parent passport (father or mother) and
-                  parent address proof for every service type.
-                </p>
+
+            {isOci ? (
+              <div className="mt-4 space-y-5 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-4">
+                <fieldset>
+                  <legend className="text-sm font-medium text-[#1e293b]">
+                    {OCI_NEW_APP_INTAKE_COPY.q1Legend}{" "}
+                    <span className="text-[#dc2626]">*</span>
+                  </legend>
+                  <div className="mt-2 space-y-2">
+                    <label className="flex cursor-pointer items-start gap-2 text-sm text-[#334155]">
+                      <input
+                        type="radio"
+                        name="ociRegistrationKind"
+                        value="first_time"
+                        checked={ociRegistrationKind === "first_time"}
+                        onChange={() => {
+                          setOciRegistrationKind("first_time");
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>{OCI_NEW_APP_INTAKE_COPY.q1FirstTime}</span>
+                    </label>
+                    <label className="flex cursor-pointer items-start gap-2 text-sm text-[#334155]">
+                      <input
+                        type="radio"
+                        name="ociRegistrationKind"
+                        value="existing"
+                        checked={ociRegistrationKind === "existing"}
+                        onChange={() => {
+                          setOciRegistrationKind("existing");
+                          setOciFirstTimeTrack("");
+                        }}
+                        className="mt-0.5"
+                      />
+                      <span>{OCI_NEW_APP_INTAKE_COPY.q1Existing}</span>
+                    </label>
+                  </div>
+                </fieldset>
+
+                {ociRegistrationKind === "first_time" ? (
+                  <fieldset>
+                    <legend className="text-sm font-medium text-[#1e293b]">
+                      {OCI_NEW_APP_INTAKE_COPY.q2Legend}{" "}
+                      <span className="text-[#dc2626]">*</span>
+                    </legend>
+                    <div className="mt-2 space-y-2">
+                      <label className="flex cursor-pointer items-start gap-2 text-sm text-[#334155]">
+                        <input
+                          type="radio"
+                          name="ociFirstTimeTrack"
+                          value="prev_indian"
+                          checked={ociFirstTimeTrack === "prev_indian"}
+                          onChange={() =>
+                            setOciFirstTimeTrack("prev_indian")
+                          }
+                          className="mt-0.5"
+                        />
+                        <span>{OCI_NEW_APP_INTAKE_COPY.q2PrevIndian}</span>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-2 text-sm text-[#334155]">
+                        <input
+                          type="radio"
+                          name="ociFirstTimeTrack"
+                          value="foreign_birth"
+                          checked={ociFirstTimeTrack === "foreign_birth"}
+                          onChange={() =>
+                            setOciFirstTimeTrack("foreign_birth")
+                          }
+                          className="mt-0.5"
+                        />
+                        <span>{OCI_NEW_APP_INTAKE_COPY.q2ForeignBirth}</span>
+                      </label>
+                    </div>
+                  </fieldset>
+                ) : null}
+
+                <fieldset>
+                  <legend className="text-sm font-medium text-[#1e293b]">
+                    {OCI_NEW_APP_INTAKE_COPY.q3Legend}
+                  </legend>
+                  <div className="mt-2 flex flex-wrap gap-4">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-[#334155]">
+                      <input
+                        type="radio"
+                        name="ociMinor"
+                        checked={!isMinor}
+                        onChange={() => setIsMinor(false)}
+                      />
+                      <span>No</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-[#334155]">
+                      <input
+                        type="radio"
+                        name="ociMinor"
+                        checked={isMinor}
+                        onChange={() => setIsMinor(true)}
+                      />
+                      <span>Yes</span>
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-[#64748b]">
+                    {OCI_NEW_APP_INTAKE_COPY.q3Help}
+                  </p>
+                </fieldset>
               </div>
-            </div>
+            ) : (
+              <div className="mt-4 flex items-start gap-3 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3">
+                <input
+                  id="isMinor"
+                  type="checkbox"
+                  checked={isMinor}
+                  onChange={(e) => setIsMinor(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-[#cbd5e1] text-[#2563eb] focus:ring-[#2563eb]/25"
+                />
+                <div>
+                  <label
+                    htmlFor="isMinor"
+                    className="text-sm font-medium text-[#1e293b]"
+                  >
+                    Minor applicant
+                  </label>
+                  <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+                    When checked, we collect parent passport (father or mother)
+                    and parent address proof for every service type.
+                  </p>
+                </div>
+              </div>
+            )}
           </section>
 
           <section>
@@ -230,4 +374,3 @@ export default function NewApplicationPage() {
     </div>
   );
 }
-

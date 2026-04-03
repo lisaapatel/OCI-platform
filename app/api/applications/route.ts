@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { createApplicationFolder } from "@/lib/google-drive";
+import {
+  isOciServiceType,
+  parseOciIntakeVariantFromBody,
+} from "@/lib/oci-intake-variant";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function toAppNumber(n: number) {
@@ -28,6 +32,7 @@ export async function POST(req: Request) {
         | "passport_us_renewal_test";
       notes?: string;
       is_minor?: boolean;
+      oci_intake_variant?: string | null;
     };
 
     const customer_name = (body.customer_name ?? "").trim();
@@ -54,13 +59,30 @@ export async function POST(req: Request) {
     }
     if (
       !service_type ||
-      (service_type !== "oci_new" &&
-        service_type !== "oci_renewal" &&
+      (!isOciServiceType(service_type) &&
         service_type !== "passport_renewal" &&
         service_type !== "passport_us_renewal_test")
     ) {
       return NextResponse.json(
         { error: "Service Type is required." },
+        { status: 400 }
+      );
+    }
+
+    let oci_intake_variant: string | null = null;
+    if ("oci_intake_variant" in body) {
+      const parsed = parseOciIntakeVariantFromBody(body.oci_intake_variant);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      oci_intake_variant = parsed.value;
+    }
+    if (oci_intake_variant !== null && !isOciServiceType(service_type)) {
+      return NextResponse.json(
+        {
+          error:
+            "oci_intake_variant is only valid for OCI applications (oci_new or oci_renewal).",
+        },
         { status: 400 }
       );
     }
@@ -109,6 +131,7 @@ export async function POST(req: Request) {
         drive_folder_url: driveFolderUrl,
         notes,
         is_minor,
+        oci_intake_variant,
       })
       .select("id")
       .single();

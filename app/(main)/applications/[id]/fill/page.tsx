@@ -6,8 +6,10 @@ import {
   type ExtractedFieldRow,
 } from "@/lib/extracted-fields-dedupe";
 import type { ExtractedField } from "@/lib/types";
+import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
 import { getPortalReadinessSnapshot } from "@/lib/portal-readiness-server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Application } from "@/lib/types";
 
 import { FormFillPageClient } from "./form-fill-page-client";
 
@@ -31,7 +33,7 @@ export default async function FormFillPage({
   const { data: app, error: appErr } = await supabaseAdmin
     .from("applications")
     .select(
-      "id, app_number, customer_name, customer_email, customer_phone, service_type"
+      "id, app_number, customer_name, customer_email, customer_phone, service_type, is_minor, oci_intake_variant"
     )
     .eq("id", id)
     .single();
@@ -105,12 +107,12 @@ export default async function FormFillPage({
         customerEmail={String(app.customer_email ?? "")}
         customerPhone={String(app.customer_phone ?? "")}
         serviceType={
-          String(app.service_type ?? "oci_new") as
-            | "oci_new"
-            | "oci_renewal"
-            | "passport_renewal"
-            | "passport_us_renewal_test"
+          String(app.service_type ?? "oci_new") as Application["service_type"]
         }
+        isMinor={app.is_minor === true}
+        ociIntakeVariant={normalizeStoredOciIntakeVariant(
+          app.oci_intake_variant
+        )}
         lastReviewedLabel={formatReviewedAt(lastReviewedIso)}
         initialFields={extracted}
         portalReadiness={portalReadiness}

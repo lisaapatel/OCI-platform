@@ -39,6 +39,7 @@ describe("project structure", () => {
         | "created_at"
         | "created_by"
         | "is_minor"
+        | "oci_intake_variant"
       >
     >;
 

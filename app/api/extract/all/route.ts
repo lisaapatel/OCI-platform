@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getChecklistForServiceType } from "@/lib/application-checklist";
+import { getChecklistForApplication } from "@/lib/application-checklist";
+import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { extractFieldsFromDocument } from "@/lib/claude";
 import { resolveMimeTypeForExtraction } from "@/lib/extraction-mime";
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
 
     const { data: appRow } = await supabaseAdmin
       .from("applications")
-      .select("service_type")
+      .select("service_type, is_minor, oci_intake_variant")
       .eq("id", application_id)
       .maybeSingle();
 
@@ -81,8 +82,15 @@ export async function POST(req: Request) {
       allDocs.map((d) => [String((d as { doc_type?: string }).doc_type ?? ""), d]),
     );
 
-    const serviceType = (appRow?.service_type as Application["service_type"]) ?? "oci_new";
-    const checklist = getChecklistForServiceType(serviceType);
+    const serviceType =
+      (appRow?.service_type as Application["service_type"]) ?? "oci_new";
+    const checklist = getChecklistForApplication({
+      service_type: serviceType,
+      is_minor: appRow?.is_minor === true,
+      oci_intake_variant: normalizeStoredOciIntakeVariant(
+        appRow?.oci_intake_variant
+      ),
+    });
     const skipped_not_uploaded = checklist
       .filter((item) => !byType.has(item.doc_type))
       .map((item) => ({

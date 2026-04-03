@@ -1,5 +1,11 @@
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
+/** OCI intake lane; null/omitted = legacy behavior. See `lib/oci-intake-variant.ts`. */
+export type OciIntakeVariant =
+  | "new_prev_indian"
+  | "new_foreign_birth"
+  | "misc_reissue";
+
 export interface Application {
   id: string;
   app_number: string;
@@ -33,6 +39,8 @@ export interface Application {
   payment_status?: PaymentStatus | null;
   /** When true, parent passport + address checklist slots apply (all service types). */
   is_minor?: boolean;
+  /** OCI-only; null for legacy rows or non-OCI services. */
+  oci_intake_variant?: OciIntakeVariant | null;
 }
 
 export interface Document {

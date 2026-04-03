@@ -71,6 +71,10 @@ export function getOciChecklistLabel(docType: string): string {
   const key = docType.trim();
   const hit = OCI_NEW_CHECKLIST.find((i) => i.doc_type === key);
   if (hit) return hit.label;
+  if (key === "indian_citizenship_relinquishment")
+    return "Indian Citizenship Relinquishment / Surrender";
+  if (key === "applicant_oci_card")
+    return "Applicant's OCI Card (existing)";
   if (key === "old_passport") return "Old/Previous Passport (legacy)";
   if (key === "parent_indian_doc")
     return "Parent's Indian Passport or OCI Card (legacy)";

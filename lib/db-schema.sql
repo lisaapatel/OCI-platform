@@ -15,7 +15,11 @@ create table applications (
   notes text,
   created_at timestamp with time zone default now(),
   created_by uuid references auth.users(id),
-  archived_at timestamp with time zone
+  archived_at timestamp with time zone,
+  oci_intake_variant text check (
+    oci_intake_variant is null
+    or oci_intake_variant in ('new_prev_indian', 'new_foreign_birth', 'misc_reissue')
+  )
 );
 
 -- Documents table
