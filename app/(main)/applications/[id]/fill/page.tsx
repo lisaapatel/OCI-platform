@@ -30,7 +30,9 @@ export default async function FormFillPage({
 
   const { data: app, error: appErr } = await supabaseAdmin
     .from("applications")
-    .select("id, app_number, customer_name, customer_email, customer_phone")
+    .select(
+      "id, app_number, customer_name, customer_email, customer_phone, service_type"
+    )
     .eq("id", id)
     .single();
 
@@ -102,6 +104,13 @@ export default async function FormFillPage({
         customerName={String(app.customer_name ?? "")}
         customerEmail={String(app.customer_email ?? "")}
         customerPhone={String(app.customer_phone ?? "")}
+        serviceType={
+          String(app.service_type ?? "oci_new") as
+            | "oci_new"
+            | "oci_renewal"
+            | "passport_renewal"
+            | "passport_us_renewal_test"
+        }
         lastReviewedLabel={formatReviewedAt(lastReviewedIso)}
         initialFields={extracted}
         portalReadiness={portalReadiness}

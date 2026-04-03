@@ -3,11 +3,13 @@
  */
 
 const getFileAsBase64 = jest.fn();
+const getDriveFileMetadata = jest.fn();
 const extractFieldsFromDocument = jest.fn();
 const fromMock = jest.fn();
 
 jest.mock("@/lib/google-drive", () => ({
   getFileAsBase64: (...args: unknown[]) => getFileAsBase64(...args),
+  getDriveFileMetadata: (...args: unknown[]) => getDriveFileMetadata(...args),
 }));
 
 jest.mock("@/lib/claude", () => ({
@@ -49,6 +51,11 @@ describe("POST /api/extract/all", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+    getDriveFileMetadata.mockResolvedValue({
+      name: "doc.pdf",
+      mimeType: "application/pdf",
+      size: 100,
+    });
   });
 
   test("Test 1: POST /api/extract/all returns 400 if application_id is missing", async () => {
@@ -407,5 +414,71 @@ describe("POST /api/extract/all", () => {
 
     expect(update).toHaveBeenCalledWith({ extraction_status: "failed" });
     expect(extractFieldsFromDocument).toHaveBeenCalledTimes(1);
+  });
+
+  test("Test 8: Passes image/jpeg to Claude when Drive metadata is image/jpeg", async () => {
+    getDriveFileMetadata.mockResolvedValue({
+      name: "parent_oci.jpeg",
+      mimeType: "image/jpeg",
+      size: 5000,
+    });
+    const docsEq = jest.fn().mockResolvedValue({
+      data: [
+        {
+          id: "d-oci",
+          drive_file_id: "drive-jpeg-id",
+          file_name: "parent_oci_parent_indian_mom_oci.jpeg",
+          doc_type: "parent_oci",
+          extraction_status: "pending",
+        },
+      ],
+      error: null,
+    });
+    const documentsSelect = jest.fn().mockReturnValue({ eq: docsEq });
+
+    fromMock.mockImplementation((table: string) => {
+      if (table === "documents") {
+        return {
+          select: documentsSelect,
+          update: jest.fn(() => ({
+            eq: jest.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      if (table === "extracted_fields") {
+        return {
+          ...mockExtractedFieldsDelete(),
+          insert: jest.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      if (table === "applications") {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest
+                .fn()
+                .mockResolvedValue({ data: { service_type: "oci_new" }, error: null }),
+            }),
+          }),
+          update: jest.fn(() => ({
+            eq: jest.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      return {};
+    });
+
+    getFileAsBase64.mockResolvedValue("/9j/4AAQ");
+    extractFieldsFromDocument.mockResolvedValue({});
+
+    await POST(req({ application_id: "app-1" }));
+
+    expect(getDriveFileMetadata).toHaveBeenCalledWith("drive-jpeg-id");
+    expect(extractFieldsFromDocument).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mimeType: "image/jpeg",
+        docType: "parent_oci",
+      })
+    );
   });
 });

@@ -9,6 +9,9 @@ const REVIEW_SECTIONS: ReviewSection[] = [
     id: "personal_info",
     title: "Personal Info",
     fields: [
+      "full_name",
+      "name",
+      "applicant_name",
       "first_name",
       "middle_name",
       "last_name",

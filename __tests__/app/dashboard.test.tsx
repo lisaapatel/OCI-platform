@@ -14,6 +14,7 @@ const dashboardApps = [
     created_at: "2026-03-01T00:00:00Z",
     payment_status: "unpaid",
     archived_at: null,
+    is_minor: true,
   },
   {
     id: "2",
@@ -88,6 +89,7 @@ describe("Dashboard", () => {
     render(<Dashboard />);
 
     expect(await screen.findByText("Priya Sharma")).toBeInTheDocument();
+    expect(screen.getByText("Minor")).toBeInTheDocument();
     expect(screen.getByText("Raj Patel")).toBeInTheDocument();
     expect(screen.getByText("Meera Nair")).toBeInTheDocument();
   });

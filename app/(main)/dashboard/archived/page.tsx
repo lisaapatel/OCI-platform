@@ -21,7 +21,7 @@ type Status =
 
 type PaymentRow = "unpaid" | "partial" | "paid";
 
-type DashboardApplication = {
+type ArchivedDashboardApplication = {
   id: string;
   app_number: string;
   customer_name: string;
@@ -30,13 +30,13 @@ type DashboardApplication = {
   service_type: ServiceType;
   status: Status;
   created_at: string;
+  archived_at: string;
   payment_status?: PaymentRow | null;
   is_minor?: boolean | null;
 };
 
 function formatCreatedAt(createdAt: string) {
   try {
-    // Format in UTC to avoid local timezone shifting dates in UI/tests.
     return new Date(createdAt).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -145,19 +145,25 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
-async function fetchApplications(): Promise<DashboardApplication[]> {
+async function fetchArchivedApplications(): Promise<ArchivedDashboardApplication[]> {
   const { data, error } = await supabase
     .from("applications")
     .select("*")
-    .is("archived_at", null)
-    .order("created_at", { ascending: false });
+    .not("archived_at", "is", null)
+    .order("archived_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as DashboardApplication[];
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    ...(r as unknown as ArchivedDashboardApplication),
+    archived_at: String(r.archived_at ?? ""),
+  }));
 }
 
-export default function DashboardPage() {
-  const [applications, setApplications] = useState<DashboardApplication[]>([]);
+export default function ArchivedDashboardPage() {
+  const [applications, setApplications] = useState<ArchivedDashboardApplication[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -171,7 +177,7 @@ export default function DashboardPage() {
     let alive = true;
     (async () => {
       try {
-        const apps = await fetchApplications();
+        const apps = await fetchArchivedApplications();
         if (alive) setApplications(apps);
       } finally {
         if (alive) setLoading(false);
@@ -207,51 +213,23 @@ export default function DashboardPage() {
     });
   }, [applications, search, serviceType, status]);
 
-  const stats = useMemo(() => {
-    const counts = {
-      total: applications.length,
-      docs_pending: 0,
-      ready_for_review: 0,
-      ready_to_submit: 0,
-      submitted: 0,
-    };
-
-    for (const a of applications) {
-      if (a.status === "docs_pending") counts.docs_pending += 1;
-      if (a.status === "ready_for_review") counts.ready_for_review += 1;
-      if (a.status === "ready_to_submit") counts.ready_to_submit += 1;
-      if (a.status === "submitted") counts.submitted += 1;
-    }
-
-    return counts;
-  }, [applications]);
-
   return (
     <div className="flex flex-1 flex-col gap-6 p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-[#1e293b]">
-            Dashboard
+            Archived applications
           </h1>
           <p className="mt-1 text-sm text-[#64748b]">
-            Review and manage all applications.
-          </p>
-          <p className="mt-2 max-w-xl text-xs text-[#64748b]">
-            Before uploading on{" "}
-            <span className="font-medium text-[#1e293b]">ociservices.gov.in</span>
-            , open each application and confirm{" "}
-            <span className="font-medium text-[#1e293b]">
-              Govt portal readiness
-            </span>{" "}
-            (PDFs, photo, signature) is complete.
+            Applications removed from the main dashboard. Open one to unarchive.
           </p>
         </div>
         <div className="flex items-center gap-3">
           <Link
-            href="/applications/new"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-[#2563eb] px-4 text-sm font-semibold text-white shadow-sm transition-colors duration-150 hover:bg-blue-700"
+            href="/dashboard"
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-4 text-sm font-medium text-[#1e293b] transition-colors duration-150 hover:bg-[#f8fafc]"
           >
-            New Application
+            Active apps
           </Link>
           <button
             type="button"
@@ -264,35 +242,15 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard testId="stat-total" label="Total applications" value={stats.total} />
-        <StatCard
-          testId="stat-docs-pending"
-          label="Docs Pending"
-          value={stats.docs_pending}
-        />
-        <StatCard
-          testId="stat-ready-for-review"
-          label="Ready for Review"
-          value={stats.ready_for_review}
-        />
-        <StatCard
-          testId="stat-ready-to-submit"
-          label="Ready to Submit"
-          value={stats.ready_to_submit}
-        />
-        <StatCard testId="stat-submitted" label="Submitted" value={stats.submitted} />
-      </div>
-
       <div className="rounded-xl border border-[#e2e8f0] bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-[#e2e8f0] p-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-center">
             <div className="flex-1">
-              <label className="sr-only" htmlFor="search">
+              <label className="sr-only" htmlFor="search-archived">
                 Search by customer name
               </label>
               <input
-                id="search"
+                id="search-archived"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search customer name…"
@@ -302,13 +260,13 @@ export default function DashboardPage() {
 
             <div className="flex gap-3">
               <div>
-                <label className="sr-only" htmlFor="status">
+                <label className="sr-only" htmlFor="status-archived">
                   Filter by status
                 </label>
                 <select
-                  id="status"
+                  id="status-archived"
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
+                  onChange={(e) => setStatus(e.target.value as Status | "")}
                   className="h-10 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
                 >
                   <option value="">All statuses</option>
@@ -321,13 +279,15 @@ export default function DashboardPage() {
               </div>
 
               <div>
-                <label className="sr-only" htmlFor="serviceType">
+                <label className="sr-only" htmlFor="serviceType-archived">
                   Filter by service type
                 </label>
                 <select
-                  id="serviceType"
+                  id="serviceType-archived"
                   value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value as any)}
+                  onChange={(e) =>
+                    setServiceType(e.target.value as ServiceType | "")
+                  }
                   className="h-10 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
                 >
                   <option value="">All services</option>
@@ -348,7 +308,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] text-left text-sm">
+          <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="bg-[#f8fafc] text-xs font-semibold uppercase tracking-wide text-[#64748b]">
               <tr>
                 <th className="px-4 py-3">App #</th>
@@ -356,28 +316,35 @@ export default function DashboardPage() {
                 <th className="px-4 py-3">Service Type</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Payment</th>
-                <th className="px-4 py-3">Created Date</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3">Archived</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e2e8f0]">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={7}>
+                  <td
+                    className="px-4 py-10 text-center text-sm text-[#64748b]"
+                    colSpan={8}
+                  >
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-sm text-[#64748b]" colSpan={7}>
-                    No applications found.
+                  <td
+                    className="px-4 py-10 text-center text-sm text-[#64748b]"
+                    colSpan={8}
+                  >
+                    No archived applications.
                   </td>
                 </tr>
               ) : (
                 filtered.map((app) => (
                   <tr
                     key={app.id}
-                    className="transition-colors duration-150 hover:bg-[#eff6ff]/50"
+                    className="transition-colors duration-150 hover:bg-slate-50/80"
                   >
                     <td className="px-4 py-3 font-medium text-[#1e293b]">
                       {app.app_number}
@@ -404,6 +371,9 @@ export default function DashboardPage() {
                     <td className="px-4 py-3 text-[#64748b]">
                       {formatCreatedAt(app.created_at)}
                     </td>
+                    <td className="px-4 py-3 text-[#64748b]">
+                      {formatCreatedAt(app.archived_at)}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/applications/${app.id}`}
@@ -422,26 +392,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-function StatCard({
-  label,
-  value,
-  testId,
-}: {
-  label: string;
-  value: number;
-  testId?: string;
-}) {
-  return (
-    <div
-      className="rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#2563eb] bg-white p-4 shadow-sm transition-shadow duration-150 hover:shadow-md"
-      data-testid={testId}
-    >
-      <div className="text-xs font-medium text-[#64748b]">{label}</div>
-      <div className="mt-2 text-2xl font-bold tabular-nums text-[#1e293b]">
-        {value}
-      </div>
-    </div>
-  );
-}
-

@@ -3,6 +3,11 @@ import { Readable } from "node:stream";
 
 import { originalUploadDriveName } from "@/lib/drive-file-naming";
 import {
+  ApplicantImageNormalizeError,
+  normalizeHeicApplicantImageUpload,
+} from "@/lib/normalize-heic-upload";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import {
   createApplicationFolder,
   deleteFile,
   uploadFileToDrive,
@@ -128,16 +133,40 @@ export async function POST(req: Request) {
       await supabaseAdmin.from("documents").delete().eq("id", existing.id);
     }
 
-    const mimeType = file.type || "application/octet-stream";
+    const baseMime = file.type || "application/octet-stream";
     let driveStream: NodeJS.ReadableStream;
-    try {
-      driveStream = Readable.fromWeb(file.stream() as any);
-    } catch {
-      // Fallback for runtimes where fromWeb stream conversion is unavailable.
+    let mimeType = baseMime;
+    let driveFileName: string;
+
+    if (doc_type === "applicant_photo" || doc_type === "applicant_signature") {
       const buffer = Buffer.from(await file.arrayBuffer());
-      driveStream = Readable.from(buffer);
+      try {
+        const normalized = await normalizeHeicApplicantImageUpload({
+          buffer,
+          mimeType: baseMime,
+          clientFileName: file.name || "upload.jpg",
+        });
+        driveStream = Readable.from(normalized.buffer);
+        mimeType = normalized.mimeType;
+        driveFileName = originalUploadDriveName(
+          doc_type,
+          normalized.clientFileName
+        );
+      } catch (e) {
+        if (e instanceof ApplicantImageNormalizeError) {
+          return NextResponse.json({ error: e.message }, { status: 400 });
+        }
+        throw e;
+      }
+    } else {
+      try {
+        driveStream = Readable.fromWeb(file.stream() as any);
+      } catch {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        driveStream = Readable.from(buffer);
+      }
+      driveFileName = originalUploadDriveName(doc_type, file.name);
     }
-    const driveFileName = originalUploadDriveName(doc_type, file.name);
     const uploaded = await uploadFileToDrive(
       driveStream,
       driveFileName,
@@ -153,7 +182,7 @@ export async function POST(req: Request) {
         file_name: driveFileName,
         drive_file_id: uploaded.id,
         drive_view_url: uploaded.url,
-        extraction_status: "pending",
+        extraction_status: shouldSkipAiExtraction(doc_type) ? "done" : "pending",
       })
       .select("*")
       .single();

@@ -1,9 +1,14 @@
 import "server-only";
 
 import { getChecklistForServiceType } from "@/lib/application-checklist";
+import {
+  minorParentDocumentsMet,
+  PARENT_DOCUMENT_CHECKLIST_ITEMS,
+} from "@/lib/parent-documents";
 import { ociParentRequirementMet } from "@/lib/oci-new-checklist";
 import { getDriveFileMetadata, getFileAsBase64 } from "@/lib/google-drive";
 import { validateGovtImage } from "@/lib/govt-photo-signature";
+import { validatePassportRenewalPhoto } from "@/lib/passport-renewal-photo-validate";
 import {
   allRequiredDocumentsUploaded,
   documentPdfReadyForPortal,
@@ -18,13 +23,17 @@ export async function getPortalReadinessSnapshot(
 ): Promise<PortalReadinessSnapshot> {
   const { data: appRow } = await supabaseAdmin
     .from("applications")
-    .select("service_type")
+    .select("service_type, is_minor")
     .eq("id", applicationId)
     .maybeSingle();
 
+  const is_minor = appRow?.is_minor === true;
   const checklist = getChecklistForServiceType(
     (appRow?.service_type as Application["service_type"] | undefined) ?? "oci_new"
   );
+  const checklistForPortalPdfs = is_minor
+    ? [...checklist, ...PARENT_DOCUMENT_CHECKLIST_ITEMS]
+    : checklist;
 
   const { data: rows, error } = await supabaseAdmin
     .from("documents")
@@ -56,15 +65,19 @@ export async function getPortalReadinessSnapshot(
   }
 
   const present = new Set(byType.keys());
-  const required_docs_complete = allRequiredDocumentsUploaded(present, checklist);
-  const oci_parent_doc_for_submission = ociParentRequirementMet(present);
+  const required_docs_complete =
+    allRequiredDocumentsUploaded(present, checklist) &&
+    (!is_minor || minorParentDocumentsMet(present));
+  const oci_parent_doc_for_submission = is_minor
+    ? minorParentDocumentsMet(present)
+    : ociParentRequirementMet(present);
   const uploaded_doc_types = [...present];
 
   let checklist_pdfs_ok = 0;
   let checklist_pdfs_uploaded = 0;
   let checklist_pdfs_ready = true;
 
-  for (const item of checklist) {
+  for (const item of checklistForPortalPdfs) {
     if (!isPortalPdfChecklistItem(item)) continue;
     const row = byType.get(item.doc_type);
     if (!row?.drive_file_id) {
@@ -85,12 +98,20 @@ export async function getPortalReadinessSnapshot(
     }
   }
 
+  const serviceTypeEarly =
+    (appRow?.service_type as Application["service_type"] | undefined) ??
+    "oci_new";
+
   let applicant_photo_valid: boolean | null = null;
   const photoRow = byType.get("applicant_photo");
   if (photoRow?.drive_file_id) {
     try {
       const b64 = await getFileAsBase64(photoRow.drive_file_id);
-      const v = await validateGovtImage(Buffer.from(b64, "base64"), "photo");
+      const buf = Buffer.from(b64, "base64");
+      const v =
+        serviceTypeEarly === "passport_renewal"
+          ? await validatePassportRenewalPhoto(buf)
+          : await validateGovtImage(buf, "photo");
       applicant_photo_valid = v.valid;
     } catch {
       applicant_photo_valid = false;
@@ -116,17 +137,21 @@ export async function getPortalReadinessSnapshot(
     !present.has("applicant_signature") ||
     applicant_signature_valid === true;
 
-  const serviceType =
-    (appRow?.service_type as Application["service_type"] | undefined) ?? "oci_new";
+  const serviceType = serviceTypeEarly;
   const isOciFlow =
     serviceType === "oci_new" || serviceType === "oci_renewal";
+  const parentPortalGateOk = is_minor
+    ? minorParentDocumentsMet(present)
+    : isOciFlow
+      ? ociParentRequirementMet(present)
+      : true;
 
   const all_portal_green =
     required_docs_complete &&
     checklist_pdfs_ready &&
     applicant_photo_valid === true &&
     signatureOk &&
-    (!isOciFlow || oci_parent_doc_for_submission);
+    parentPortalGateOk;
 
   return {
     required_docs_complete,

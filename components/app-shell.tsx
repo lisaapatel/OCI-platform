@@ -9,6 +9,7 @@ import { BrandLogo } from "@/components/brand-logo";
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/applications/new", label: "New Application" },
+  { href: "/dashboard/archived", label: "Archived apps" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const active =
               item.href === "/dashboard"
                 ? pathname === "/dashboard" || pathname === "/"
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                : item.href === "/dashboard/archived"
+                  ? pathname === "/dashboard/archived" ||
+                    pathname.startsWith("/dashboard/archived/")
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}

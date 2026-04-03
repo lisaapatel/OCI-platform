@@ -14,7 +14,6 @@ import {
   resolveDocTypeChecklistLabel,
   type ChecklistItem,
 } from "@/lib/application-checklist";
-import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import {
   PORTAL_IMAGE_MAX_KB,
   PORTAL_PDF_COMPRESS_TARGET_KB,
@@ -25,6 +24,13 @@ import {
   allUploadedChecklistPdfsPortalReady,
   isPortalPdfChecklistItem,
 } from "@/lib/portal-readiness";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
+import {
+  PARENT_DOCUMENT_CHECKLIST_ITEMS,
+  PARENT_PASSPORT_BANNER,
+  minorParentPassportMet,
+} from "@/lib/parent-documents";
+import { PASSPORT_RENEWAL_PHOTO_SPECS } from "@/lib/passport-photo-specs";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
 import { BillingTrackingSection } from "./billing-tracking-section";
@@ -110,6 +116,59 @@ function formatKb(bytes: number | null): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+/** Proxied download URL for `<img src>` (Drive `/view` pages are not raw images). */
+function documentDrivePreviewUrl(
+  applicationId: string,
+  driveFileId: string,
+  fileName: string
+): string {
+  const safe = fileName.trim().length > 0 ? fileName : "preview.jpg";
+  return `/api/documents/download?application_id=${encodeURIComponent(
+    applicationId
+  )}&drive_file_id=${encodeURIComponent(
+    driveFileId
+  )}&filename=${encodeURIComponent(safe)}`;
+}
+
+function DriveImagePreview({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  if (failed) {
+    return (
+      <div
+        className={clsx(
+          "flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-100 px-2 text-center text-[11px] leading-tight text-slate-500",
+          className
+        )}
+      >
+        <span>Preview unavailable</span>
+        <span className="text-[10px] text-slate-400">
+          Use View in Drive or Edit
+        </span>
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function portalNeedsCompress(row: PortalPrepDoc): boolean {
   if (!row.drive_file_id || row.size_bytes == null) return false;
   if (row.size_bytes <= PORTAL_PDF_MAX_BYTES) return false;
@@ -135,11 +194,21 @@ function ServiceTypeBadge({ serviceType }: { serviceType: ServiceType }) {
       ? "OCI New"
       : serviceType === "oci_renewal"
         ? "OCI Renewal"
-        : serviceType === "passport_us_renewal_test"
-          ? "US Passport Test (DS-82)"
-          : "Passport Renewal";
+        : serviceType === "passport_renewal"
+          ? "Passport Renewal"
+          : serviceType === "passport_us_renewal_test"
+            ? "US Passport Test (DS-82)"
+            : "Service";
+  const isPassportRenewal = serviceType === "passport_renewal";
   return (
-    <span className="inline-flex items-center rounded-full border border-[#e2e8f0] bg-[#eff6ff] px-2.5 py-1 text-xs font-medium text-[#1e3a5f]">
+    <span
+      className={clsx(
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
+        isPassportRenewal
+          ? "border border-teal-200 bg-teal-50 text-teal-900"
+          : "border border-[#e2e8f0] bg-[#eff6ff] text-[#1e3a5f]"
+      )}
+    >
       {label}
     </span>
   );
@@ -247,28 +316,48 @@ export function ApplicationDetailClient({
     return m;
   }, [documents]);
 
-  const activeChecklist = useMemo(
+  const baseChecklist = useMemo(
     () => getChecklistForServiceType(application.service_type),
     [application.service_type]
   );
-  const activeRequiredCount = useMemo(
-    () => checklistRequiredCount(activeChecklist),
-    [activeChecklist]
+  const displayChecklist = useMemo(
+    () =>
+      application.is_minor
+        ? [...baseChecklist, ...PARENT_DOCUMENT_CHECKLIST_ITEMS]
+        : baseChecklist,
+    [baseChecklist, application.is_minor]
+  );
+  const activeRequiredCount = useMemo(() => {
+    const base = checklistRequiredCount(baseChecklist);
+    return application.is_minor ? base + 2 : base;
+  }, [baseChecklist, application.is_minor]);
+
+  const presentDocTypes = useMemo(
+    () => new Set(docByType.keys()),
+    [docByType]
   );
 
   const requiredUploaded = useMemo(() => {
     let n = 0;
-    for (const item of activeChecklist) {
+    for (const item of baseChecklist) {
       if (!item.required) continue;
       if (docByType.has(item.doc_type)) n += 1;
     }
+    if (application.is_minor) {
+      if (minorParentPassportMet(presentDocTypes)) n += 1;
+      if (docByType.has("parent_address_proof")) n += 1;
+    }
     return n;
-  }, [docByType, activeChecklist]);
+  }, [docByType, baseChecklist, application.is_minor, presentDocTypes]);
 
   const showDocumentChecklist =
     application.service_type === "oci_new" ||
     application.service_type === "oci_renewal" ||
+    application.service_type === "passport_renewal" ||
     application.service_type === "passport_us_renewal_test";
+
+  const isPassportRenewalFlow =
+    application.service_type === "passport_renewal";
 
   const allRequiredUploaded =
     showDocumentChecklist && requiredUploaded >= activeRequiredCount;
@@ -278,9 +367,9 @@ export function ApplicationDetailClient({
       allUploadedChecklistPdfsPortalReady(
         documents.map((d) => ({ id: d.id, doc_type: d.doc_type })),
         portalPrep?.documents ?? null,
-        activeChecklist
+        displayChecklist
       ),
-    [documents, portalPrep, activeChecklist]
+    [documents, portalPrep, displayChecklist]
   );
 
   const showReadyToSubmitPortalWarning =
@@ -655,6 +744,7 @@ export function ApplicationDetailClient({
     status?: Status;
     notes?: string;
     archived?: boolean;
+    is_minor?: boolean;
   }) {
     setPatchError(null);
     const res = await fetch(`/api/applications/${application.id}`, {
@@ -680,6 +770,9 @@ export function ApplicationDetailClient({
         ...a,
         archived_at: body.archived ? new Date().toISOString() : null,
       }));
+    }
+    if (body.is_minor !== undefined) {
+      setApplication((a) => ({ ...a, is_minor: body.is_minor }));
     }
     refresh();
     return true;
@@ -737,6 +830,11 @@ export function ApplicationDetailClient({
     }
 
     try {
+      await fetch("/api/documents/mark-image-uploads-done", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ application_id: application.id }),
+      });
       const fresh = await loadDocuments();
       setDocuments(fresh);
 
@@ -748,7 +846,7 @@ export function ApplicationDetailClient({
 
       const byType = new Map(fresh.map((d) => [d.doc_type, d]));
       const checklistTypeSet = new Set(
-        activeChecklist.map((i) => i.doc_type)
+        displayChecklist.map((i) => i.doc_type)
       );
 
       function statusForUploadedDoc(d: Document): BulkExtractRowStatus {
@@ -759,7 +857,7 @@ export function ApplicationDetailClient({
       }
 
       const initialRows: BulkExtractRow[] = [
-        ...activeChecklist.map((item) => {
+        ...displayChecklist.map((item) => {
           const doc = byType.get(item.doc_type);
           return {
             key: item.doc_type,
@@ -787,7 +885,7 @@ export function ApplicationDetailClient({
       }
 
       const checklistOrder = new Map(
-        activeChecklist.map((i, idx) => [i.doc_type, idx])
+        displayChecklist.map((i, idx) => [i.doc_type, idx])
       );
       const toProcess = fresh
         .filter((d) => d.extraction_status === "pending")
@@ -885,6 +983,12 @@ export function ApplicationDetailClient({
 
   async function retryExtractionForDoc(doc: Document) {
     setPatchError(null);
+    if (shouldSkipAiExtraction(doc.doc_type)) {
+      setPatchError(
+        "Applicant photo and signature are not run through document extraction."
+      );
+      return;
+    }
     setExtractingDocId(doc.id);
     setExtractionProgress({
       message: "Retrying extraction…",
@@ -1032,6 +1136,7 @@ export function ApplicationDetailClient({
     if (!showPhotoSigCard) return null;
     const photoDoc = docByType.get("applicant_photo");
     const sigDoc = docByType.get("applicant_signature");
+    const passportPhotoKbRange = `${PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–${PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}`;
     const canEditSignature =
       application.service_type === "oci_new" ||
       application.service_type === "oci_renewal";
@@ -1050,17 +1155,20 @@ export function ApplicationDetailClient({
           : "relative aspect-[3/1] max-h-40 w-full max-w-md overflow-hidden rounded border border-slate-200 bg-slate-50";
 
       return (
-        <div className="flex flex-col gap-3 rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-sm font-bold text-[#1e3a5f]">{title}</h3>
           {!doc?.drive_file_id ? (
-            <p className="text-sm text-[#64748b]">No file uploaded yet.</p>
+            <p className="text-sm text-slate-600">No file uploaded yet.</p>
           ) : (
             <>
               <div className={frameClass}>
-                {doc.drive_view_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={doc.drive_view_url}
+                {doc.drive_file_id ? (
+                  <DriveImagePreview
+                    src={documentDrivePreviewUrl(
+                      application.id,
+                      doc.drive_file_id,
+                      doc.file_name || "image.jpg"
+                    )}
                     alt={title}
                     className="h-full w-full object-contain"
                   />
@@ -1117,10 +1225,14 @@ export function ApplicationDetailClient({
                 {fixing ? "Fixing…" : "Auto-Fix & Save to Drive"}
               </button>
               <p className="text-[11px] text-[#64748b]">
-                Saves a portal-ready JPEG (≤{PORTAL_IMAGE_MAX_KB}KB) to Drive →{" "}
-                <strong>Fixed</strong>. Then download for portal upload.
+                Saves a portal-ready JPEG (
+                {isPassportRenewalFlow
+                  ? `${passportPhotoKbRange}KB`
+                  : `≤${PORTAL_IMAGE_MAX_KB}KB`}
+                ) to Drive → <strong>Fixed</strong>. Then download for portal
+                upload.
               </p>
-              {doc.fixed_drive_url && doc.fixed_drive_file_id ? (
+              {doc.fixed_drive_file_id ? (
                 <div className="mt-2 space-y-2 border-t border-slate-100 pt-3">
                   <p className="text-xs font-semibold text-green-800">
                     Fixed version
@@ -1129,9 +1241,14 @@ export function ApplicationDetailClient({
                       : ""}
                   </p>
                   <div className={frameClass}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={doc.fixed_drive_url}
+                    <DriveImagePreview
+                      src={documentDrivePreviewUrl(
+                        application.id,
+                        doc.fixed_drive_file_id,
+                        imageType === "photo"
+                          ? "applicant-photo-fixed.jpg"
+                          : "applicant-signature-fixed.jpg"
+                      )}
                       alt={`${title} fixed for portal`}
                       className="h-full w-full object-contain"
                     />
@@ -1159,41 +1276,64 @@ export function ApplicationDetailClient({
     }
 
     return (
-      <section className="rounded-xl border border-amber-200/80 bg-amber-50/30 p-6 shadow-sm">
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-lg border border-amber-200/80 bg-amber-50/50 px-4 py-3 text-sm leading-relaxed text-amber-950/90">
           <p className="font-semibold text-amber-950">Govt portal image rules</p>
-          <p className="mt-1 text-amber-900/90">
-            The govt portal requires specific photo dimensions. Validate before
-            starting the application to avoid rejection.
+          <p className="mt-1 text-amber-950/90">
+            {isPassportRenewalFlow
+              ? "VFS-oriented passport photo: validate dimensions and file size before upload."
+              : "The govt portal requires specific photo dimensions. Validate before starting the application to avoid rejection."}
           </p>
         </div>
-        <h2 className="mt-5 text-lg font-bold tracking-tight text-[#1e3a5f]">
-          Photo &amp; Signature Check
+        <h2 className="mt-6 text-lg font-bold tracking-tight text-[#1e3a5f]">
+          {isPassportRenewalFlow
+            ? "Passport photo check"
+            : "Photo & Signature Check"}
         </h2>
-          <p className="mt-1 text-xs text-[#64748b]">
-          Photo: JPEG only, max {PORTAL_IMAGE_MAX_KB}KB, square {`200–1500px`}
-          (equal width and height). Signature: JPEG, max {PORTAL_IMAGE_MAX_KB}
-          KB; portal wording is 1:3 aspect — here that means a{" "}
-          <strong>wide</strong> image (~3× as wide as tall, e.g. 600×200),{" "}
-          {`200×67–1500×500px`}.
+        <p className="mt-2 text-xs leading-relaxed text-slate-600">
+          {isPassportRenewalFlow ? (
+            <>
+              Photo: JPEG, square {PASSPORT_RENEWAL_PHOTO_SPECS.minWidth}–
+              {PASSPORT_RENEWAL_PHOTO_SPECS.maxWidth}px, {passportPhotoKbRange}
+              KB. {PASSPORT_RENEWAL_PHOTO_SPECS.faceCoverageNote}.{" "}
+              {PASSPORT_RENEWAL_PHOTO_SPECS.backgroundNote} (confirm in crop
+              editor).
+            </>
+          ) : (
+            <>
+              Photo: JPEG only, max {PORTAL_IMAGE_MAX_KB}KB, square{" "}
+              {`200–1500px`} (equal width and height). Signature: JPEG, max{" "}
+              {PORTAL_IMAGE_MAX_KB}
+              KB; portal wording is 1:3 aspect — here that means a{" "}
+              <strong>wide</strong> image (~3× as wide as tall, e.g. 600×200),{" "}
+              {`200×67–1500×500px`}.
+            </>
+          )}
         </p>
-        <div className="mt-4 grid gap-6 md:grid-cols-2">
+        <div
+          className={clsx(
+            "mt-4 grid gap-6",
+            isPassportRenewalFlow ? "" : "md:grid-cols-2"
+          )}
+        >
           {renderColumn(
-            "Applicant photo",
+            isPassportRenewalFlow ? "Passport photo" : "Applicant photo",
             photoDoc,
             "photo",
             photoValResult,
             photoValLoading,
             fixingPhoto
           )}
-          {renderColumn(
-            "Applicant signature",
-            sigDoc,
-            "signature",
-            sigValResult,
-            sigValLoading,
-            fixingSig
-          )}
+          {!isPassportRenewalFlow
+            ? renderColumn(
+                "Applicant signature",
+                sigDoc,
+                "signature",
+                sigValResult,
+                sigValLoading,
+                fixingSig
+              )
+            : null}
         </div>
       </section>
     );
@@ -1203,22 +1343,33 @@ export function ApplicationDetailClient({
     if (documents.length === 0) return null;
     const isPassportTest =
       application.service_type === "passport_us_renewal_test";
+    const isPassportRenewalPrep = isPassportRenewalFlow;
     return (
-      <section className="rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
               {isPassportTest
                 ? "Passport PDF (extraction)"
-                : "Supporting documents (PDF) for portal"}
+                : isPassportRenewalPrep
+                  ? "Supporting documents (PDF)"
+                  : "Supporting documents (PDF) for portal"}
             </h2>
-            <p className="mt-1 text-sm text-[#64748b]">
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">
               {isPassportTest ? (
                 <>
                   Current passport uploads should be PDFs up to{" "}
                   {PORTAL_PDF_MAX_KB}
                   KB for this test flow. Compress oversized scans; copies are saved
                   in Drive →{" "}
+                  <span className="font-medium text-[#1e293b]">Compressed</span>.
+                </>
+              ) : isPassportRenewalPrep ? (
+                <>
+                  Passport scan and optional proofs should be PDFs up to{" "}
+                  {PORTAL_PDF_MAX_KB}
+                  KB for typical portal limits. Compress oversized scans; copies are
+                  saved in Drive →{" "}
                   <span className="font-medium text-[#1e293b]">Compressed</span>.
                 </>
               ) : (
@@ -1244,7 +1395,7 @@ export function ApplicationDetailClient({
           ) : null}
         </div>
 
-        <p className="mt-4 text-sm font-medium text-[#1e293b]">
+        <p className="mt-4 text-sm font-medium text-slate-800">
           {portalPrepLoading
             ? "Loading file sizes from Google Drive…"
             : portalPrep
@@ -1264,10 +1415,10 @@ export function ApplicationDetailClient({
                 <li
                   key={row.id}
                   className={clsx(
-                    "flex flex-col gap-2 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between",
+                    "flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between",
                     row.ready_for_portal
-                      ? "border-green-200 bg-green-50/80"
-                      : "border-red-200 bg-red-50/50"
+                      ? "border-l-4 border-l-emerald-500"
+                      : "border-l-4 border-l-red-500"
                   )}
                 >
                   <div className="min-w-0 flex-1">
@@ -1341,30 +1492,40 @@ export function ApplicationDetailClient({
 
     const isPassportTest =
       application.service_type === "passport_us_renewal_test";
+    const isPassportRenewalHub = isPassportRenewalFlow;
     const photoOk = photoValResult?.valid === true;
     const sigOptionalOk =
       !docByType.get("applicant_signature") ||
       sigValResult?.valid === true;
-    const imagesLineOk = isPassportTest
-      ? photoOk && !photoValLoading && !sigValLoading
-      : photoOk &&
-        sigOptionalOk &&
-        !photoValLoading &&
-        !sigValLoading;
+    const imagesLineOk =
+      isPassportTest || isPassportRenewalHub
+        ? photoOk && !photoValLoading && !sigValLoading
+        : photoOk &&
+          sigOptionalOk &&
+          !photoValLoading &&
+          !sigValLoading;
 
     return (
-      <section className="rounded-xl border-2 border-[#c7d2fe] bg-gradient-to-b from-[#eef2ff]/90 to-white p-6 shadow-sm">
+      <section className="rounded-xl border border-slate-200 border-t-4 border-t-[#1e3a5f] bg-white p-6 shadow-sm">
         <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
           {isPassportTest
             ? "DS-82 test pipeline readiness"
-            : "Govt portal readiness"}
+            : isPassportRenewalHub
+              ? "VFS Global — passport renewal readiness"
+              : "Govt portal readiness"}
         </h2>
-        <p className="mt-2 text-sm font-medium text-[#4338ca]">
+        <p className="mt-2 text-sm font-medium leading-relaxed text-slate-700">
           {isPassportTest ? (
             <>
               Upload current passport (PDF) and passport photo (JPEG). Use{" "}
               <strong>Generate Test Passport PDF</strong> for the filled DS-82;
               payment and mail-in steps are outside this app.
+            </>
+          ) : isPassportRenewalHub ? (
+            <>
+              Indian passport renewal via VFS Global USA. Upload the current
+              passport scan and passport photo per the checklist; optional proofs
+              are extracted when uploaded.
             </>
           ) : (
             <>
@@ -1373,7 +1534,7 @@ export function ApplicationDetailClient({
             </>
           )}
         </p>
-        <ul className="mt-3 list-inside list-disc space-y-1 text-sm text-[#64748b]">
+        <ul className="mt-4 list-disc space-y-2 pl-4 text-sm leading-relaxed text-slate-600">
           {isPassportTest ? (
             <>
               <li>
@@ -1384,6 +1545,23 @@ export function ApplicationDetailClient({
                 Current passport: PDF, max {PORTAL_PDF_MAX_KB}KB — primary source
                 for extraction and DS-82 mapping.
               </li>
+            </>
+          ) : isPassportRenewalHub ? (
+            <>
+              <li>
+                Passport photo: JPEG, square {PASSPORT_RENEWAL_PHOTO_SPECS.minWidth}
+                –
+                {PASSPORT_RENEWAL_PHOTO_SPECS.maxWidth}px,{" "}
+                {PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–
+                {PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}KB (
+                {PASSPORT_RENEWAL_PHOTO_SPECS.backgroundNote.toLowerCase()}).
+              </li>
+              <li>
+                Current Indian passport: PDF scan (first, last, observation
+                pages), max {PORTAL_PDF_MAX_KB}KB when compressed for portal-style
+                limits.
+              </li>
+              <li>Optional proofs (US status, addresses, etc.) run through AI when uploaded.</li>
             </>
           ) : (
             <>
@@ -1400,7 +1578,7 @@ export function ApplicationDetailClient({
           )}
         </ul>
 
-        <div className="mt-4 grid gap-2 rounded-lg border border-[#e0e7ff] bg-white/90 p-4 text-sm sm:grid-cols-2">
+        <div className="mt-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50/50 p-4 text-sm sm:grid-cols-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-[#1e293b]">Required docs</span>
             <span
@@ -1416,7 +1594,9 @@ export function ApplicationDetailClient({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-[#1e293b]">
-              {isPassportTest ? "PDFs (passport)" : "PDFs for portal"}
+              {isPassportTest || isPassportRenewalHub
+                ? "PDFs (passport & proofs)"
+                : "PDFs for portal"}
             </span>
             <span
               className={clsx(
@@ -1437,7 +1617,9 @@ export function ApplicationDetailClient({
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
             <span className="font-medium text-[#1e293b]">
-              {isPassportTest ? "Photo check" : "Photo & signature"}
+              {isPassportTest || isPassportRenewalHub
+                ? "Photo check"
+                : "Photo & signature"}
             </span>
             <span
               className={clsx(
@@ -1458,17 +1640,23 @@ export function ApplicationDetailClient({
           </div>
         </div>
 
-        <div className="mt-5">
+        <div className="mt-6">
           <h3 className="text-sm font-semibold text-[#1e3a5f]">
             {isPassportTest
               ? "Document checklist (this application)"
               : "Suggested portal upload order"}
           </h3>
-          <p className="mt-1 text-xs text-[#64748b]">
+          <p className="mt-1 text-xs leading-relaxed text-slate-600">
             {isPassportTest ? (
               <>
                 DS-82 form output is generated here; name-change and extra ID are
                 optional in a full renewal — not required for this POC.
+              </>
+            ) : isPassportRenewalHub ? (
+              <>
+                Follow VFS Global USA guidance when uploading to the official
+                portal; this list mirrors the documents collected in this
+                application.
               </>
             ) : (
               <>
@@ -1480,15 +1668,21 @@ export function ApplicationDetailClient({
               </>
             )}
           </p>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-[#1e293b]">
-            {activeChecklist.map((item) => {
+          <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-800">
+            {baseChecklist.map((item) => {
               const doc = docByType.get(item.doc_type);
               const uploaded = Boolean(doc);
-              const kind = isPortalPdfChecklistItem(item)
-                ? `PDF · ≤${PORTAL_PDF_MAX_KB}KB`
-                : `JPEG · ≤${PORTAL_IMAGE_MAX_KB}KB`;
+              const kind =
+                isPassportRenewalFlow && item.doc_type === "applicant_photo"
+                  ? `JPEG · ${PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–${PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}KB`
+                  : isPortalPdfChecklistItem(item)
+                    ? `PDF · ≤${PORTAL_PDF_MAX_KB}KB`
+                    : `JPEG · ≤${PORTAL_IMAGE_MAX_KB}KB`;
               return (
-                <li key={item.doc_type}>
+                <li
+                  key={item.doc_type}
+                  className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 leading-relaxed"
+                >
                   <span className="font-medium">{item.label}</span>
                   {item.required ? (
                     <span className="text-red-600"> (required)</span>
@@ -1518,10 +1712,59 @@ export function ApplicationDetailClient({
                 </li>
               );
             })}
+            {application.is_minor ? (
+              <>
+                <li className="list-none -ml-5 my-3 max-w-none rounded-lg border border-amber-100 bg-amber-50/90 px-3 py-2 text-sm leading-relaxed text-amber-950">
+                  {PARENT_PASSPORT_BANNER}
+                </li>
+                {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) => {
+                  const doc = docByType.get(item.doc_type);
+                  const uploaded = Boolean(doc);
+                  const kind = isPortalPdfChecklistItem(item)
+                    ? `PDF · ≤${PORTAL_PDF_MAX_KB}KB`
+                    : `JPEG · ≤${PORTAL_IMAGE_MAX_KB}KB`;
+                  return (
+                    <li
+                      key={item.doc_type}
+                      className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2 leading-relaxed"
+                    >
+                      <span className="font-medium">{item.label}</span>
+                      {item.required ? (
+                        <span className="text-red-600"> (required)</span>
+                      ) : (
+                        <span className="text-[#64748b]"> (optional)</span>
+                      )}
+                      <span className="text-[#64748b]"> · {kind}</span>
+                      {" — "}
+                      {uploaded ? (
+                        <span className="font-medium text-green-700">
+                          uploaded
+                        </span>
+                      ) : (
+                        <span className="text-amber-800">not uploaded</span>
+                      )}
+                      {doc?.drive_view_url ? (
+                        <>
+                          {" · "}
+                          <a
+                            href={doc.drive_view_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-[#2563eb] hover:underline"
+                          >
+                            View in Drive
+                          </a>
+                        </>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </>
+            ) : null}
           </ol>
         </div>
 
-        <div className="mt-8 space-y-8 border-t border-[#e0e7ff] pt-8">
+        <div className="mt-8 space-y-8 border-t border-slate-200 pt-8">
           {renderGovtPortalPrepCard()}
           {renderPhotoSignatureCheckCard()}
         </div>
@@ -1530,22 +1773,37 @@ export function ApplicationDetailClient({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-8 p-6">
-      <div className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+    <div className="flex min-h-0 flex-1 flex-col bg-slate-50/80">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-6">
+      {isPassportRenewalFlow ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-sm leading-relaxed text-slate-700">
+          <span aria-hidden>ℹ</span> Passport Renewal via VFS Global USA —
+          reference:{" "}
+          <a
+            href="https://services.vfsglobal.com/one-pager/india/united-states-of-america/passport-services/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-blue-700 underline decoration-blue-400 underline-offset-2 hover:text-blue-900"
+          >
+            services.vfsglobal.com/one-pager/india/united-states-of-america/passport-services/
+          </a>
+        </div>
+      ) : null}
+      <div className="flex flex-col gap-6 rounded-xl border border-slate-200 border-l-4 border-l-[#1e3a5f] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
+        <div className="flex flex-col gap-6 border-b border-slate-100 pb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+        <div className="min-w-0 flex-1">
           <Link
             href="/dashboard"
             className="text-sm font-medium text-[#2563eb] transition-colors duration-150 hover:text-blue-700"
           >
             ← Dashboard
           </Link>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#1e293b]">
+          <h1 className="mt-2 text-2xl font-bold leading-tight tracking-tight text-slate-900">
             {application.app_number}{" "}
-            <span className="font-normal text-[#64748b]">·</span>{" "}
+            <span className="font-normal text-slate-500">·</span>{" "}
             {application.customer_name}
           </h1>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#64748b]">
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm leading-relaxed text-slate-600">
             {application.customer_email ? (
               <span>{application.customer_email}</span>
             ) : (
@@ -1563,7 +1821,7 @@ export function ApplicationDetailClient({
             <StatusBadge status={application.status} />
           </div>
         </div>
-        <div className="flex flex-col gap-3 sm:items-end">
+        <div className="flex shrink-0 flex-col gap-4 sm:items-end">
           {application.drive_folder_url ? (
             <a
               href={application.drive_folder_url}
@@ -1611,6 +1869,27 @@ export function ApplicationDetailClient({
               <option value="ready_to_submit">Ready to Submit</option>
               <option value="submitted">Submitted</option>
               <option value="on_hold">On Hold</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label
+              className="text-xs font-medium text-[#64748b]"
+              htmlFor="is_minor"
+            >
+              Minor applicant
+            </label>
+            <select
+              id="is_minor"
+              value={application.is_minor === true ? "yes" : "no"}
+              onChange={(e) => {
+                const next = e.target.value === "yes";
+                if (next === (application.is_minor === true)) return;
+                void patchApplication({ is_minor: next });
+              }}
+              className="h-10 min-w-[200px] rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
             </select>
           </div>
           {application.archived_at ? (
@@ -1687,44 +1966,48 @@ export function ApplicationDetailClient({
         ) : null}
       </div>
 
-      <section className="rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
-        <h2 className="text-sm font-semibold text-[#1e3a5f]">Notes</h2>
-        <p className="mt-1 text-xs text-[#64748b]">Saves when you click away.</p>
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-slate-200/60 transition-shadow duration-150 hover:shadow-md">
+        <h2 className="text-sm font-semibold text-slate-500">Notes</h2>
+        <p className="mt-1 text-xs text-slate-500">Saves when you click away.</p>
         <textarea
           value={notesDraft}
           onChange={(e) => setNotesDraft(e.target.value)}
           onBlur={onNotesBlur}
           rows={4}
-          className="mt-3 w-full resize-y rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm text-[#1e293b] outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+          className="mt-3 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors duration-150 focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
           placeholder="Internal team notes…"
         />
       </section>
 
       {patchError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-[#dc2626]">
+        <div className="rounded-r-lg border border-l-4 border-l-red-500 border-red-100 bg-red-50 py-3 pl-4 pr-3 text-sm text-red-700">
           {patchError}
         </div>
       ) : null}
 
       {showDocumentChecklist ? (
-        <section className="space-y-4">
-          <div>
+        <section className="space-y-6">
+          <div className="mb-2">
             <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
               {application.service_type === "oci_new"
                 ? "OCI New Application — Document checklist"
                 : application.service_type === "oci_renewal"
                   ? "Document checklist (OCI renewal)"
-                  : "US Passport Renewal — Document checklist (DS-82 test)"}
+                  : application.service_type === "passport_renewal"
+                    ? "Indian passport renewal — Document checklist"
+                    : "US Passport Renewal — Document checklist (DS-82 test)"}
             </h2>
-            <p className="mt-1 text-sm text-[#64748b]">
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
               {application.service_type === "passport_us_renewal_test"
                 ? "Upload current passport (PDF) and passport photo (JPEG). Generate the filled DS-82 from the header when ready."
-                : "Upload each required document. Optional items can be skipped."}
+                : application.service_type === "passport_renewal"
+                  ? "Upload current Indian passport and passport photo (required). Add optional proofs when they apply."
+                  : "Upload each required document. Optional items can be skipped."}
             </p>
           </div>
 
-          <div className="space-y-4">
-            {activeChecklist.map((item) => (
+          <div className="space-y-5">
+            {baseChecklist.map((item) => (
               <DocumentChecklistCard
                 key={item.doc_type}
                 item={item}
@@ -1739,24 +2022,49 @@ export function ApplicationDetailClient({
                 onEditPhoto={(d) => setPhotoEditorDoc(d)}
               />
             ))}
+            {application.is_minor ? (
+              <>
+                <div
+                  className="rounded-lg border border-amber-100 bg-amber-50/90 px-4 py-3 text-sm leading-relaxed text-amber-950"
+                  role="status"
+                >
+                  {PARENT_PASSPORT_BANNER}
+                </div>
+                {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) => (
+                  <DocumentChecklistCard
+                    key={item.doc_type}
+                    item={item}
+                    document={docByType.get(item.doc_type)}
+                    uploading={uploadingDocType === item.doc_type}
+                    progress={uploadProgress[item.doc_type] ?? null}
+                    removingId={removingId}
+                    extractingDocId={extractingDocId}
+                    onUpload={(file) => uploadFile(item.doc_type, file)}
+                    onRemove={removeDocument}
+                    onRetryExtract={(d) => void retryExtractionForDoc(d)}
+                    onEditPhoto={(d) => setPhotoEditorDoc(d)}
+                  />
+                ))}
+              </>
+            ) : null}
           </div>
 
-          <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm transition-shadow duration-150 hover:shadow-md">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow duration-150 hover:shadow-md">
             <div className="flex items-center justify-between gap-4 text-sm">
-              <span className="font-medium text-[#1e293b]">
+              <span className="font-medium text-slate-800">
                 {requiredUploaded} of {activeRequiredCount} required documents
                 uploaded
               </span>
-              <span className="text-[#64748b]">
+              <span className="text-slate-500">
                 {Math.round(
                   (requiredUploaded / Math.max(1, activeRequiredCount)) * 100
                 )}
                 %
               </span>
             </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#eff6ff]">
+            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-[#16a34a] transition-all"
+                className="h-full rounded-full bg-emerald-600 transition-all"
                 style={{
                   width: `${Math.min(
                     100,
@@ -1770,12 +2078,12 @@ export function ApplicationDetailClient({
           {renderGovtPortalReadinessHub()}
 
           {documents.length > 0 ? (
-            <div className="rounded-xl border border-[#e2e8f0] bg-[#eff6ff] p-4 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
               {showDocumentChecklist &&
               documents.length > 0 &&
               !allRequiredUploaded ? (
                 <div
-                  className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
+                  className="mb-3 rounded-lg border border-amber-200/80 bg-amber-50/60 px-3 py-2 text-sm leading-relaxed text-amber-950"
                   role="status"
                 >
                   <span aria-hidden>⚠️</span> Some required documents
@@ -1798,12 +2106,12 @@ export function ApplicationDetailClient({
                   ? "Processing…"
                   : "Process Uploaded Documents with AI →"}
               </button>
-              <p className="mt-2 text-center text-xs text-[#64748b]">
+              <p className="mt-2 text-center text-xs leading-relaxed text-slate-600">
                 Runs OCR + extraction on pending uploads only. Missing slots are
                 skipped. Retry failed docs from each card or below.
               </p>
               {isProcessing && extractionProgress ? (
-                <div className="mt-3 space-y-2 rounded-lg border border-blue-100 bg-blue-50/90 p-3 text-left">
+                <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm">
                   <p className="text-sm font-medium text-blue-950 animate-pulse">
                     {extractionProgress.message}
                   </p>
@@ -1835,7 +2143,7 @@ export function ApplicationDetailClient({
                 </div>
               ) : null}
               {bulkExtractRows && bulkExtractRows.length > 0 ? (
-                <ul className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-white/90 p-3 text-left text-sm">
+                <ul className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-left text-sm shadow-sm">
                   {bulkExtractRows.map((row) => (
                     <li
                       key={row.key}
@@ -1889,10 +2197,11 @@ export function ApplicationDetailClient({
         </section>
       ) : (
         <>
-          <section className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-6 text-sm text-[#64748b]">
-            Document checklist is available for OCI New and OCI Renewal
-            applications. This application uses a different service type; upload
-            flows for it are not configured here yet.
+          <section className="rounded-xl border border-slate-200 bg-slate-50/80 p-6 text-sm leading-relaxed text-slate-600">
+            Document checklist is available for OCI New, OCI Renewal, Indian
+            passport renewal, and the DS-82 test flow. This application uses a
+            different service type; upload flows for it are not configured here
+            yet.
           </section>
           {renderGovtPortalReadinessHub()}
         </>
@@ -1908,6 +2217,9 @@ export function ApplicationDetailClient({
         onClose={() => setPhotoEditorDoc(null)}
         applicationId={application.id}
         document={photoEditorDoc}
+        photoSpecs={
+          isPassportRenewalFlow ? PASSPORT_RENEWAL_PHOTO_SPECS : undefined
+        }
         onSaved={async () => {
           const list = await loadDocuments();
           setDocuments(list);
@@ -1926,6 +2238,7 @@ export function ApplicationDetailClient({
           await loadPortalPrep();
         }}
       />
+      </div>
     </div>
   );
 }
@@ -1973,14 +2286,13 @@ function DocumentChecklistCard({
   return (
     <div
       className={clsx(
-        "rounded-xl border p-4 shadow-sm transition-shadow duration-150 hover:shadow-md",
-        uploaded
-          ? "border-green-200 bg-green-50"
-          : "border-[#e2e8f0] bg-white"
+        "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-150 hover:shadow-md",
+        uploaded && "border-l-4 border-l-emerald-500"
       )}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+      <div className="p-5 pb-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-[#1e293b]">{item.label}</h3>
             {item.required ? (
@@ -2078,7 +2390,7 @@ function DocumentChecklistCard({
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2 sm:justify-end">
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
           {uploaded && document ? (
             <button
               type="button"
@@ -2101,25 +2413,28 @@ function DocumentChecklistCard({
           ) : null}
         </div>
       </div>
+      </div>
+      <div className="border-t border-slate-100 pt-4">
       <div
         {...getRootProps()}
         className={clsx(
-          "mt-3 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm transition-colors duration-150",
+          "mx-5 mb-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm transition-colors duration-150",
           isDragActive
             ? "border-[#2563eb] bg-[#eff6ff]"
-            : "border-[#e2e8f0] bg-white hover:border-[#2563eb]/40",
+            : "border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50",
           uploading && "pointer-events-none opacity-50"
         )}
       >
         <input {...getInputProps()} />
-        <p className="text-[#64748b]">
+        <p className="text-slate-600">
           {isDragActive
             ? "Drop the file here…"
             : "Drag and drop a file here, or use Upload"}
         </p>
       </div>
+      </div>
       {uploading && progress != null ? (
-        <div className="mt-3">
+        <div className="border-t border-slate-100 px-5 pb-4 pt-3">
           <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
             <div
               className="h-full rounded-full bg-blue-600 transition-all"

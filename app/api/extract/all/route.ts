@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { getChecklistForServiceType } from "@/lib/application-checklist";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { extractFieldsFromDocument } from "@/lib/claude";
+import { resolveMimeTypeForExtraction } from "@/lib/extraction-mime";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -89,7 +91,11 @@ export async function POST(req: Request) {
         reason: "not_uploaded" as const,
       }));
 
-    const pending = allDocs.filter((d) => d.extraction_status === "pending");
+    const pending = allDocs.filter(
+      (d) =>
+        d.extraction_status === "pending" &&
+        !shouldSkipAiExtraction(String((d as { doc_type?: string }).doc_type ?? ""))
+    );
     let docsProcessed = 0;
     let fieldsExtracted = 0;
 
@@ -120,7 +126,10 @@ export async function POST(req: Request) {
           continue;
         }
 
-        const mimeType = "application/pdf";
+        const mimeType = await resolveMimeTypeForExtraction(
+          String(doc.drive_file_id ?? ""),
+          String((doc as { file_name?: string }).file_name ?? "")
+        );
         const extracted = await extractFieldsFromDocument({
           base64: b64,
           mimeType,

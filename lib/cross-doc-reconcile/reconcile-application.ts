@@ -3,7 +3,7 @@ import {
   type ReconRow,
 } from "@/lib/cross-doc-reconcile/compute-updates";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { ExtractedField } from "@/lib/types";
+import type { Application, ExtractedField } from "@/lib/types";
 
 /**
  * Loads extracted_fields for an application, runs cross-doc reconciliation, applies updates.
@@ -13,6 +13,12 @@ export async function reconcileApplication(
   applicationId: string,
 ): Promise<{ ok: boolean; error?: string; fields?: ExtractedField[] }> {
   try {
+    const { data: appRow } = await supabaseAdmin
+      .from("applications")
+      .select("service_type")
+      .eq("id", applicationId)
+      .maybeSingle();
+
     const { data: rows, error: selErr } = await supabaseAdmin
       .from("extracted_fields")
       .select(
@@ -23,6 +29,13 @@ export async function reconcileApplication(
     if (selErr) {
       console.error("reconcileApplication: select failed", selErr.message);
       return { ok: false, error: selErr.message };
+    }
+
+    const serviceType =
+      (appRow?.service_type as Application["service_type"] | undefined) ??
+      "oci_new";
+    if (serviceType === "passport_renewal") {
+      return { ok: true, fields: (rows ?? []) as ExtractedField[] };
     }
 
     const list = (rows ?? []) as ReconRow[];

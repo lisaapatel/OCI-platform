@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { minorParentDocumentsMet } from "@/lib/parent-documents";
 import { ociParentRequirementMet } from "@/lib/oci-new-checklist";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Application } from "@/lib/types";
@@ -29,9 +30,19 @@ export async function PATCH(
       status?: Status;
       notes?: string | null;
       archived?: boolean;
+      is_minor?: boolean;
     };
 
     const patch: Record<string, unknown> = {};
+    if (body.is_minor !== undefined) {
+      if (typeof body.is_minor !== "boolean") {
+        return NextResponse.json(
+          { error: "is_minor must be a boolean." },
+          { status: 400 }
+        );
+      }
+      patch.is_minor = body.is_minor;
+    }
     if (body.archived !== undefined) {
       if (typeof body.archived !== "boolean") {
         return NextResponse.json(
@@ -53,7 +64,10 @@ export async function PATCH(
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json(
-        { error: "Provide status, notes, and/or archived." },
+        {
+          error:
+            "Provide status, notes, archived, and/or is_minor.",
+        },
         { status: 400 }
       );
     }
@@ -61,24 +75,40 @@ export async function PATCH(
     if (body.status === "ready_to_submit") {
       const { data: appRow } = await supabaseAdmin
         .from("applications")
-        .select("service_type")
+        .select("service_type, is_minor")
         .eq("id", id)
         .maybeSingle();
       const st = appRow?.service_type as Application["service_type"] | undefined;
-      if (st === "oci_new" || st === "oci_renewal") {
-        const { data: docs, error: docErr } = await supabaseAdmin
-          .from("documents")
-          .select("doc_type")
-          .eq("application_id", id);
-        if (docErr) {
+      const effectiveMinor =
+        body.is_minor !== undefined
+          ? body.is_minor
+          : appRow?.is_minor === true;
+
+      const { data: docs, error: docErr } = await supabaseAdmin
+        .from("documents")
+        .select("doc_type")
+        .eq("application_id", id);
+      if (docErr) {
+        return NextResponse.json(
+          { error: `Could not verify documents: ${docErr.message}` },
+          { status: 500 }
+        );
+      }
+      const present = new Set(
+        (docs ?? []).map((d) => String(d.doc_type ?? "").trim()).filter(Boolean),
+      );
+
+      if (effectiveMinor) {
+        if (!minorParentDocumentsMet(present)) {
           return NextResponse.json(
-            { error: `Could not verify documents: ${docErr.message}` },
-            { status: 500 }
+            {
+              error:
+                "Minor applicants need at least one parent passport (father or mother) and Parent's Address Proof before Ready to Submit.",
+            },
+            { status: 400 }
           );
         }
-        const present = new Set(
-          (docs ?? []).map((d) => String(d.doc_type ?? "").trim()).filter(Boolean),
-        );
+      } else if (st === "oci_new" || st === "oci_renewal") {
         if (!ociParentRequirementMet(present)) {
           return NextResponse.json(
             {

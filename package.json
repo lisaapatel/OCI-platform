@@ -28,6 +28,7 @@
     "face-api.js": "^0.22.2",
     "googleapis": "^171.4.0",
     "lucide-react": "^1.7.0",
+    "mrz": "^5.0.2",
     "next": "16.2.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",

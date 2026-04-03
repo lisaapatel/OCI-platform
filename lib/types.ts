@@ -9,6 +9,7 @@ export interface Application {
   service_type:
     | "oci_new"
     | "oci_renewal"
+    /** Indian passport renewal via VFS Global USA */
     | "passport_renewal"
     | "passport_us_renewal_test";
   status:
@@ -30,6 +31,8 @@ export interface Application {
   our_cost?: number | null;
   /** Omitted on legacy rows; null if unknown */
   payment_status?: PaymentStatus | null;
+  /** When true, parent passport + address checklist slots apply (all service types). */
+  is_minor?: boolean;
 }
 
 export interface Document {

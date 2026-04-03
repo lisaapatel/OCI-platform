@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   dedupeExtractedFieldsLatest,
@@ -63,6 +63,26 @@ export function ReviewPageClient({
   const router = useRouter();
   const [activeDocId, setActiveDocId] = useState(documents[0]?.id ?? "");
   const [fields, setFields] = useState(initialFields);
+  /** Opt-in: hiding empty rows while editing would collapse the row after clear, so default off. */
+  const [hideEmptyFields, setHideEmptyFields] = useState(false);
+  const [printMode, setPrintMode] = useState(false);
+
+  useEffect(() => {
+    const onBefore = () => setPrintMode(true);
+    const onAfter = () => setPrintMode(false);
+    window.addEventListener("beforeprint", onBefore);
+    window.addEventListener("afterprint", onAfter);
+    return () => {
+      window.removeEventListener("beforeprint", onBefore);
+      window.removeEventListener("afterprint", onAfter);
+    };
+  }, []);
+
+  const effectiveHideEmpty = printMode ? false : hideEmptyFields;
+
+  function fieldHasValue(f: ExtractedField): boolean {
+    return String(f.field_value ?? "").trim().length > 0;
+  }
 
   const fieldsDeduped = useMemo(
     () => dedupeExtractedFieldsLatest(fields as ExtractedFieldRow[]),
@@ -83,6 +103,13 @@ export function ReviewPageClient({
     () => fieldsDeduped.filter((f) => f.is_flagged).length,
     [fieldsDeduped]
   );
+
+  const visibleStats = useMemo(() => {
+    const withVal = visibleFields.filter(
+      (f) => String(f.field_value ?? "").trim().length > 0
+    ).length;
+    return { total: visibleFields.length, withVal };
+  }, [visibleFields]);
 
   const fieldsBySection = useMemo(() => {
     const map = new Map<
@@ -238,64 +265,157 @@ export function ReviewPageClient({
         </aside>
 
         <main className="flex w-[60%] min-w-0 flex-col overflow-y-auto bg-white pl-4">
+          <div
+            className="no-print sticky top-0 z-10 mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] bg-white pb-3 pt-1"
+            data-testid="review-field-toolbar"
+          >
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-[#334155]">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300"
+                checked={hideEmptyFields}
+                onChange={(e) => setHideEmptyFields(e.target.checked)}
+              />
+              Hide empty fields
+            </label>
+            <span className="text-xs text-[#64748b]">
+              {visibleStats.withVal} with values
+              {visibleStats.total !== visibleStats.withVal
+                ? ` · ${visibleStats.total - visibleStats.withVal} empty`
+                : ""}{" "}
+              on this document
+              {!hideEmptyFields && visibleStats.total > visibleStats.withVal ? (
+                <span className="text-[#94a3b8]"> — check “Hide empty” to scan faster</span>
+              ) : null}
+            </span>
+          </div>
+
           {REVIEW_SECTION_ORDER.map(({ id: sectionId, title }) => {
             const bucket = fieldsBySection.get(sectionId);
             if (!bucket?.fields.length) return null;
+            const rows = effectiveHideEmpty
+              ? bucket.fields.filter(fieldHasValue)
+              : bucket.fields;
+            const emptyInSection =
+              bucket.fields.length - rows.length;
+            if (!rows.length) {
+              return (
+                <section key={sectionId} className="mb-6 last:mb-0">
+                  <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[#64748b]">
+                    {title}{" "}
+                    <span className="font-normal normal-case text-[#94a3b8]">
+                      ({bucket.fields.length} empty)
+                    </span>
+                  </h2>
+                  <p className="text-xs text-[#94a3b8]">
+                    {effectiveHideEmpty ? (
+                      <>
+                        All fields empty in this section.{" "}
+                        <button
+                          type="button"
+                          className="font-medium text-[#2563eb] underline-offset-2 hover:underline"
+                          onClick={() => setHideEmptyFields(false)}
+                        >
+                          Show empty fields
+                        </button>
+                      </>
+                    ) : null}
+                  </p>
+                </section>
+              );
+            }
             return (
-              <section key={sectionId} className="mb-8 last:mb-0">
-                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                  {title}
+              <section key={sectionId} className="mb-6 last:mb-0">
+                <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#64748b]">
+                  {title}{" "}
+                  <span className="font-normal normal-case text-[#94a3b8]">
+                    ({rows.length}
+                    {emptyInSection > 0 && effectiveHideEmpty
+                      ? ` shown · ${emptyInSection} hidden`
+                      : ""}
+                    )
+                  </span>
                 </h2>
-                <div className="space-y-4">
-                  {bucket.fields.map((f) => {
+                <div className="rounded-lg border border-[#e2e8f0] bg-[#fafafa]">
+                  {rows.map((f) => {
                     const label = humanFieldLabel(f.field_name);
                     const source = sourceDocumentLabel(f.source_doc_type);
+                    const empty = !fieldHasValue(f);
                     return (
                       <div
                         key={f.id}
                         className={clsx(
-                          "rounded-xl border p-4 shadow-sm transition-shadow duration-150 hover:shadow-md",
-                          f.is_flagged
-                            ? "border-red-400 bg-red-50"
-                            : "border-[#e2e8f0] bg-white"
+                          "border-b border-[#e2e8f0] px-3 py-2 last:border-b-0",
+                          f.is_flagged ? "bg-red-50/80" : "bg-white",
+                          empty && !f.is_flagged && "bg-slate-50/60"
                         )}
                         data-flagged={f.is_flagged ? "true" : "false"}
+                        data-review-empty={empty ? "true" : "false"}
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <label
-                              className="text-sm font-semibold uppercase tracking-wide text-gray-500"
-                              htmlFor={`field-${f.id}`}
-                            >
-                              {label}
-                            </label>
-                            {parseAutoReconNote(f.flag_note) === "confirmed" &&
-                            !f.is_flagged ? (
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
-                                Auto-confirmed
-                              </span>
-                            ) : null}
-                            {parseAutoReconNote(f.flag_note) === "single_source" &&
-                            !f.is_flagged ? (
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
-                                Single source
-                              </span>
-                            ) : null}
-                            {parseAutoReconNote(f.flag_note) === "conflict" &&
-                            f.is_flagged ? (
-                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 ring-1 ring-red-200">
-                                Cross-doc conflict
-                              </span>
-                            ) : null}
+                        <div className="flex flex-wrap items-start gap-x-2 gap-y-1 sm:grid sm:grid-cols-[minmax(0,34%)_1fr_auto] sm:items-center">
+                          <div className="min-w-0 sm:pr-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <label
+                                className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]"
+                                htmlFor={`field-${f.id}`}
+                              >
+                                {label}
+                              </label>
+                              {parseAutoReconNote(f.flag_note) === "confirmed" &&
+                              !f.is_flagged ? (
+                                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                                  OK
+                                </span>
+                              ) : null}
+                              {parseAutoReconNote(f.flag_note) ===
+                                "single_source" && !f.is_flagged ? (
+                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                                  1 src
+                                </span>
+                              ) : null}
+                              {parseAutoReconNote(f.flag_note) === "conflict" &&
+                              f.is_flagged ? (
+                                <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
+                                  Conflict
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-0.5 text-[10px] leading-tight text-[#94a3b8]">
+                              {source}
+                            </p>
                           </div>
+                          <input
+                            id={`field-${f.id}`}
+                            aria-label={`Field value for ${f.field_name}`}
+                            className={clsx(
+                              "min-w-0 w-full rounded border px-2 py-1 text-sm text-[#0f172a] outline-none transition-colors focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb]/25",
+                              f.is_flagged
+                                ? "border-red-400 bg-red-50"
+                                : "border-[#e2e8f0] bg-white",
+                              empty && "text-[#94a3b8]"
+                            )}
+                            placeholder="—"
+                            value={f.field_value ?? ""}
+                            onChange={(e) =>
+                              updateLocal(f.id, { field_value: e.target.value })
+                            }
+                            onBlur={(e) =>
+                              void (async () => {
+                                await saveField(f.id, {
+                                  field_value: e.currentTarget.value,
+                                });
+                                await refreshReconciliation();
+                              })()
+                            }
+                          />
                           <button
                             type="button"
                             aria-label={`Flag field ${label}`}
                             className={clsx(
-                              "no-print rounded-lg border px-2 py-1 text-base leading-none transition-colors duration-150",
+                              "no-print shrink-0 rounded border px-2 py-1 text-sm leading-none transition-colors",
                               f.is_flagged
                                 ? "border-red-400 bg-red-100 text-red-800"
-                                : "border-[#e2e8f0] bg-gray-50 text-[#64748b] hover:bg-gray-100"
+                                : "border-[#e2e8f0] bg-white text-[#64748b] hover:bg-slate-50"
                             )}
                             onClick={() => {
                               const next = !f.is_flagged;
@@ -315,35 +435,10 @@ export function ReviewPageClient({
                             🚩
                           </button>
                         </div>
-                        <input
-                          id={`field-${f.id}`}
-                          aria-label={`Field value for ${f.field_name}`}
-                          className={clsx(
-                            "mt-2 w-full rounded-lg border p-3 text-base font-medium text-gray-900 outline-none transition-colors duration-150 focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/30",
-                            f.is_flagged
-                              ? "border-red-400 bg-red-50"
-                              : "border-gray-200 bg-white"
-                          )}
-                          value={f.field_value ?? ""}
-                          onChange={(e) =>
-                            updateLocal(f.id, { field_value: e.target.value })
-                          }
-                          onBlur={(e) =>
-                            void (async () => {
-                              await saveField(f.id, {
-                                field_value: e.currentTarget.value,
-                              });
-                              await refreshReconciliation();
-                            })()
-                          }
-                        />
-                        <p className="mt-1.5 text-xs text-[#64748b]">
-                          Source: {source}
-                        </p>
                         {f.is_flagged ? (
                           <input
                             aria-label={`Flag note for ${f.field_name}`}
-                            className="mt-2 w-full rounded-lg border border-red-400 bg-red-50 p-3 text-sm text-gray-900 outline-none focus:ring-2 focus:ring-red-300/40"
+                            className="no-print mt-2 w-full rounded border border-red-400 bg-red-50 px-2 py-1.5 text-xs text-[#0f172a] outline-none focus:ring-1 focus:ring-red-300/50"
                             placeholder="Flag note"
                             value={flagNoteInputValue(f.flag_note)}
                             onChange={(e) =>

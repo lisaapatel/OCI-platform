@@ -46,5 +46,6 @@ export function applicationFromDbRow(row: Record<string, unknown>): Application 
     our_cost:
       row.our_cost == null || row.our_cost === "" ? null : Number(row.our_cost),
     payment_status: parsePaymentStatus(row),
+    is_minor: row.is_minor === true,
   };
 }

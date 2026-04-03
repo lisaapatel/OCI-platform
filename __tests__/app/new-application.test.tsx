@@ -65,15 +65,17 @@ describe("New Application page", () => {
     expect(select).toHaveValue("oci_renewal");
   });
 
-  test("Test 3: Passport Renewal shows as disabled/coming soon", async () => {
+  test("Test 3: Indian Passport Renewal option is available and selectable", async () => {
     const Page = (await import("../../app/(main)/applications/new/page")).default;
     render(<Page />);
 
+    const select = screen.getByLabelText(/service type/i);
     const opt = screen.getByRole("option", {
-      name: /Passport Renewal.*Coming Soon/i,
+      name: /Indian Passport Renewal \(VFS Global USA\)/i,
     });
-    expect(opt).toBeDisabled();
-    expect(screen.getByText(/Passport Renewal is disabled/i)).toBeInTheDocument();
+    expect(opt).not.toBeDisabled();
+    await userEvent.selectOptions(select, "passport_renewal");
+    expect(select).toHaveValue("passport_renewal");
   });
 
   test("Test 4: Submit button is disabled when customer name is empty", async () => {
@@ -160,5 +162,30 @@ describe("New Application page", () => {
 
     expect(await screen.findByText(/boom/i)).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  test("Test 8: Submit sends is_minor true when minor applicant is checked", async () => {
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "with-minor" }),
+    });
+
+    const Page = (await import("../../app/(main)/applications/new/page")).default;
+    render(<Page />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/full name/i), "Minor Case");
+    await user.selectOptions(screen.getByLabelText(/service type/i), "oci_new");
+    await user.click(screen.getByLabelText(/minor applicant/i));
+    await user.click(screen.getByRole("button", { name: /create application/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/applications");
+    expect(call).toBeDefined();
+    const body = JSON.parse(call![1].body as string);
+    expect(body.is_minor).toBe(true);
   });
 });

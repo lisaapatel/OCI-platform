@@ -264,7 +264,7 @@ describe("Form fill page", () => {
     expect(container.querySelector("style")?.textContent).toMatch(/\.no-print/);
   });
 
-  test("Test 8: Header shows app number, customer, important notes, Back link", async () => {
+  test("Test 8: Header shows app number, customer, Back link", async () => {
     const { FormFillPageClient } = await import(
       "../../app/(main)/applications/[id]/fill/form-fill-page-client"
     );
@@ -274,9 +274,7 @@ describe("Form fill page", () => {
 
     expect(screen.getByText("APP-0001")).toBeInTheDocument();
     expect(screen.getByText("Priya Sharma")).toBeInTheDocument();
-    expect(screen.getByTestId("form-fill-important-notes")).toHaveTextContent(
-      "ociservices.gov.in"
-    );
+    expect(screen.getByTestId("form-fill-detection-banner")).toBeInTheDocument();
     const back = screen.getByRole("link", { name: /Back to Review/i });
     expect(back).toHaveAttribute("href", "/applications/app-1/review");
   });

@@ -5,6 +5,11 @@ import {
   type GovtImageType,
   fixGovtImage,
 } from "@/lib/govt-photo-signature";
+import { PASSPORT_RENEWAL_PHOTO_SPECS } from "@/lib/passport-photo-specs";
+import {
+  fixPassportRenewalPhotoFromBuffer,
+  validatePassportRenewalPhoto,
+} from "@/lib/passport-renewal-photo-validate";
 import { govtFixedDriveName } from "@/lib/drive-file-naming";
 import {
   findOrCreateChildFolder,
@@ -14,6 +19,7 @@ import {
 } from "@/lib/google-drive";
 import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Application } from "@/lib/types";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -81,7 +87,7 @@ export async function POST(req: Request) {
 
     const { data: app, error: appErr } = await supabaseAdmin
       .from("applications")
-      .select("id, drive_folder_id")
+      .select("id, drive_folder_id, service_type")
       .eq("id", application_id)
       .single();
 
@@ -91,6 +97,14 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    const serviceType =
+      (app.service_type as Application["service_type"] | undefined) ??
+      "oci_new";
+    const passportPhotoFlow =
+      serviceType === "passport_renewal" &&
+      image_type === "photo" &&
+      expectedDocType === "applicant_photo";
 
     if (clientCropPath) {
       const document_id = String(body.document_id ?? "").trim();
@@ -120,10 +134,13 @@ export async function POST(req: Request) {
       doc = row;
       out = decodeBase64Image(String(body.image_base64));
 
-      if (out.length > PORTAL_IMAGE_MAX_BYTES) {
+      const maxClientBytes = passportPhotoFlow
+        ? PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB * 1024
+        : PORTAL_IMAGE_MAX_BYTES;
+      if (out.length > maxClientBytes) {
         return NextResponse.json(
           {
-            error: `Image is ${kb(out.length)}KB; portal max is ${kb(PORTAL_IMAGE_MAX_BYTES)}KB.`,
+            error: `Image is ${kb(out.length)}KB; max is ${kb(maxClientBytes)}KB.`,
           },
           { status: 400 }
         );
@@ -137,6 +154,20 @@ export async function POST(req: Request) {
           { error: "Client image must be JPEG." },
           { status: 400 }
         );
+      }
+
+      if (passportPhotoFlow) {
+        const pv = await validatePassportRenewalPhoto(out);
+        if (!pv.valid) {
+          return NextResponse.json(
+            {
+              error:
+                pv.issues[0] ??
+                "Photo does not meet passport renewal requirements.",
+            },
+            { status: 400 }
+          );
+        }
       }
     } else {
       const drive_file_id = String(body.drive_file_id ?? "").trim();
@@ -189,7 +220,9 @@ export async function POST(req: Request) {
       const b64 = await getFileAsBase64(drive_file_id);
       const buffer = Buffer.from(b64, "base64");
 
-      const fixed = await fixGovtImage(buffer, image_type);
+      const fixed = passportPhotoFlow
+        ? await fixPassportRenewalPhotoFromBuffer(buffer)
+        : await fixGovtImage(buffer, image_type);
       out = fixed.buffer;
       width = fixed.width;
       height = fixed.height;

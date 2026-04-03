@@ -1,11 +1,31 @@
-/* Dim outside crop (70% dark) — box-shadow on selection */
-.wrap :global(.ReactCrop__crop-selection) {
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+/* Applicant photo editor */
+.photoCropWrap :global(.ReactCrop__crop-selection) {
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
 }
 
-.wrap :global(.ReactCrop__rule-of-thirds-vt:before),
-.wrap :global(.ReactCrop__rule-of-thirds-vt:after),
-.wrap :global(.ReactCrop__rule-of-thirds-hz:before),
-.wrap :global(.ReactCrop__rule-of-thirds-hz:after) {
+.photoCropWrap :global(.ReactCrop__rule-of-thirds-vt:before),
+.photoCropWrap :global(.ReactCrop__rule-of-thirds-vt:after),
+.photoCropWrap :global(.ReactCrop__rule-of-thirds-hz:before),
+.photoCropWrap :global(.ReactCrop__rule-of-thirds-hz:after) {
   display: none;
+}
+
+.photoEditorShell .canvasFrame {
+  background: #1a1a1a;
+}
+
+/* Signature editor — same crop dimming + dark canvas as photo (signature modal shell) */
+.signatureCropWrap :global(.ReactCrop__crop-selection) {
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
+}
+
+.signatureCropWrap :global(.ReactCrop__rule-of-thirds-vt:before),
+.signatureCropWrap :global(.ReactCrop__rule-of-thirds-vt:after),
+.signatureCropWrap :global(.ReactCrop__rule-of-thirds-hz:before),
+.signatureCropWrap :global(.ReactCrop__rule-of-thirds-hz:after) {
+  display: none;
+}
+
+.signatureEditorShell .canvasFrame {
+  background: #1a1a1a;
 }

@@ -27,6 +27,7 @@ export async function POST(req: Request) {
         | "passport_renewal"
         | "passport_us_renewal_test";
       notes?: string;
+      is_minor?: boolean;
     };
 
     const customer_name = (body.customer_name ?? "").trim();
@@ -34,6 +35,16 @@ export async function POST(req: Request) {
     const customer_email = (body.customer_email ?? "").trim() || null;
     const customer_phone = (body.customer_phone ?? "").trim() || null;
     const notes = (body.notes ?? "").trim() || null;
+    let is_minor = false;
+    if (body.is_minor !== undefined) {
+      if (typeof body.is_minor !== "boolean") {
+        return NextResponse.json(
+          { error: "is_minor must be a boolean when provided." },
+          { status: 400 }
+        );
+      }
+      is_minor = body.is_minor;
+    }
 
     if (!customer_name) {
       return NextResponse.json(
@@ -53,13 +64,6 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (service_type === "passport_renewal") {
-      return NextResponse.json(
-        { error: "Passport Renewal is coming soon." },
-        { status: 400 }
-      );
-    }
-
     // a) Generate app_number by counting existing apps
     const { count, error: countError } = await supabaseAdmin
       .from("applications")
@@ -104,6 +108,7 @@ export async function POST(req: Request) {
         drive_folder_id: driveFolderId,
         drive_folder_url: driveFolderUrl,
         notes,
+        is_minor,
       })
       .select("id")
       .single();

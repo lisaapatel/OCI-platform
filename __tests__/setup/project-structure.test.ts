@@ -38,6 +38,7 @@ describe("project structure", () => {
         | "notes"
         | "created_at"
         | "created_by"
+        | "is_minor"
       >
     >;
 

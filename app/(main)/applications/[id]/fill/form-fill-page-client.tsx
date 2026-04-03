@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { resolveDocTypeChecklistLabel } from "@/lib/application-checklist";
 import {
   getValueByKeysAndSources,
   normalizeStoredFieldKey,
@@ -27,11 +28,62 @@ import {
   flattenOciFormFillRows,
   type GovtFillRowConfig,
 } from "@/lib/oci-form-fill-build";
-import type { ExtractedField } from "@/lib/types";
+import type { Application, ExtractedField } from "@/lib/types";
 
 const COPY_FLASH_MS = 1500;
 
 const OCCUPATION_OPTIONS = ["BUSINESS", "SERVICE", "STUDENT", "OTHER"] as const;
+
+function pickFieldByKeys(
+  fields: ExtractedField[],
+  keys: string[]
+): ExtractedField | undefined {
+  const want = new Set(keys.map((k) => normalizeStoredFieldKey(k)));
+  for (const f of fields) {
+    if (want.has(normalizeStoredFieldKey(f.field_name))) return f;
+  }
+  return undefined;
+}
+
+function pickFromPassportOrFallback(
+  fields: ExtractedField[],
+  keys: string[],
+  sourceDocType: string
+): ExtractedField | undefined {
+  const want = new Set(keys.map((k) => normalizeStoredFieldKey(k)));
+  for (const f of fields) {
+    if (
+      f.source_doc_type === sourceDocType &&
+      want.has(normalizeStoredFieldKey(f.field_name))
+    ) {
+      return f;
+    }
+  }
+  return pickFieldByKeys(fields, keys);
+}
+
+function PassportFieldRow({
+  label,
+  field,
+}: {
+  label: string;
+  field: ExtractedField | undefined;
+}) {
+  const v = (field?.field_value ?? "").trim();
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 py-3">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <div className="flex flex-wrap items-center justify-end gap-2 text-right">
+        <span className="text-sm text-slate-900">{v || "—"}</span>
+        {field ? (
+          <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+            {resolveDocTypeChecklistLabel(field.source_doc_type)}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function maritalStatusFromFields(fields: ExtractedField[]): string {
   for (const f of fields) {
@@ -243,6 +295,7 @@ export function FormFillPageClient({
   customerName,
   customerEmail,
   customerPhone,
+  serviceType = "oci_new",
   lastReviewedLabel,
   initialFields,
   portalReadiness,
@@ -252,6 +305,7 @@ export function FormFillPageClient({
   customerName: string;
   customerEmail: string;
   customerPhone: string;
+  serviceType?: Application["service_type"];
   lastReviewedLabel: string;
   initialFields: ExtractedField[];
   portalReadiness: PortalReadinessSnapshot;
@@ -450,6 +504,165 @@ export function FormFillPageClient({
       />
     );
 
+  if (serviceType === "passport_renewal") {
+    const addressFields = fields.filter(
+      (f) =>
+        f.source_doc_type === "us_address_proof" ||
+        f.source_doc_type === "indian_address_proof"
+    );
+
+    return (
+      <div className="fill-print-root mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-[#f8fafc] px-4 py-6 sm:px-6 lg:px-8">
+        <header className="no-print rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <Link
+                href={`/applications/${applicationId}/review`}
+                className="text-sm font-medium text-blue-600 transition-colors hover:text-blue-800"
+              >
+                Back to Review
+              </Link>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+                <span>{appNumber}</span>
+                <span className="mx-2 font-normal text-slate-500">·</span>
+                <span>{customerName}</span>
+              </h1>
+              <p className="mt-2 text-sm text-slate-600">
+                Indian passport renewal — extracted values only (no cross-doc
+                reconciliation).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
+            >
+              Print this page
+            </button>
+          </div>
+        </header>
+
+        <div className="no-print rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          Fields below come from AI extraction. Source tags show which uploaded
+          document each value came from.
+        </div>
+
+        {lastReviewedLabel !== "—" ? (
+          <p className="text-sm text-slate-600">
+            Last reviewed: {lastReviewedLabel}
+          </p>
+        ) : null}
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
+            Section 1 — Applicant details
+          </h2>
+          <PassportFieldRow
+            label="First name"
+            field={pickFromPassportOrFallback(fields, [
+              "first_name",
+              "given_name",
+              "firstname",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Last name"
+            field={pickFromPassportOrFallback(fields, [
+              "last_name",
+              "surname",
+              "family_name",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Date of birth"
+            field={pickFromPassportOrFallback(fields, [
+              "date_of_birth",
+              "dob",
+              "birth_date",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Place of birth"
+            field={pickFromPassportOrFallback(fields, [
+              "place_of_birth",
+              "birth_place",
+              "pob",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Gender"
+            field={pickFromPassportOrFallback(fields, ["gender", "sex"], "current_passport")}
+          />
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
+            Section 2 — Current passport
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Typically extracted from the current Indian passport upload.
+          </p>
+          <PassportFieldRow
+            label="Passport number"
+            field={pickFromPassportOrFallback(fields, [
+              "passport_number",
+              "passport_no",
+              "passport_num",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Issue date"
+            field={pickFromPassportOrFallback(fields, [
+              "issue_date",
+              "date_of_issue",
+              "passport_issue_date",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Expiry date"
+            field={pickFromPassportOrFallback(fields, [
+              "expiry_date",
+              "date_of_expiry",
+              "passport_expiry_date",
+            ], "current_passport")}
+          />
+          <PassportFieldRow
+            label="Issue place"
+            field={pickFromPassportOrFallback(fields, [
+              "issue_place",
+              "place_of_issue",
+              "issuing_office",
+            ], "current_passport")}
+          />
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
+            Section 3 — Address
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">
+            From US or Indian address proof uploads, when provided.
+          </p>
+          {addressFields.length === 0 ? (
+            <p className="text-sm text-slate-600">
+              No address fields extracted yet from address proof documents.
+            </p>
+          ) : (
+            <div>
+              {addressFields.map((f) => (
+                <PassportFieldRow
+                  key={f.id}
+                  label={normalizeStoredFieldKey(f.field_name)}
+                  field={f}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="fill-print-root mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-[#f8fafc] px-4 py-6 sm:px-6 lg:px-8">
       <header className="no-print rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -488,29 +701,6 @@ export function FormFillPageClient({
           Parent document:{" "}
           <span className="font-medium">{detectionBanner.parentLabel}</span>.
         </p>
-      </div>
-
-      <div
-        className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950 shadow-sm print:border-blue-300"
-        data-testid="form-fill-important-notes"
-      >
-        <p className="font-bold text-blue-900">Important notes</p>
-        <p className="mt-2 font-medium">Before starting the govt portal:</p>
-        <ol className="mt-2 list-decimal space-y-1 pl-5">
-          <li>
-            Go to{" "}
-            <span className="font-mono text-blue-900">ociservices.gov.in</span>{" "}
-            → Click the correct application type
-          </li>
-          <li>Answer the CAPTCHA question</li>
-          <li>
-            Note down the Temporary Application ID — save it in the Notes field
-          </li>
-          <li>
-            Fill Part A using this page, then Part B (all No for standard cases)
-          </li>
-          <li>Note the File Reference Number after submission</li>
-        </ol>
       </div>
 
       <div

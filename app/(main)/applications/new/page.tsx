@@ -16,6 +16,7 @@ export default function NewApplicationPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [serviceType, setServiceType] = useState<ServiceType | "">("");
+  const [isMinor, setIsMinor] = useState(false);
   const [notes, setNotes] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
@@ -24,7 +25,6 @@ export default function NewApplicationPage() {
   const canSubmit = useMemo(() => {
     if (!fullName.trim()) return false;
     if (!serviceType) return false;
-    if (serviceType === "passport_renewal") return false;
     return true;
   }, [fullName, serviceType]);
 
@@ -45,6 +45,7 @@ export default function NewApplicationPage() {
           customer_phone: phone,
           service_type: serviceType,
           notes,
+          is_minor: isMinor,
         }),
       });
 
@@ -156,17 +157,39 @@ export default function NewApplicationPage() {
                 <option value="">Select a service…</option>
                 <option value="oci_new">OCI New Application</option>
                 <option value="oci_renewal">OCI Renewal / Reissue</option>
-                <option value="passport_renewal" disabled>
-                  Passport Renewal — Coming Soon
+                <option value="passport_renewal">
+                  Indian Passport Renewal (VFS Global USA)
                 </option>
                 <option value="passport_us_renewal_test">
                   US Passport renewal (DS-82) — PDF test only
                 </option>
               </select>
               <p className="mt-2 text-xs text-[#64748b]">
-                Passport Renewal is disabled for now. The DS-82 option is an
-                internal POC for filled PDF generation.
+                Indian Passport Renewal uses VFS Global USA document and photo
+                requirements. The DS-82 option is an internal POC for filled PDF
+                generation.
               </p>
+            </div>
+            <div className="mt-4 flex items-start gap-3 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-4 py-3">
+              <input
+                id="isMinor"
+                type="checkbox"
+                checked={isMinor}
+                onChange={(e) => setIsMinor(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-[#cbd5e1] text-[#2563eb] focus:ring-[#2563eb]/25"
+              />
+              <div>
+                <label
+                  htmlFor="isMinor"
+                  className="text-sm font-medium text-[#1e293b]"
+                >
+                  Minor applicant
+                </label>
+                <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+                  When checked, we collect parent passport (father or mother) and
+                  parent address proof for every service type.
+                </p>
+              </div>
             </div>
           </section>
 

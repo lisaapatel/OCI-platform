@@ -6,6 +6,7 @@ import {
 } from "@/lib/claude";
 import type { ExtractionFailureCode } from "@/lib/extraction-failure-reasons";
 import { FAILURE_REASON_LABELS } from "@/lib/extraction-failure-reasons";
+import { resolveMimeTypeForExtraction } from "@/lib/extraction-mime";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { resolveDocTypeChecklistLabel } from "@/lib/application-checklist";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
@@ -154,11 +155,15 @@ async function runExtraction(args: {
 
   progress(2, "Sending to AI…");
 
+  const driveRef = String(doc.drive_file_id ?? "");
+  const fileName = String(doc.file_name ?? "");
+  const mimeType = await resolveMimeTypeForExtraction(driveRef, fileName);
+
   let rawText: string;
   try {
     rawText = await callClaudeExtractFieldsRaw({
       base64: b64,
-      mimeType: "application/pdf",
+      mimeType,
       docType,
     });
   } catch (err) {

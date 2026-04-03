@@ -5,7 +5,9 @@ import {
   validateGovtImage,
 } from "@/lib/govt-photo-signature";
 import { getFileAsBase64 } from "@/lib/google-drive";
+import { validatePassportRenewalPhoto } from "@/lib/passport-renewal-photo-validate";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import type { Application } from "@/lib/types";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -69,10 +71,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const { data: appMeta } = await supabaseAdmin
+      .from("applications")
+      .select("service_type")
+      .eq("id", application_id)
+      .maybeSingle();
+
+    const serviceType =
+      (appMeta?.service_type as Application["service_type"] | undefined) ??
+      "oci_new";
+
     const b64 = await getFileAsBase64(drive_file_id);
     const buffer = Buffer.from(b64, "base64");
 
-    const result = await validateGovtImage(buffer, image_type);
+    const result =
+      serviceType === "passport_renewal" && image_type === "photo"
+        ? await validatePassportRenewalPhoto(buffer)
+        : await validateGovtImage(buffer, image_type);
 
     return NextResponse.json(result, { status: 200 });
   } catch (err) {

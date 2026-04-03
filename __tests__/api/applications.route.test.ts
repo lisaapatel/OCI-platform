@@ -133,4 +133,65 @@ describe("POST /api/applications", () => {
       })
     );
   });
+
+  test("inserts is_minor true when provided", async () => {
+    createApplicationFolder.mockResolvedValue({
+      id: "drive-folder-id",
+      url: "https://drive.google.com/drive/folders/drive-folder-id",
+    });
+
+    const insertPayloads: unknown[] = [];
+    const countSelect = jest.fn().mockResolvedValue({ count: 0, error: null });
+    const insertSingle = jest
+      .fn()
+      .mockResolvedValue({ data: { id: "minor-app" }, error: null });
+    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
+    const insert = jest.fn((payload) => {
+      insertPayloads.push(payload);
+      return { select: insertSelect };
+    });
+
+    supabaseAdminFrom.mockReturnValue({
+      select: countSelect,
+      insert,
+    });
+
+    const req = new Request("http://localhost/api/applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: "Kid User",
+        service_type: "passport_renewal",
+        is_minor: true,
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(insertPayloads[0]).toEqual(
+      expect.objectContaining({ is_minor: true })
+    );
+  });
+
+  test("returns 400 when is_minor is not boolean", async () => {
+    supabaseAdminFrom.mockReturnValue({
+      select: jest.fn(),
+      insert: jest.fn(),
+    });
+
+    const req = new Request("http://localhost/api/applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: "X",
+        service_type: "oci_new",
+        is_minor: "yes",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/is_minor must be a boolean/i);
+  });
 });

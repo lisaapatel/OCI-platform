@@ -15,6 +15,9 @@ export const DOC_TYPE_DRIVE_PREFIX: Record<string, string> = {
   parent_passport: "parent_passport_in",
   parent_oci: "parent_oci",
   parent_indian_doc: "parent_indian",
+  parent_passport_father: "parent_passport_father",
+  parent_passport_mother: "parent_passport_mother",
+  parent_address_proof: "parent_proof_address",
   marriage_certificate: "certificate_marriage",
 };
 

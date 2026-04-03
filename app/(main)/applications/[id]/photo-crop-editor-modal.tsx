@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import clsx from "clsx";
@@ -22,12 +22,19 @@ import {
   OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX,
   type OciApplicantPhotoExportChecks,
 } from "@/lib/oci-applicant-photo-rules";
+import {
+  allPassportRenewalPhotoAutoChecksPass,
+  evaluatePassportRenewalPhotoExportBlob,
+  PASSPORT_RENEWAL_EXPORT_PX,
+  PASSPORT_RENEWAL_PHOTO_SPECS,
+  type PassportRenewalPhotoExportChecks,
+} from "@/lib/passport-photo-specs";
 import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
 import type { Document } from "@/lib/types";
 
 import styles from "./photo-crop-editor-modal.module.css";
 
-const EXPORT_SIZE = 600;
+const OCI_EXPORT_PX = 600;
 const PORTAL_MAX_KB = Math.round(PORTAL_IMAGE_MAX_BYTES / 1024);
 
 let faceApiLoadPromise: Promise<void> | null = null;
@@ -102,6 +109,30 @@ async function compressCanvasToLimit(
   );
 }
 
+async function compressCanvasToByteRange(
+  canvas: HTMLCanvasElement,
+  minBytes: number,
+  maxBytes: number
+): Promise<Blob> {
+  let q = 0.88;
+  let lastBlob: Blob | null = null;
+  for (let i = 0; i < 28; i++) {
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", q)
+    );
+    if (!blob) throw new Error("toBlob failed");
+    lastBlob = blob;
+    if (blob.size <= maxBytes && blob.size >= minBytes) return blob;
+    if (blob.size > maxBytes) q -= 0.04;
+    else q += 0.03;
+    q = Math.max(0.28, Math.min(0.95, q));
+  }
+  if (lastBlob && lastBlob.size <= maxBytes) return lastBlob;
+  throw new Error(
+    `Could not produce JPEG between ${Math.round(minBytes / 1024)}KB and ${Math.round(maxBytes / 1024)}KB.`
+  );
+}
+
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunk = 0x8000;
@@ -113,11 +144,12 @@ function uint8ToBase64(bytes: Uint8Array): string {
 
 function exportCroppedToCanvas(
   source: HTMLCanvasElement,
-  pixelCrop: PixelCrop
+  pixelCrop: PixelCrop,
+  edgePx: number
 ): HTMLCanvasElement {
   const out = document.createElement("canvas");
-  out.width = EXPORT_SIZE;
-  out.height = EXPORT_SIZE;
+  out.width = edgePx;
+  out.height = edgePx;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
   ctx.drawImage(
@@ -128,8 +160,8 @@ function exportCroppedToCanvas(
     pixelCrop.height,
     0,
     0,
-    EXPORT_SIZE,
-    EXPORT_SIZE
+    edgePx,
+    edgePx
   );
   return out;
 }
@@ -157,6 +189,12 @@ function applyCanvasFilters(
  */
 const GUIDE_EYES_Y = 40;
 const GUIDE_CHIN_Y = 76;
+const GRID_STROKE = "rgba(14, 36, 68, 0.85)";
+const GRID_DASH = "2.5 2.5";
+const FACE_H_STROKE = "#172554";
+const CENTER_V_STROKE = "rgba(30, 41, 55, 0.9)";
+const FACE_ELLIPSE_STROKE = "rgba(18, 42, 110, 0.75)";
+const THIRD = 100 / 3;
 
 function PassportGuidesOverlay() {
   return (
@@ -167,50 +205,72 @@ function PassportGuidesOverlay() {
       aria-hidden
     >
       <line
+        x1={THIRD}
+        y1="0"
+        x2={THIRD}
+        y2="100"
+        stroke={GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={GRID_DASH}
+      />
+      <line
+        x1={THIRD * 2}
+        y1="0"
+        x2={THIRD * 2}
+        y2="100"
+        stroke={GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={GRID_DASH}
+      />
+      <line
+        x1="0"
+        y1={THIRD}
+        x2="100"
+        y2={THIRD}
+        stroke={GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={GRID_DASH}
+      />
+      <line
+        x1="0"
+        y1={THIRD * 2}
+        x2="100"
+        y2={THIRD * 2}
+        stroke={GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={GRID_DASH}
+      />
+      <line
         x1="0"
         y1={GUIDE_EYES_Y}
         x2="100"
         y2={GUIDE_EYES_Y}
-        stroke="#2563eb"
-        strokeWidth="0.35"
+        stroke={FACE_H_STROKE}
+        strokeWidth="0.38"
         vectorEffect="non-scaling-stroke"
         strokeDasharray="4 3"
       />
-      <text
-        x="2"
-        y={GUIDE_EYES_Y - 2}
-        fill="#2563eb"
-        fontSize="5"
-        fontWeight="600"
-      >
-        Eyes here
-      </text>
       <line
         x1="0"
         y1={GUIDE_CHIN_Y}
         x2="100"
         y2={GUIDE_CHIN_Y}
-        stroke="#2563eb"
-        strokeWidth="0.35"
+        stroke={FACE_H_STROKE}
+        strokeWidth="0.38"
         vectorEffect="non-scaling-stroke"
         strokeDasharray="4 3"
       />
-      <text
-        x="2"
-        y={GUIDE_CHIN_Y - 2}
-        fill="#2563eb"
-        fontSize="5"
-        fontWeight="600"
-      >
-        Chin here
-      </text>
       <line
         x1="50"
         y1="0"
         x2="50"
         y2="100"
-        stroke="rgba(71,85,105,0.45)"
-        strokeWidth="0.25"
+        stroke={CENTER_V_STROKE}
+        strokeWidth="0.3"
         vectorEffect="non-scaling-stroke"
         strokeDasharray="2 2"
       />
@@ -220,8 +280,8 @@ function PassportGuidesOverlay() {
         rx="26"
         ry="32"
         fill="none"
-        stroke="rgba(37,99,235,0.42)"
-        strokeWidth="0.5"
+        stroke={FACE_ELLIPSE_STROKE}
+        strokeWidth="0.52"
         vectorEffect="non-scaling-stroke"
       />
     </svg>
@@ -234,6 +294,8 @@ export type PhotoCropEditorModalProps = {
   applicationId: string;
   document: Document | null;
   onSaved: () => void | Promise<void>;
+  /** When set (e.g. passport renewal), uses VFS-oriented limits instead of OCI portal limits. */
+  photoSpecs?: typeof PASSPORT_RENEWAL_PHOTO_SPECS;
 };
 
 export function PhotoCropEditorModal({
@@ -242,6 +304,7 @@ export function PhotoCropEditorModal({
   applicationId,
   document: doc,
   onSaved,
+  photoSpecs,
 }: PhotoCropEditorModalProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceObjectUrl, setSourceObjectUrl] = useState<string | null>(null);
@@ -259,6 +322,10 @@ export function PhotoCropEditorModal({
   const [finalKb, setFinalKb] = useState<string>("—");
   const [portalExportChecks, setPortalExportChecks] =
     useState<OciApplicantPhotoExportChecks | null>(null);
+  const [passportExportChecks, setPassportExportChecks] =
+    useState<PassportRenewalPhotoExportChecks | null>(null);
+  const [whiteBackgroundConfirmed, setWhiteBackgroundConfirmed] =
+    useState(false);
   const [compressError, setCompressError] = useState<string | null>(null);
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceHint, setFaceHint] = useState<string | null>(null);
@@ -269,11 +336,15 @@ export function PhotoCropEditorModal({
     h: number;
   } | null>(null);
 
+  const exportEdgePx = photoSpecs ? PASSPORT_RENEWAL_EXPORT_PX : OCI_EXPORT_PX;
+
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const displayImgRef = useRef<HTMLImageElement | null>(null);
   const rotatedCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const revokeUrls = useRef<string[]>([]);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const canvasScrollRef = useRef<HTMLDivElement | null>(null);
+  const initialScrollDoneForUrl = useRef<string | null>(null);
   const rotationDegRef = useRef(0);
   const lastDisplayUrlForCropRef = useRef<string | null>(null);
 
@@ -310,6 +381,8 @@ export function PhotoCropEditorModal({
     setPreviewOriginalUrl(null);
     setFinalKb("—");
     setPortalExportChecks(null);
+    setPassportExportChecks(null);
+    setWhiteBackgroundConfirmed(false);
     setCompressError(null);
     cleanupUrls();
     setSourceObjectUrl(null);
@@ -387,9 +460,9 @@ export function PhotoCropEditorModal({
     const img = displayImgRef.current;
     if (!src || !img?.naturalWidth || !crop?.width) return null;
     const pixel = convertToPixelCrop(crop, img.naturalWidth, img.naturalHeight);
-    const cropped = exportCroppedToCanvas(src, pixel);
+    const cropped = exportCroppedToCanvas(src, pixel, exportEdgePx);
     return applyCanvasFilters(cropped, brightness, contrast);
-  }, [crop, brightness, contrast]);
+  }, [crop, brightness, contrast, exportEdgePx]);
 
   const updatePreview = useCallback(async () => {
     const filtered = buildFilteredExportCanvas();
@@ -399,6 +472,7 @@ export function PhotoCropEditorModal({
       setPreviewOriginalUrl(null);
       setFinalKb("—");
       setPortalExportChecks(null);
+      setPassportExportChecks(null);
       setCompressError(null);
       return;
     }
@@ -422,11 +496,21 @@ export function PhotoCropEditorModal({
     }
 
     const prev = document.createElement("canvas");
-    prev.width = 250;
-    prev.height = 250;
+    prev.width = 200;
+    prev.height = 200;
     const pctx = prev.getContext("2d");
     if (pctx) {
-      pctx.drawImage(filtered, 0, 0, EXPORT_SIZE, EXPORT_SIZE, 0, 0, 250, 250);
+      pctx.drawImage(
+        filtered,
+        0,
+        0,
+        exportEdgePx,
+        exportEdgePx,
+        0,
+        0,
+        200,
+        200
+      );
     }
     const prevBlob = await new Promise<Blob | null>((resolve) =>
       prev.toBlob((b) => resolve(b), "image/jpeg", 0.85)
@@ -440,25 +524,46 @@ export function PhotoCropEditorModal({
     }
 
     try {
-      const outBlob = await compressCanvasToLimit(
-        filtered,
-        PORTAL_IMAGE_MAX_BYTES
-      );
-      setFinalKb((outBlob.size / 1024).toFixed(1));
-      setPortalExportChecks(
-        await evaluateOciApplicantPhotoExportBlob(
-          outBlob,
-          filtered.width,
-          filtered.height
-        )
-      );
+      if (photoSpecs) {
+        const minB = photoSpecs.minSizeKB * 1024;
+        const maxB = photoSpecs.maxSizeKB * 1024;
+        const outBlob = await compressCanvasToByteRange(
+          filtered,
+          minB,
+          maxB
+        );
+        setFinalKb((outBlob.size / 1024).toFixed(1));
+        setPassportExportChecks(
+          await evaluatePassportRenewalPhotoExportBlob(
+            outBlob,
+            filtered.width,
+            filtered.height
+          )
+        );
+        setPortalExportChecks(null);
+      } else {
+        const outBlob = await compressCanvasToLimit(
+          filtered,
+          PORTAL_IMAGE_MAX_BYTES
+        );
+        setFinalKb((outBlob.size / 1024).toFixed(1));
+        setPortalExportChecks(
+          await evaluateOciApplicantPhotoExportBlob(
+            outBlob,
+            filtered.width,
+            filtered.height
+          )
+        );
+        setPassportExportChecks(null);
+      }
       setCompressError(null);
     } catch (e) {
       setFinalKb("—");
       setPortalExportChecks(null);
+      setPassportExportChecks(null);
       setCompressError(e instanceof Error ? e.message : String(e));
     }
-  }, [buildFilteredExportCanvas]);
+  }, [buildFilteredExportCanvas, photoSpecs]);
 
   useEffect(() => {
     if (!open || !displayUrl) return;
@@ -565,8 +670,15 @@ export function PhotoCropEditorModal({
   const buildFinalBlob = useCallback(async (): Promise<Blob> => {
     const filtered = buildFilteredExportCanvas();
     if (!filtered) throw new Error("Image or crop not ready.");
+    if (photoSpecs) {
+      return compressCanvasToByteRange(
+        filtered,
+        photoSpecs.minSizeKB * 1024,
+        photoSpecs.maxSizeKB * 1024
+      );
+    }
     return compressCanvasToLimit(filtered, PORTAL_IMAGE_MAX_BYTES);
-  }, [buildFilteredExportCanvas]);
+  }, [buildFilteredExportCanvas, photoSpecs]);
 
   const onApplyDownload = useCallback(async () => {
     try {
@@ -635,7 +747,15 @@ export function PhotoCropEditorModal({
 
   const meetsOciPortalExport =
     !compressError && allOciApplicantPhotoChecksPass(portalExportChecks);
+  const meetsPassportPortalExport =
+    !compressError &&
+    allPassportRenewalPhotoAutoChecksPass(passportExportChecks) &&
+    whiteBackgroundConfirmed;
+  const meetsPortalExport = photoSpecs
+    ? meetsPassportPortalExport
+    : meetsOciPortalExport;
   const c = portalExportChecks;
+  const pc = passportExportChecks;
 
   useEffect(() => {
     if (!open) return;
@@ -663,7 +783,7 @@ export function PhotoCropEditorModal({
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (meetsOciPortalExport && displayUrl && crop?.width) {
+        if (meetsPortalExport && displayUrl && crop?.width) {
           void onApplyDownload();
         }
         return;
@@ -689,12 +809,28 @@ export function PhotoCropEditorModal({
     open,
     saveBusy,
     handleClose,
-    meetsOciPortalExport,
+    meetsPortalExport,
     displayUrl,
     crop?.width,
     nudgeCrop,
     onApplyDownload,
   ]);
+
+  useLayoutEffect(() => {
+    if (!displayUrl) {
+      initialScrollDoneForUrl.current = null;
+      return;
+    }
+    if (initialScrollDoneForUrl.current === displayUrl) return;
+    const el = canvasScrollRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+      el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) / 2);
+      initialScrollDoneForUrl.current = displayUrl;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [displayUrl]);
 
   const imgFilter = `brightness(${100 + brightness}%) contrast(${100 + contrast}%)`;
   const zoomScale = zoomPct / 100;
@@ -715,7 +851,7 @@ export function PhotoCropEditorModal({
       aria-modal="true"
       aria-label="Edit applicant photo"
     >
-      <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+      <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-slate-900">
@@ -744,7 +880,12 @@ export function PhotoCropEditorModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div
+          className={clsx(
+            "min-h-0 flex-1 overflow-y-auto p-5",
+            styles.photoEditorShell
+          )}
+        >
           {loadError ? (
             <p className="text-sm text-red-600">{loadError}</p>
           ) : null}
@@ -762,88 +903,309 @@ export function PhotoCropEditorModal({
             <p className="text-sm text-slate-600">Loading image…</p>
           ) : null}
 
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={!displayUrl || faceBusy}
-              onClick={() => void runFaceCenter()}
-              className="rounded-lg border border-[#1e3a5f] bg-[#eff6ff] px-3 py-2 text-sm font-semibold text-[#1e3a5f] disabled:opacity-50"
-            >
-              {faceBusy ? "Detecting face…" : "Auto-center face"}
-            </button>
-            <button
-              type="button"
-              disabled={!displayUrl}
-              onClick={() => setShowGuides((g) => !g)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:opacity-50"
-            >
-              {showGuides ? "Hide guides" : "Show guides"}
-            </button>
-            <div className="flex flex-wrap gap-1">
-              <button
-                type="button"
-                disabled={!displayUrl}
-                onClick={() => applyPreset(0.7)}
-                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Tight
-              </button>
-              <button
-                type="button"
-                disabled={!displayUrl}
-                onClick={() => applyPreset(0.85)}
-                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Standard
-              </button>
-              <button
-                type="button"
-                disabled={!displayUrl}
-                onClick={() => applyPreset(0.95)}
-                className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Loose
-              </button>
-            </div>
-            {faceHint ? (
-              <span className="text-sm text-amber-800">{faceHint}</span>
-            ) : null}
-          </div>
-
           {displayUrl ? (
-            <div
-              className={clsx("mt-4 flex flex-col gap-4 xl:flex-row", styles.wrap)}
-            >
-              <div className="min-w-0 flex flex-1 flex-col gap-3 lg:flex-row">
-                <div className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-slate-100/80 max-h-[min(62vh,580px)]">
-                  <ReactCrop
-                    crop={crop}
-                    onChange={(_, percentCrop) => setCrop(percentCrop)}
-                    aspect={1}
-                    className="inline-block max-w-none"
-                    renderSelectionAddon={
-                      showGuides ? () => <PassportGuidesOverlay /> : undefined
-                    }
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(280px,2fr)]">
+              <div className="flex min-h-0 min-w-0 flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!displayUrl || faceBusy}
+                    onClick={() => void runFaceCenter()}
+                    className="rounded-md border border-[#1e3a5f] bg-[#f8fafc] px-3 py-1.5 text-xs font-semibold text-[#1e3a5f] disabled:opacity-50"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      ref={displayImgRef}
-                      src={displayUrl}
-                      alt="Crop preview"
-                      style={{
-                        width: displayW ? `${displayW}px` : undefined,
-                        height: "auto",
-                        maxWidth: "none",
-                        filter: imgFilter,
-                        display: "block",
-                      }}
-                      onLoad={onDisplayImageLoad}
+                    {faceBusy ? "Detecting face…" : "Auto-center face"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!displayUrl}
+                    onClick={() => setShowGuides((g) => !g)}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 disabled:opacity-50"
+                  >
+                    {showGuides ? "Hide guides" : "Show guides"}
+                  </button>
+                  {faceHint ? (
+                    <span className="text-xs text-amber-800">{faceHint}</span>
+                  ) : null}
+                </div>
+                <div
+                  ref={canvasScrollRef}
+                  className={clsx(
+                    styles.canvasFrame,
+                    "max-h-[min(58vh,560px)] min-h-[220px] overflow-auto rounded-lg"
+                  )}
+                >
+                  <div className={clsx("inline-block p-1", styles.photoCropWrap)}>
+                    <ReactCrop
+                      crop={crop}
+                      onChange={(_, percentCrop) => setCrop(percentCrop)}
+                      aspect={1}
+                      className="inline-block max-w-none"
+                      renderSelectionAddon={
+                        showGuides ? () => <PassportGuidesOverlay /> : undefined
+                      }
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        ref={displayImgRef}
+                        src={displayUrl}
+                        alt="Crop preview"
+                        style={{
+                          width: displayW ? `${displayW}px` : undefined,
+                          height: "auto",
+                          maxWidth: "none",
+                          filter: imgFilter,
+                          display: "block",
+                        }}
+                        onLoad={onDisplayImageLoad}
+                      />
+                    </ReactCrop>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-4">
+                <div className="flex flex-wrap items-start gap-4">
+                  <div>
+                    <p className="mb-1 text-[10px] font-medium text-[#64748b]">
+                      Original
+                    </p>
+                    <div className="h-16 w-16 overflow-hidden rounded bg-slate-100">
+                      {previewOriginalUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={previewOriginalUrl}
+                          alt=""
+                          width={64}
+                          height={64}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                          …
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="mb-1 text-[10px] font-medium text-[#64748b]">
+                      Result
+                    </p>
+                    <div className="h-[200px] w-[200px] overflow-hidden rounded-lg bg-slate-100">
+                      {previewResultUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={previewResultUrl}
+                          alt="Export preview"
+                          width={200}
+                          height={200}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-slate-400">
+                          …
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[#64748b]">
+                      {exportEdgePx} × {exportEdgePx} px · ~{finalKb} KB
+                      {compressError ? (
+                        <span className="ml-1 text-red-600">({compressError})</span>
+                      ) : null}
+                    </p>
+                    <p
+                      className={clsx(
+                        "mt-1 text-xs font-medium",
+                        meetsPortalExport ? "text-green-700" : "text-red-700"
+                      )}
+                    >
+                      {meetsPortalExport
+                        ? photoSpecs
+                          ? "✅ Meets passport renewal photo checks"
+                          : "✅ Meets OCI requirements"
+                        : "❌ Adjust crop or brightness"}
+                    </p>
+                    {photoSpecs ? (
+                      <>
+                        <p className="mt-2 text-[11px] leading-snug text-slate-600">
+                          {photoSpecs.faceCoverageNote}
+                        </p>
+                        <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
+                          <li>
+                            {pc?.square ? "✅" : "❌"} Square 1:1 (±
+                            {photoSpecs.squareTolerancePx}px)
+                          </li>
+                          <li>
+                            {pc?.minDim ? "✅" : "❌"} Min{" "}
+                            {photoSpecs.minWidth}×{photoSpecs.minHeight}px
+                          </li>
+                          <li>
+                            {pc?.maxDim ? "✅" : "❌"} Max{" "}
+                            {photoSpecs.maxWidth}×{photoSpecs.maxHeight}px
+                          </li>
+                          <li>
+                            {pc?.byteRangeOk ? "✅" : "❌"} File size{" "}
+                            {photoSpecs.minSizeKB}–{photoSpecs.maxSizeKB}KB
+                            {compressError ? (
+                              <span className="ml-1 text-red-600">
+                                ({compressError})
+                              </span>
+                            ) : null}
+                          </li>
+                          <li>{pc?.jpeg ? "✅" : "❌"} JPEG</li>
+                          <li className="flex items-start gap-2 pt-1">
+                            <input
+                              id="passport-white-bg"
+                              type="checkbox"
+                              checked={whiteBackgroundConfirmed}
+                              onChange={(e) =>
+                                setWhiteBackgroundConfirmed(e.target.checked)
+                              }
+                              className="mt-0.5"
+                            />
+                            <label
+                              htmlFor="passport-white-bg"
+                              className="cursor-pointer font-medium"
+                            >
+                              {whiteBackgroundConfirmed ? "✅" : "⬜"}{" "}
+                              {photoSpecs.backgroundNote} (confirm manually)
+                            </label>
+                          </li>
+                        </ul>
+                      </>
+                    ) : (
+                      <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
+                        <li>
+                          {c?.square ? "✅" : "❌"} Square 1:1 (±
+                          {OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX}px)
+                        </li>
+                        <li>
+                          {c?.minDim ? "✅" : "❌"} Min{" "}
+                          {OCI_APPLICANT_PHOTO_MIN_PX}×{OCI_APPLICANT_PHOTO_MIN_PX}px
+                        </li>
+                        <li>
+                          {c?.maxDim ? "✅" : "❌"} Max{" "}
+                          {OCI_APPLICANT_PHOTO_MAX_PX}×{OCI_APPLICANT_PHOTO_MAX_PX}px
+                        </li>
+                        <li>
+                          {c?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}KB
+                          {compressError ? (
+                            <span className="ml-1 text-red-600">
+                              ({compressError})
+                            </span>
+                          ) : null}
+                        </li>
+                        <li>{c?.jpeg ? "✅" : "❌"} JPEG</li>
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                <hr className="border-0 border-t border-slate-200" />
+
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Rotation
+                    </span>
+                    <input
+                      type="range"
+                      min={-45}
+                      max={45}
+                      value={rotationDeg}
+                      onChange={(e) => setRotationDeg(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Rotation"
                     />
-                  </ReactCrop>
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {rotationDeg > 0 ? "+" : ""}
+                      {rotationDeg}°
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setRotationDeg(0)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Zoom
+                    </span>
+                    <input
+                      type="range"
+                      min={50}
+                      max={200}
+                      value={zoomPct}
+                      onChange={(e) => setZoomPct(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Zoom"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {zoomPct}%
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setZoomPct(100)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Brightness
+                    </span>
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={brightness}
+                      onChange={(e) => setBrightness(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Brightness"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {brightness > 0 ? "+" : ""}
+                      {brightness}
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setBrightness(0)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Contrast
+                    </span>
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={contrast}
+                      onChange={(e) => setContrast(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Contrast"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {contrast > 0 ? "+" : ""}
+                      {contrast}
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setContrast(0)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
                 </div>
 
                 <div
-                  className="flex shrink-0 flex-col items-center gap-1 self-center"
+                  className="mx-auto flex w-max flex-col items-center gap-0.5"
                   role="group"
                   aria-label="Nudge crop"
                 >
@@ -882,216 +1244,43 @@ export function PhotoCropEditorModal({
                     ↓
                   </button>
                 </div>
-              </div>
 
-              <div className="flex w-full shrink-0 flex-col gap-3 xl:w-72">
-                <p className="text-center text-xs font-semibold text-slate-600">
-                  Previews
-                </p>
-                <div className="flex flex-wrap items-start justify-center gap-4">
-                  <div className="text-center">
-                    <p className="mb-1 text-[10px] font-medium text-slate-500">
-                      Original
-                    </p>
-                    <div className="h-20 w-20 overflow-hidden rounded border border-slate-200 bg-slate-100">
-                      {previewOriginalUrl ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={previewOriginalUrl}
-                          alt=""
-                          width={80}
-                          height={80}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-                          …
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <p className="mb-1 text-[10px] font-medium text-slate-500">
-                      Result
-                    </p>
-                    <div className="h-[250px] w-[250px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                      {previewResultUrl ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={previewResultUrl}
-                          alt="Export preview"
-                          width={250}
-                          height={250}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-slate-400">
-                          …
-                        </div>
-                      )}
-                    </div>
-                    <p className="mt-2 text-xs font-medium text-slate-700">
-                      {EXPORT_SIZE} × {EXPORT_SIZE} px
-                    </p>
-                    <p className="text-xs text-slate-600">
-                      ~{finalKb} KB
-                      {compressError ? (
-                        <span className="ml-1 text-red-600">(compress)</span>
-                      ) : null}
-                    </p>
-                    <p
-                      className={clsx(
-                        "mt-1 text-xs font-semibold",
-                        meetsOciPortalExport ? "text-green-700" : "text-red-700"
-                      )}
-                    >
-                      {meetsOciPortalExport
-                        ? "✅ Meets OCI requirements"
-                        : "❌ Adjust crop or brightness — see checklist below"}
-                    </p>
-                  </div>
+                <div className="flex flex-wrap justify-center gap-1">
+                  <button
+                    type="button"
+                    disabled={!displayUrl}
+                    onClick={() => applyPreset(0.7)}
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Tight
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!displayUrl}
+                    onClick={() => applyPreset(0.85)}
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!displayUrl}
+                    onClick={() => applyPreset(0.95)}
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Loose
+                  </button>
                 </div>
-              </div>
-            </div>
-          ) : null}
-
-          {displayUrl ? (
-            <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-sm font-medium text-slate-700">
-                  Rotation: {rotationDeg > 0 ? "+" : ""}
-                  {rotationDeg}°
-                </label>
-                <input
-                  type="range"
-                  min={-45}
-                  max={45}
-                  value={rotationDeg}
-                  onChange={(e) => setRotationDeg(Number(e.target.value))}
-                  className="w-40 max-w-full"
-                />
-                <button
-                  type="button"
-                  className="text-sm font-medium text-blue-700 hover:underline"
-                  onClick={() => setRotationDeg(0)}
-                >
-                  Reset rotation
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-sm font-medium text-slate-700">
-                  Zoom: {zoomPct}%
-                </label>
-                <input
-                  type="range"
-                  min={50}
-                  max={200}
-                  value={zoomPct}
-                  onChange={(e) => setZoomPct(Number(e.target.value))}
-                  className="w-40 max-w-full"
-                />
-                <span className="text-xs text-slate-500">
-                  Scroll the image area to pan when zoomed
-                </span>
-              </div>
-              <div className="flex flex-wrap items-end gap-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-700">
-                    Brightness: {brightness > 0 ? "+" : ""}
-                    {brightness}
-                  </label>
-                  <div className="mt-1 flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={-50}
-                      max={50}
-                      value={brightness}
-                      onChange={(e) => setBrightness(Number(e.target.value))}
-                      className="w-36"
-                    />
-                    <button
-                      type="button"
-                      className="text-xs text-blue-700 hover:underline"
-                      onClick={() => setBrightness(0)}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-slate-700">
-                    Contrast: {contrast > 0 ? "+" : ""}
-                    {contrast}
-                  </label>
-                  <div className="mt-1 flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={-50}
-                      max={50}
-                      value={contrast}
-                      onChange={(e) => setContrast(Number(e.target.value))}
-                      className="w-36"
-                    />
-                    <button
-                      type="button"
-                      className="text-xs text-blue-700 hover:underline"
-                      onClick={() => setContrast(0)}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={clsx(
-                  "rounded-lg border px-3 py-2 text-xs",
-                  meetsOciPortalExport
-                    ? "border-green-200 bg-green-50/80"
-                    : "border-amber-200 bg-amber-50/80"
-                )}
-              >
-                <p className="mb-1 font-semibold text-slate-800">
-                  OCI portal checks (export)
-                </p>
-                <ul className="space-y-0.5 text-slate-700">
-                  <li>
-                    {c?.square ? "✅" : "❌"} Square ratio (1:1, ±
-                    {OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX}px)
-                  </li>
-                  <li>
-                    {c?.minDim ? "✅" : "❌"} Min {OCI_APPLICANT_PHOTO_MIN_PX}×
-                    {OCI_APPLICANT_PHOTO_MIN_PX}px
-                  </li>
-                  <li>
-                    {c?.maxDim ? "✅" : "❌"} Max {OCI_APPLICANT_PHOTO_MAX_PX}×
-                    {OCI_APPLICANT_PHOTO_MAX_PX}px
-                  </li>
-                  <li>
-                    {c?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}KB
-                    {compressError ? (
-                      <span className="ml-1 text-red-600">({compressError})</span>
-                    ) : null}
-                  </li>
-                  <li>{c?.jpeg ? "✅" : "❌"} JPEG format</li>
-                </ul>
               </div>
             </div>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
           <button
             type="button"
             disabled={
-              !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+              !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
             }
             onClick={() => void onApplyDownload()}
             className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
@@ -1101,7 +1290,7 @@ export function PhotoCropEditorModal({
           <button
             type="button"
             disabled={
-              !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+              !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
             }
             onClick={() => void onApplySave()}
             className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"

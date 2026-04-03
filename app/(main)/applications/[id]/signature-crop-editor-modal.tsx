@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import clsx from "clsx";
@@ -136,6 +142,12 @@ function applyCanvasFilters(
   return out;
 }
 
+const SIG_THIRD = 100 / 3;
+const SIG_GRID_STROKE = "rgba(30, 58, 95, 0.62)";
+const SIG_GRID_DASH = "2.5 2.5";
+const SIG_RECT_STROKE = "rgba(30, 64, 175, 0.58)";
+const SIG_CENTER_STROKE = "rgba(51, 65, 85, 0.72)";
+
 function SignatureAreaOverlay() {
   return (
     <svg
@@ -144,32 +156,65 @@ function SignatureAreaOverlay() {
       preserveAspectRatio="none"
       aria-hidden
     >
+      <line
+        x1={SIG_THIRD}
+        y1="0"
+        x2={SIG_THIRD}
+        y2="100"
+        stroke={SIG_GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={SIG_GRID_DASH}
+      />
+      <line
+        x1={SIG_THIRD * 2}
+        y1="0"
+        x2={SIG_THIRD * 2}
+        y2="100"
+        stroke={SIG_GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={SIG_GRID_DASH}
+      />
+      <line
+        x1="0"
+        y1={SIG_THIRD}
+        x2="100"
+        y2={SIG_THIRD}
+        stroke={SIG_GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={SIG_GRID_DASH}
+      />
+      <line
+        x1="0"
+        y1={SIG_THIRD * 2}
+        x2="100"
+        y2={SIG_THIRD * 2}
+        stroke={SIG_GRID_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
+        strokeDasharray={SIG_GRID_DASH}
+      />
       <rect
         x="5"
         y="5"
         width="90"
         height="90"
         fill="none"
-        stroke="rgba(37,99,235,0.65)"
-        strokeWidth="0.7"
+        stroke={SIG_RECT_STROKE}
+        strokeWidth="0.65"
+        vectorEffect="non-scaling-stroke"
         strokeDasharray="4 3"
       />
-      <text
-        x="8"
-        y="14"
-        fill="#2563eb"
-        fontSize="5"
-        fontWeight="700"
-      >
-        Signature area (3:1)
-      </text>
       <line
         x1="50"
         y1="0"
         x2="50"
         y2="100"
-        stroke="rgba(71,85,105,0.45)"
-        strokeWidth="0.25"
+        stroke={SIG_CENTER_STROKE}
+        strokeWidth="0.3"
+        vectorEffect="non-scaling-stroke"
         strokeDasharray="2 2"
       />
     </svg>
@@ -222,9 +267,13 @@ export function SignatureCropEditorModal({
   );
   const [saveBusy, setSaveBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [showGuides, setShowGuides] = useState(true);
   const [mediaNatural, setMediaNatural] = useState<{ w: number; h: number } | null>(
     null
   );
+
+  const canvasScrollRef = useRef<HTMLDivElement | null>(null);
+  const initialScrollDoneForUrl = useRef<string | null>(null);
 
   const panDragRef = useRef<{
     pointerId: number;
@@ -264,6 +313,7 @@ export function SignatureCropEditorModal({
     setZoomPct(100);
     setBrightness(0);
     setContrast(0);
+    setShowGuides(true);
     setCrop(undefined);
     setPortalExportChecks(null);
     setFinalKb("—");
@@ -394,7 +444,7 @@ export function SignatureCropEditorModal({
       });
     }
 
-    const PREVIEW_W = 250;
+    const PREVIEW_W = 200;
     const PREVIEW_H = Math.round(PREVIEW_W / 3);
     const prev = document.createElement("canvas");
     prev.width = PREVIEW_W;
@@ -440,9 +490,43 @@ export function SignatureCropEditorModal({
     return () => clearTimeout(t);
   }, [open, displayUrl, crop, updatePreview, brightness, contrast]);
 
+  const nudgeCrop = useCallback(
+    (dx: number, dy: number) => {
+      const img = displayImgRef.current;
+      if (!img?.naturalWidth || !crop?.width) return;
+      const cw = img.clientWidth;
+      const ch = img.clientHeight;
+      if (cw < 1 || ch < 1) return;
+      const px = convertToPixelCrop(crop, cw, ch);
+      let x = px.x + dx;
+      let y = px.y + dy;
+      x = Math.max(0, Math.min(x, cw - px.width));
+      y = Math.max(0, Math.min(y, ch - px.height));
+      setCrop(convertToPercentCrop({ ...px, x, y }, cw, ch));
+    },
+    [crop]
+  );
+
+  useLayoutEffect(() => {
+    if (!displayUrl) {
+      initialScrollDoneForUrl.current = null;
+      return;
+    }
+    if (initialScrollDoneForUrl.current === displayUrl) return;
+    const el = canvasScrollRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+      el.scrollTop = Math.max(0, (el.scrollHeight - el.clientHeight) / 2);
+      initialScrollDoneForUrl.current = displayUrl;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [displayUrl]);
+
   const meetsOciPortalExport = allOciApplicantSignatureChecksPass(
     portalExportChecks
   );
+  const c = portalExportChecks;
 
   const buildFinalBlob = useCallback(async (): Promise<Blob> => {
     const filtered = buildFilteredExportCanvas();
@@ -530,6 +614,11 @@ export function SignatureCropEditorModal({
         setRotationDeg(0);
         return;
       }
+      if (e.key === "g" || e.key === "G") {
+        e.preventDefault();
+        setShowGuides((g) => !g);
+        return;
+      }
       if (e.key === "Enter") {
         e.preventDefault();
         if (meetsOciPortalExport && displayUrl && crop?.width) {
@@ -606,7 +695,7 @@ export function SignatureCropEditorModal({
   ]);
 
   const shortcutsTitle =
-    "Shortcuts: Arrow keys nudge crop (Shift+Arrow 10px). R reset rotation. Enter Apply & Download. Esc Cancel.";
+    "Shortcuts: Arrow keys nudge crop (Shift+Arrow 10px). R reset rotation. G toggle guides. Enter Apply & Download. Esc Cancel.";
 
   const imgFilter = `brightness(${100 + brightness}%) contrast(${100 + contrast}%)`;
   const zoomScale = zoomPct / 100;
@@ -621,7 +710,7 @@ export function SignatureCropEditorModal({
       aria-modal="true"
       aria-label="Edit applicant signature"
     >
-      <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+      <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-slate-900">
@@ -650,7 +739,12 @@ export function SignatureCropEditorModal({
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div
+          className={clsx(
+            "min-h-0 flex-1 overflow-y-auto p-5",
+            styles.signatureEditorShell
+          )}
+        >
           {loadError ? <p className="text-sm text-red-600">{loadError}</p> : null}
 
           {sourceObjectUrl ? (
@@ -666,388 +760,356 @@ export function SignatureCropEditorModal({
             <p className="text-sm text-slate-600">Loading image…</p>
           ) : null}
 
-          <div className={clsx("mt-2 flex flex-col gap-4 xl:flex-row", styles.wrap)}>
-            <div className="min-w-0 flex flex-1 flex-col gap-3 lg:flex-row">
-              <div
-                className="min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-slate-100/80 max-h-[min(62vh,580px)]"
-                onPointerDown={(e) => {
-                  // Pan only when zoomed in.
-                  if (zoomPct <= 100) return;
-                  const t = e.target as Element | null;
-                  // Avoid interfering with crop selection drag handles.
-                  if (
-                    t?.closest(".ReactCrop__crop-selection") ||
-                    t?.closest(".ReactCrop__handle")
-                  ) {
-                    return;
-                  }
-
-                  const el = e.currentTarget;
-                  panDragRef.current = {
-                    pointerId: e.pointerId,
-                    startX: e.clientX,
-                    startY: e.clientY,
-                    startScrollLeft: el.scrollLeft,
-                    startScrollTop: el.scrollTop,
-                  };
-                  try {
-                    el.setPointerCapture(e.pointerId);
-                  } catch {
-                    /* ignore */
-                  }
-                  e.preventDefault();
-                }}
-                onPointerMove={(e) => {
-                  const st = panDragRef.current;
-                  if (!st || st.pointerId !== e.pointerId) return;
-                  const el = e.currentTarget;
-                  const dx = e.clientX - st.startX;
-                  const dy = e.clientY - st.startY;
-                  el.scrollLeft = st.startScrollLeft - dx;
-                  el.scrollTop = st.startScrollTop - dy;
-                  e.preventDefault();
-                }}
-                onPointerUp={(e) => {
-                  const st = panDragRef.current;
-                  if (!st || st.pointerId !== e.pointerId) return;
-                  panDragRef.current = null;
-                  try {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-                onPointerCancel={(e) => {
-                  const st = panDragRef.current;
-                  if (!st || st.pointerId !== e.pointerId) return;
-                  panDragRef.current = null;
-                }}
-              >
-                <ReactCrop
-                  crop={crop}
-                  onChange={(_, percentCrop) => setCrop(percentCrop)}
-                  aspect={3}
-                  className="inline-block max-w-none"
-                  renderSelectionAddon={() => <SignatureAreaOverlay />}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    ref={displayImgRef}
-                    src={displayUrl ?? undefined}
-                    alt="Crop preview"
-                    style={{
-                      width: displayW ? `${displayW}px` : undefined,
-                      height: "auto",
-                      maxWidth: "none",
-                      filter: imgFilter,
-                      display: "block",
-                    }}
-                    onLoad={onDisplayImageLoad}
-                  />
-                </ReactCrop>
-              </div>
-
-              <div
-                className="flex shrink-0 flex-col items-center gap-1 self-center"
-                role="group"
-                aria-label="Nudge crop"
-              >
-                <button
-                  type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    setCrop((prev) => {
-                      if (!prev) return prev;
-                      const img = displayImgRef.current;
-                      if (!img?.naturalWidth) return prev;
-                      const cw = img.clientWidth;
-                      const ch = img.clientHeight;
-                      const px = convertToPixelCrop(prev, cw, ch);
-                      const y = Math.max(0, Math.min(px.y - 1, ch - px.height));
-                      return convertToPercentCrop({ ...px, x: px.x, y }, cw, ch);
-                    });
-                  }}
-                  aria-label="Nudge up"
-                >
-                  ↑
-                </button>
-                <div className="flex gap-1">
+          {displayUrl ? (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(280px,2fr)]">
+              <div className="flex min-h-0 min-w-0 flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
-                    onClick={() => {
-                      setCrop((prev) => {
-                        if (!prev) return prev;
-                        const img = displayImgRef.current;
-                        if (!img?.naturalWidth) return prev;
-                        const cw = img.clientWidth;
-                        const ch = img.clientHeight;
-                        const px = convertToPixelCrop(prev, cw, ch);
-                        const x = Math.max(0, Math.min(px.x - 1, cw - px.width));
-                        return convertToPercentCrop({ ...px, x, y: px.y }, cw, ch);
-                      });
-                    }}
-                    aria-label="Nudge left"
+                    disabled={!displayUrl}
+                    onClick={() => setShowGuides((g) => !g)}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-800 disabled:opacity-50"
                   >
-                    ←
+                    {showGuides ? "Hide guides" : "Show guides"}
                   </button>
-                  <button
-                    type="button"
-                    className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
-                    onClick={() => {
-                      setCrop((prev) => {
-                        if (!prev) return prev;
-                        const img = displayImgRef.current;
-                        if (!img?.naturalWidth) return prev;
-                        const cw = img.clientWidth;
-                        const ch = img.clientHeight;
-                        const px = convertToPixelCrop(prev, cw, ch);
-                        const x = Math.max(0, Math.min(px.x + 1, cw - px.width));
-                        return convertToPercentCrop({ ...px, x, y: px.y }, cw, ch);
-                      });
-                    }}
-                    aria-label="Nudge right"
-                  >
-                    →
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
-                  onClick={() => {
-                    setCrop((prev) => {
-                      if (!prev) return prev;
-                      const img = displayImgRef.current;
-                      if (!img?.naturalWidth) return prev;
-                      const cw = img.clientWidth;
-                      const ch = img.clientHeight;
-                      const px = convertToPixelCrop(prev, cw, ch);
-                      const y = Math.max(0, Math.min(px.y + 1, ch - px.height));
-                      return convertToPercentCrop({ ...px, x: px.x, y }, cw, ch);
-                    });
-                  }}
-                  aria-label="Nudge down"
-                >
-                  ↓
-                </button>
-              </div>
-            </div>
-
-            <div className="flex w-full shrink-0 flex-col gap-3 xl:w-72">
-              <p className="text-center text-xs font-semibold text-slate-600">
-                Previews
-              </p>
-              <div className="flex flex-wrap items-start justify-center gap-4">
-                <div className="text-center">
-                  <p className="mb-1 text-[10px] font-medium text-slate-500">
-                    Original
-                  </p>
-                  <div className="h-20 w-20 overflow-hidden rounded border border-slate-200 bg-slate-100">
-                    {previewOriginalUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={previewOriginalUrl}
-                        alt=""
-                        width={80}
-                        height={80}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
-                        …
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <p className="mb-1 text-[10px] font-medium text-slate-500">
-                    Result
-                  </p>
-                  <div className="h-[84px] w-[250px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
-                    {previewResultUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={previewResultUrl}
-                        alt="Export preview"
-                        width={250}
-                        height={84}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-slate-400">
-                        …
-                      </div>
-                    )}
-                  </div>
-                  <p className="mt-2 text-xs font-medium text-slate-700">
-                    {EXPORT_W} × {EXPORT_H} px
-                  </p>
-                  <p className="text-xs text-slate-600">
-                    ~{finalKb} KB
-                    {compressError ? (
-                      <span className="ml-1 text-red-600">(compress)</span>
-                    ) : null}
-                  </p>
-                  <p
-                    className={clsx(
-                      "mt-1 text-xs font-semibold",
-                      meetsOciPortalExport ? "text-green-700" : "text-red-700"
-                    )}
-                  >
-                    {meetsOciPortalExport
-                      ? "✅ Meets OCI requirements"
-                      : "❌ Adjust crop/filters — see checklist below"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="text-sm font-medium text-slate-700">
-                Rotation: {rotationDeg > 0 ? "+" : ""}
-                {rotationDeg}°
-              </label>
-              <input
-                type="range"
-                min={-15}
-                max={15}
-                value={rotationDeg}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  rotationDegRef.current = v;
-                  setRotationDeg(v);
-                }}
-                className="w-40 max-w-full"
-              />
-              <button
-                type="button"
-                className="text-sm font-medium text-blue-700 hover:underline"
-                onClick={() => {
-                  rotationDegRef.current = 0;
-                  setRotationDeg(0);
-                }}
-              >
-                Reset rotation
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="text-sm font-medium text-slate-700">
-                Zoom: {zoomPct}%
-              </label>
-              <input
-                type="range"
-                min={50}
-                max={200}
-                value={zoomPct}
-                onChange={(e) => setZoomPct(Number(e.target.value))}
-                className="w-40 max-w-full"
-              />
-              <span className="text-xs text-slate-500">
-                Pan by dragging the image area (when zoomed).
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-end gap-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700">
-                  Brightness: {brightness > 0 ? "+" : ""}
-                  {brightness}
-                </label>
-                <div className="mt-1 flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={-50}
-                    max={50}
-                    value={brightness}
-                    onChange={(e) => setBrightness(Number(e.target.value))}
-                    className="w-36"
-                  />
-                  <button
-                    type="button"
-                    className="text-xs text-blue-700 hover:underline"
-                    onClick={() => setBrightness(0)}
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-slate-700">
-                  Contrast: {contrast > 0 ? "+" : ""}
-                  {contrast}
-                </label>
-                <div className="mt-1 flex items-center gap-2">
-                  <input
-                    type="range"
-                    min={-50}
-                    max={50}
-                    value={contrast}
-                    onChange={(e) => setContrast(Number(e.target.value))}
-                    className="w-36"
-                  />
-                  <button
-                    type="button"
-                    className="text-xs text-blue-700 hover:underline"
-                    onClick={() => setContrast(0)}
-                  >
-                    Reset
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div
-              className={clsx(
-                "rounded-lg border px-3 py-2 text-xs",
-                meetsOciPortalExport
-                  ? "border-green-200 bg-green-50/80"
-                  : "border-amber-200 bg-amber-50/80"
-              )}
-            >
-              <p className="mb-1 font-semibold text-slate-800">
-                OCI portal checks (export)
-              </p>
-              <ul className="space-y-0.5 text-slate-700">
-                <li>
-                  {portalExportChecks?.ratio ? "✅" : "❌"} 3:1 ratio
-                </li>
-                <li>
-                  {portalExportChecks?.minDim ? "✅" : "❌"} Min{" "}
-                  {OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX}×
-                  {OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX}
-                </li>
-                <li>
-                  {portalExportChecks?.maxDim ? "✅" : "❌"} Max{" "}
-                  {OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX}×
-                  {OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX}
-                </li>
-                <li>
-                  {portalExportChecks?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}KB
-                  {compressError ? (
-                    <span className="ml-1 text-red-600">(compress)</span>
+                  {zoomPct > 100 ? (
+                    <span className="text-[11px] text-slate-500">
+                      Drag the image area to pan when zoomed.
+                    </span>
                   ) : null}
-                </li>
-                <li>
-                  {portalExportChecks?.jpeg ? "✅" : "❌"} JPEG format
-                </li>
-              </ul>
+                </div>
+                <div
+                  ref={canvasScrollRef}
+                  className={clsx(
+                    styles.canvasFrame,
+                    "max-h-[min(58vh,560px)] min-h-[220px] overflow-auto rounded-lg"
+                  )}
+                  onPointerDown={(e) => {
+                    if (zoomPct <= 100) return;
+                    const t = e.target as Element | null;
+                    if (
+                      t?.closest(".ReactCrop__crop-selection") ||
+                      t?.closest(".ReactCrop__handle")
+                    ) {
+                      return;
+                    }
+
+                    const el = e.currentTarget;
+                    panDragRef.current = {
+                      pointerId: e.pointerId,
+                      startX: e.clientX,
+                      startY: e.clientY,
+                      startScrollLeft: el.scrollLeft,
+                      startScrollTop: el.scrollTop,
+                    };
+                    try {
+                      el.setPointerCapture(e.pointerId);
+                    } catch {
+                      /* ignore */
+                    }
+                    e.preventDefault();
+                  }}
+                  onPointerMove={(e) => {
+                    const st = panDragRef.current;
+                    if (!st || st.pointerId !== e.pointerId) return;
+                    const el = e.currentTarget;
+                    const dx = e.clientX - st.startX;
+                    const dy = e.clientY - st.startY;
+                    el.scrollLeft = st.startScrollLeft - dx;
+                    el.scrollTop = st.startScrollTop - dy;
+                    e.preventDefault();
+                  }}
+                  onPointerUp={(e) => {
+                    const st = panDragRef.current;
+                    if (!st || st.pointerId !== e.pointerId) return;
+                    panDragRef.current = null;
+                    try {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  onPointerCancel={() => {
+                    panDragRef.current = null;
+                  }}
+                >
+                  <div
+                    className={clsx("inline-block p-1", styles.signatureCropWrap)}
+                  >
+                    <ReactCrop
+                      crop={crop}
+                      onChange={(_, percentCrop) => setCrop(percentCrop)}
+                      aspect={3}
+                      className="inline-block max-w-none"
+                      renderSelectionAddon={
+                        showGuides
+                          ? () => <SignatureAreaOverlay />
+                          : undefined
+                      }
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        ref={displayImgRef}
+                        src={displayUrl}
+                        alt="Crop preview"
+                        style={{
+                          width: displayW ? `${displayW}px` : undefined,
+                          height: "auto",
+                          maxWidth: "none",
+                          filter: imgFilter,
+                          display: "block",
+                        }}
+                        onLoad={onDisplayImageLoad}
+                      />
+                    </ReactCrop>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-4">
+                <div className="flex flex-wrap items-start gap-4">
+                  <div>
+                    <p className="mb-1 text-[10px] font-medium text-[#64748b]">
+                      Original
+                    </p>
+                    <div className="h-16 w-16 overflow-hidden rounded bg-slate-100">
+                      {previewOriginalUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={previewOriginalUrl}
+                          alt=""
+                          width={64}
+                          height={64}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-slate-400">
+                          …
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="mb-1 text-[10px] font-medium text-[#64748b]">
+                      Result
+                    </p>
+                    <div className="h-[67px] w-[200px] overflow-hidden rounded-lg bg-slate-100">
+                      {previewResultUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={previewResultUrl}
+                          alt="Export preview"
+                          width={200}
+                          height={67}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-xs text-slate-400">
+                          …
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[#64748b]">
+                      {EXPORT_W} × {EXPORT_H} px · ~{finalKb} KB
+                      {compressError ? (
+                        <span className="ml-1 text-red-600">
+                          ({compressError})
+                        </span>
+                      ) : null}
+                    </p>
+                    <p
+                      className={clsx(
+                        "mt-1 text-xs font-medium",
+                        meetsOciPortalExport ? "text-green-700" : "text-red-700"
+                      )}
+                    >
+                      {meetsOciPortalExport
+                        ? "✅ Meets OCI requirements"
+                        : "❌ Adjust crop or brightness"}
+                    </p>
+                    <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
+                      <li>{c?.ratio ? "✅" : "❌"} 3:1 ratio</li>
+                      <li>
+                        {c?.minDim ? "✅" : "❌"} Min{" "}
+                        {OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX}×
+                        {OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX}
+                      </li>
+                      <li>
+                        {c?.maxDim ? "✅" : "❌"} Max{" "}
+                        {OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX}×
+                        {OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX}
+                      </li>
+                      <li>
+                        {c?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}
+                        KB
+                        {compressError ? (
+                          <span className="ml-1 text-red-600">
+                            ({compressError})
+                          </span>
+                        ) : null}
+                      </li>
+                      <li>{c?.jpeg ? "✅" : "❌"} JPEG</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <hr className="border-0 border-t border-slate-200" />
+
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Rotation
+                    </span>
+                    <input
+                      type="range"
+                      min={-15}
+                      max={15}
+                      value={rotationDeg}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        rotationDegRef.current = v;
+                        setRotationDeg(v);
+                      }}
+                      className="min-w-0 flex-1"
+                      aria-label="Rotation"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {rotationDeg > 0 ? "+" : ""}
+                      {rotationDeg}°
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => {
+                          rotationDegRef.current = 0;
+                          setRotationDeg(0);
+                        }}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Zoom
+                    </span>
+                    <input
+                      type="range"
+                      min={50}
+                      max={200}
+                      value={zoomPct}
+                      onChange={(e) => setZoomPct(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Zoom"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {zoomPct}%
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setZoomPct(100)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Brightness
+                    </span>
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={brightness}
+                      onChange={(e) => setBrightness(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Brightness"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {brightness > 0 ? "+" : ""}
+                      {brightness}
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setBrightness(0)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[13px] text-[#444]">
+                      Contrast
+                    </span>
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={contrast}
+                      onChange={(e) => setContrast(Number(e.target.value))}
+                      className="min-w-0 flex-1"
+                      aria-label="Contrast"
+                    />
+                    <span className="flex w-[100px] shrink-0 items-center justify-end gap-2 text-[13px] text-[#444] tabular-nums">
+                      {contrast > 0 ? "+" : ""}
+                      {contrast}
+                      <button
+                        type="button"
+                        className="text-xs font-medium text-[#2563eb] hover:underline"
+                        onClick={() => setContrast(0)}
+                      >
+                        Reset
+                      </button>
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  className="mx-auto flex w-max flex-col items-center gap-0.5"
+                  role="group"
+                  aria-label="Nudge crop"
+                >
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                    onClick={() => nudgeCrop(0, -5)}
+                    aria-label="Nudge up"
+                  >
+                    ↑
+                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                      onClick={() => nudgeCrop(-5, 0)}
+                      aria-label="Nudge left"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                      onClick={() => nudgeCrop(5, 0)}
+                      aria-label="Nudge right"
+                    >
+                      →
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded border border-slate-300 bg-white text-sm hover:bg-slate-50"
+                    onClick={() => nudgeCrop(0, 5)}
+                    aria-label="Nudge down"
+                  >
+                    ↓
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
-          <button
-            type="button"
-            onClick={handleClose}
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-
+        <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
           <button
             type="button"
             disabled={

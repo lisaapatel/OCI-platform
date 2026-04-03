@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { originalUploadDriveName } from "@/lib/drive-file-naming";
+import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { deleteFile, setFilePublicReadable } from "@/lib/google-drive";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
         file_name: canonicalFileName,
         drive_file_id,
         drive_view_url,
-        extraction_status: "pending",
+        extraction_status: shouldSkipAiExtraction(doc_type) ? "done" : "pending",
       })
       .select("*")
       .single();
