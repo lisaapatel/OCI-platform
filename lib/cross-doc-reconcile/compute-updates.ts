@@ -5,6 +5,7 @@ import {
 } from "@/lib/cross-doc-reconcile/constants";
 import { normalizeFieldValue } from "@/lib/cross-doc-reconcile/normalize";
 import {
+  PASSPORT_NUMBER_FIELD_KEYS,
   RECON_ATOMIC_RULES,
   isAddressProofApplicantNameRow,
   synonymSetForAtomicRule,
@@ -113,6 +114,7 @@ function gatherAtomicByDoc(
 
   for (const r of filterRows(rows)) {
     const fn = normalizeStoredFieldKey(r.field_name);
+    if (PASSPORT_NUMBER_FIELD_KEYS.has(fn)) continue;
     if (!synonymKeys.has(fn)) continue;
     if (looksLikeDocumentSpecificIdentifier(fn)) continue;
     if (!allowedTypes.has(r.source_doc_type)) {

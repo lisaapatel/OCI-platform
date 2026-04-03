@@ -18,16 +18,36 @@ export type ReconLogicalKeyAtomic =
 
 export type ReconLogicalKey = ReconLogicalKeyAtomic;
 
+/** Never feed these keys into atomic reconciliation buckets (document identifiers). */
+export const PASSPORT_NUMBER_FIELD_KEYS = new Set(
+  ["passport_number", "passport_no", "passport_num", "document_number"].map(
+    (k) => normalizeStoredFieldKey(k),
+  ),
+);
+
 /** Identity / demographic fields that may legitimately appear on multiple uploaded documents. */
 export const RECON_ATOMIC_RULES: readonly ReconAtomicRule[] = [
   {
     seed: "date_of_birth",
     synonyms: ["date_of_birth", "dob", "birth_date"],
-    allowedDocTypes: ["current_passport", "birth_certificate"],
+    allowedDocTypes: [
+      "current_passport",
+      "old_passport",
+      "former_indian_passport",
+      "birth_certificate",
+    ],
   },
   {
     seed: "place_of_birth",
-    synonyms: ["place_of_birth", "birth_place", "pob"],
+    synonyms: [
+      "place_of_birth",
+      "birth_place",
+      "birthplace",
+      "city_of_birth",
+      "town_of_birth",
+      "pob",
+      "place_of_birth_city",
+    ],
     allowedDocTypes: ["current_passport", "birth_certificate"],
   },
   {

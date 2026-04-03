@@ -14,6 +14,8 @@ export type FormFillFieldDef = {
   tag?: string;
   /** Shown for team reference only — not written to portal as this field. */
   displayOnly?: boolean;
+  /** Grey info line in form fill (no input/copy), not a portal field row. */
+  referenceOnly?: boolean;
 };
 
 export type FormFillSectionBlock = {
@@ -32,9 +34,17 @@ export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
   ["first_name", "given_name", "forename", "given_names"],
   ["middle_name", "middle_names", "middle"],
   ["last_name", "surname", "family_name"],
-  ["full_name", "complete_name", "name_in_full", "applicant_full_name"],
+  ["full_name", "complete_name", "name_in_full", "applicant_full_name", "name", "applicant_name"],
   ["date_of_birth", "dob", "birth_date"],
-  ["place_of_birth", "birth_place", "pob"],
+  [
+    "place_of_birth",
+    "birth_place",
+    "birthplace",
+    "city_of_birth",
+    "town_of_birth",
+    "pob",
+    "place_of_birth_city",
+  ],
   ["country_of_birth", "birth_country", "place_of_birth_country", "country_birth"],
   ["gender", "sex"],
   ["marital_status", "marital"],
@@ -165,6 +175,61 @@ export function getValueByKeysAndSources(
 }
 
 /**
+ * Full name from current passport only: prefer full_name / name / applicant_name rows,
+ * else concatenate first + middle + last from the same document type.
+ */
+export function resolvePassportFullName(fields: ExtractedField[]): {
+  value: string;
+  row?: ExtractedField;
+  flagRows: ExtractedField[];
+} {
+  const pp = DOC_TYPE_CURRENT_PASSPORT;
+  const passportRows = fields.filter((f) => f.source_doc_type === pp);
+
+  const exactOrder = ["full_name", "name", "applicant_name"] as const;
+  for (const key of exactOrder) {
+    const want = normalizeStoredFieldKey(key);
+    for (const r of passportRows) {
+      if (normalizeStoredFieldKey(r.field_name) !== want) continue;
+      const v = String(r.field_value ?? "").trim();
+      if (v) return { value: v, row: r, flagRows: [r] };
+    }
+  }
+
+  const first = findRowByKeysAndSources(
+    fields,
+    ["first_name", "given_name", "forename", "given_names"],
+    [pp],
+  );
+  const middle = findRowByKeysAndSources(
+    fields,
+    ["middle_name", "middle_names", "middle"],
+    [pp],
+  );
+  const last = findRowByKeysAndSources(
+    fields,
+    ["last_name", "surname", "family_name"],
+    [pp],
+  );
+  const parts = [
+    first?.field_value?.trim(),
+    middle?.field_value?.trim(),
+    last?.field_value?.trim(),
+  ].filter(Boolean) as string[];
+  const contributors = [first, middle, last].filter(
+    (r): r is ExtractedField => Boolean(r && String(r.field_value ?? "").trim()),
+  );
+  if (parts.length === 0) {
+    return { value: "", row: undefined, flagRows: [] };
+  }
+  return {
+    value: parts.join(" "),
+    row: contributors[0],
+    flagRows: contributors,
+  };
+}
+
+/**
  * Map so form-fill can resolve `address_line_1` rows when defs ask for `address_line1`, etc.
  * If two rows compete for the same alias, prefer the one with a non-empty value.
  */
@@ -266,7 +331,7 @@ export function buildExtractedFieldLookupMap(
 /** Appended to Claude extraction prompts so JSON keys match portal / form-fill. */
 export const CLAUDE_EXTRACTION_KEY_INSTRUCTIONS = `
 Use snake_case keys only. Prefer these exact names when the value exists (use null only when truly absent on the document):
-- Personal: first_name, middle_name, last_name, full_name, date_of_birth, place_of_birth, country_of_birth, gender, marital_status, religion, visible_identification_mark, educational_qualification, present_occupation, current_nationality
+- Personal: first_name, middle_name, last_name, full_name, date_of_birth, place_of_birth, country_of_birth, gender, marital_status, visible_identification_mark, educational_qualification, present_occupation, current_nationality
 - Current foreign passport: passport_number, passport_issue_date, passport_expiry_date, passport_issue_place, passport_issue_country (or place_of_issue / country_of_issue)
 - Former Indian passport (if this document is a former Indian passport): former_indian_passport_number, former_indian_passport_issue_date, former_indian_passport_issue_place
 - Address proof (utility bill, lease, etc.): ONLY address/contact fields — address_line_1, address_line_2, city, state_province, postal_code, country, phone, email. Do NOT output applicant name keys (first_name, last_name, full_name, name, applicant_name, etc.) from address proof; those belong on passport/birth certificate only.
@@ -279,6 +344,7 @@ When you see one long address line, split into address_line_1, city, state_provi
 
 export const CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA = `
 Passport biodata: extract country_of_birth (country name as printed) whenever it appears—labeled "Country of birth", in MRZ-adjacent fields, or clearly part of place-of-birth (city + country). Use null only if no country is shown for birth.
+Also use these exact keys whenever the values appear on the passport biodata page: first_name, middle_name, last_name, full_name, date_of_birth, place_of_birth (do not substitute other key names for those concepts).
 `.trim();
 
 export const SRC_CURRENT_PASSPORT = ["current_passport"] as const;
@@ -335,12 +401,12 @@ export const LOCKED_SOURCE_FIELDS: Record<string, string> = {
   passport_issue_country: DOC_TYPE_CURRENT_PASSPORT,
   nationality: DOC_TYPE_CURRENT_PASSPORT,
   current_nationality: DOC_TYPE_CURRENT_PASSPORT,
+  place_of_birth: DOC_TYPE_CURRENT_PASSPORT,
 };
 
 /** Prefer first source; fall through if empty. */
 export const SOURCE_PRIORITY_FIELDS: Record<string, readonly string[]> = {
   date_of_birth: [DOC_TYPE_CURRENT_PASSPORT, "birth_certificate"],
-  place_of_birth: [DOC_TYPE_CURRENT_PASSPORT, "birth_certificate"],
   gender: [DOC_TYPE_CURRENT_PASSPORT, "birth_certificate"],
 };
 
@@ -357,6 +423,7 @@ export function canonicalSynonymKey(fieldName: string): string {
 function mapPolicyDocType(dt: string): string {
   const t = dt.trim();
   if (t === "passport_current") return DOC_TYPE_CURRENT_PASSPORT;
+  if (t === "passport_old") return "old_passport";
   return t;
 }
 
@@ -377,6 +444,10 @@ export function resolveFormFillSourceOrder(
   }
   if (ctx.blockId === "present_address" && !ctx.applicantIsMinor) {
     return ["address_proof", DOC_TYPE_CURRENT_PASSPORT];
+  }
+
+  if (ctx.blockId === "permanent_address") {
+    return ["address_proof"];
   }
 
   const canon = canonicalSynonymKey(def.keys[0] ?? "");
@@ -452,10 +523,11 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       f("Date of birth", ["date_of_birth", "dob", "birth_date"], [...SRC_PASSPORT_THEN_BIRTH], {
         tag: "Passport first, then birth certificate",
       }),
-      f("Place of birth", ["place_of_birth", "birth_place", "pob"], [...SRC_PASSPORT_THEN_BIRTH]),
+      f("Place of birth", ["place_of_birth", "birth_place", "pob"], [...SRC_CURRENT_PASSPORT], {
+        tag: "Current passport only",
+      }),
       f("Gender", ["gender", "sex"], [...SRC_PASSPORT_THEN_BIRTH]),
       f("Marital status", ["marital_status", "marital"], [...SRC_PASSPORT_THEN_BIRTH]),
-      f("Religion", ["religion"], [...SRC_PASSPORT_THEN_BIRTH]),
       f(
         "Visible identification mark",
         ["visible_identification_mark", "visible_mark"],
@@ -511,7 +583,12 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
     fields: [
       f(
         "Former Indian passport number",
-        ["former_indian_passport_number", "former_passport_number"],
+        [
+          "former_indian_passport_number",
+          "former_passport_number",
+          "passport_number",
+          "passport_no",
+        ],
         [...SRC_FORMER_INDIAN],
         { optional: true, tag: "If applicable" }
       ),
@@ -555,19 +632,19 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       f(
         "Address line 1",
         ["permanent_address_line_1", "permanent_address_line1", "address_line_1"],
-        ["birth_certificate", "address_proof", "current_passport"]
+        ["address_proof"]
       ),
       f(
         "Address line 2",
         ["permanent_address_line_2", "permanent_address_line2", "address_line_2"],
-        ["birth_certificate", "address_proof", "current_passport"]
+        ["address_proof"]
       ),
-      f("City", ["permanent_city", "city"], ["birth_certificate", "address_proof", "current_passport"]),
-      f("State / Province", ["permanent_state", "state_province", "state"], ["birth_certificate", "address_proof", "current_passport"]),
-      f("Country", ["permanent_country", "country"], ["birth_certificate", "address_proof", "current_passport"]),
-      f("Postal code", ["permanent_postal_code", "postal_code", "pin_code"], ["birth_certificate", "address_proof", "current_passport"]),
-      f("Phone", ["phone", "mobile"], ["birth_certificate", "address_proof", "current_passport"]),
-      f("Email", ["email"], ["birth_certificate", "address_proof", "current_passport"]),
+      f("City", ["permanent_city", "city"], ["address_proof"]),
+      f("State / Province", ["permanent_state", "state_province", "state"], ["address_proof"]),
+      f("Country", ["permanent_country", "country"], ["address_proof"]),
+      f("Postal code", ["permanent_postal_code", "postal_code", "pin_code"], ["address_proof"]),
+      f("Phone", ["phone", "mobile"], ["address_proof"]),
+      f("Email", ["email"], ["address_proof"]),
     ],
   },
   {
@@ -582,7 +659,7 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
         "Father — document type (reference)",
         ["father_document_type"],
         [...SRC_FATHER_NAME],
-        { displayOnly: true }
+        { referenceOnly: true }
       ),
       f(
         "Father's Indian passport number",
@@ -602,7 +679,7 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
         "Mother — document type (reference)",
         ["mother_document_type"],
         [...SRC_MOTHER_NAME],
-        { displayOnly: true }
+        { referenceOnly: true }
       ),
       f(
         "Mother's Indian passport number",
@@ -625,9 +702,9 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
   },
 ];
 
-/** Flat list of persistable fields (excludes displayOnly) — used by tests / progress heuristics. */
+/** Flat list of persistable fields (excludes displayOnly / referenceOnly) — used by tests / progress heuristics. */
 export const FORM_FILL_ALL_FIELDS: FormFillFieldDef[] = OCI_FORM_FILL_BLOCKS.flatMap(
-  (b) => b.fields.filter((fd) => !fd.displayOnly)
+  (b) => b.fields.filter((fd) => !fd.displayOnly && !fd.referenceOnly)
 );
 
 /** Legacy export: single list shape for older callers. */

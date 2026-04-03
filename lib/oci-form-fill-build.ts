@@ -1,11 +1,13 @@
 import type { Dispatch, SetStateAction } from "react";
 
 import {
+  canonicalSynonymKey,
   findRowByKeysAndSources,
   formFillSourceTagForRow,
   getValueByKeysAndSources,
   OCI_FORM_FILL_BLOCKS,
   resolveFormFillSourceOrder,
+  resolvePassportFullName,
   type FormFillFieldDef,
   type FormFillSourceTag,
 } from "@/lib/form-fill-sections";
@@ -14,6 +16,9 @@ import type { ExtractedField } from "@/lib/types";
 
 export type GovtFillRowConfig = {
   stableId: string;
+  /** Grey one-line note row (no portal field). */
+  rowKind?: "field" | "reference_note";
+  referenceText?: string;
   govtLabel: string;
   copyText: string;
   showNoAutoDataHint: boolean;
@@ -98,7 +103,7 @@ export function buildOciFormFillPlan(args: {
     stableId: string,
     def: FormFillFieldDef
   ): GovtFillRowConfig | null => {
-    if (def.displayOnly) return null;
+    if (def.displayOnly || def.referenceOnly) return null;
     if (!married && def.keys.some((k) => k.startsWith("spouse_"))) {
       return null;
     }
@@ -129,14 +134,32 @@ export function buildOciFormFillPlan(args: {
 
     const fillCtx = { blockId, applicantIsMinor };
     const src = resolveFormFillSourceOrder(def, fillCtx);
-    const row =
-      src.length > 0
-        ? findRowByKeysAndSources(fields, def.keys, src)
-        : undefined;
-    let raw =
-      src.length > 0
-        ? getValueByKeysAndSources(fields, def.keys, src)
-        : "";
+
+    const isFullNamePersonal =
+      blockId === "personal" &&
+      (def.label === "Full name" ||
+        canonicalSynonymKey(def.keys[0] ?? "") === "full_name");
+
+    let row: ExtractedField | undefined;
+    let raw: string;
+    let flagSourceRows: ExtractedField[] = [];
+
+    if (isFullNamePersonal) {
+      const resolved = resolvePassportFullName(fields);
+      raw = resolved.value;
+      row = resolved.row;
+      flagSourceRows = resolved.flagRows;
+    } else {
+      row =
+        src.length > 0
+          ? findRowByKeysAndSources(fields, def.keys, src)
+          : undefined;
+      raw =
+        src.length > 0
+          ? getValueByKeysAndSources(fields, def.keys, src)
+          : "";
+      flagSourceRows = row ? [row] : [];
+    }
 
     if (blockId === "present_address" && def.label === "Phone") {
       if (!raw.trim()) raw = localPhone;
@@ -174,6 +197,8 @@ export function buildOciFormFillPlan(args: {
 
     const sourceTag = formFillSourceTagForRow(row, fillCtx);
 
+    const flagMeta = collectFlagMeta(flagSourceRows);
+
     const isPresentPhoneOrEmail =
       blockId === "present_address" &&
       (def.label === "Phone" || def.label === "Email");
@@ -200,7 +225,7 @@ export function buildOciFormFillPlan(args: {
       govtLabel: minorPresentPrefix + labelBase,
       copyText: shown,
       showNoAutoDataHint: !raw.trim() && !inputVal.trim(),
-      flagMeta: collectFlagMeta(row ? [row] : []),
+      flagMeta,
       mode: "input",
       inputValue: inputVal,
       onInputChange: onIn,
@@ -217,7 +242,7 @@ export function buildOciFormFillPlan(args: {
       const rows: GovtFillRowConfig[] = [];
       let fi = 0;
       for (const def of block.fields) {
-        if (def.displayOnly) continue;
+        if (def.displayOnly || def.referenceOnly) continue;
         const r = rowFromDef(block.id, `${block.id}-${fi++}`, def);
         if (r) rows.push(r);
       }
@@ -279,45 +304,39 @@ export function buildOciFormFillPlan(args: {
 
     const rows: GovtFillRowConfig[] = [];
     let idx = 0;
+    const fillCtxFamily = { blockId: block.id, applicantIsMinor };
     for (const def of block.fields) {
       if (def.displayOnly) continue;
+      if (def.referenceOnly && block.id === "family") {
+        const src = resolveFormFillSourceOrder(def, fillCtxFamily);
+        const extracted =
+          src.length > 0
+            ? getValueByKeysAndSources(fields, def.keys, src).trim()
+            : "";
+        const isFather = def.keys.some((k) =>
+          k.toLowerCase().includes("father"),
+        );
+        const label = isFather ? "Father" : "Mother";
+        const text = extracted
+          ? `ℹ ${label}'s doc: ${extracted}`
+          : `ℹ ${label}'s doc: ${parentDocTypeLabel}`;
+        rows.push({
+          stableId: isFather ? "family-father-doc-ref" : "family-mother-doc-ref",
+          rowKind: "reference_note",
+          referenceText: text,
+          govtLabel: "",
+          copyText: "",
+          showNoAutoDataHint: false,
+          flagMeta: { flagged: false, notes: [] },
+          mode: "input",
+          inputValue: "",
+          readOnly: true,
+          inputPlaceholder: "",
+        });
+        continue;
+      }
       const r = rowFromDef(block.id, `${block.id}-${idx++}`, def);
       if (r) rows.push(r);
-    }
-
-    if (block.id === "family") {
-      const refFather: GovtFillRowConfig = {
-        stableId: "family-father-doc-ref",
-        govtLabel:
-          "Father — document type (reference, not a portal field)",
-        copyText: parentDocTypeLabel,
-        showNoAutoDataHint: false,
-        flagMeta: { flagged: false, notes: [] },
-        mode: "input",
-        inputValue: parentDocTypeLabel,
-        readOnly: true,
-        inputPlaceholder: "",
-      };
-      const refMother: GovtFillRowConfig = {
-        stableId: "family-mother-doc-ref",
-        govtLabel:
-          "Mother — document type (reference, not a portal field)",
-        copyText: parentDocTypeLabel,
-        showNoAutoDataHint: false,
-        flagMeta: { flagged: false, notes: [] },
-        mode: "input",
-        inputValue: parentDocTypeLabel,
-        readOnly: true,
-        inputPlaceholder: "",
-      };
-      const fnat = rows.findIndex((r) =>
-        r.govtLabel.startsWith("Father's nationality")
-      );
-      if (fnat >= 0) rows.splice(fnat + 1, 0, refFather);
-      const mnat = rows.findIndex((r) =>
-        r.govtLabel.startsWith("Mother's nationality")
-      );
-      if (mnat >= 0) rows.splice(mnat + 1, 0, refMother);
     }
 
     plans.push({

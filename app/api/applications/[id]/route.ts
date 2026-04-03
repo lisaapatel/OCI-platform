@@ -28,9 +28,19 @@ export async function PATCH(
     const body = (await req.json()) as {
       status?: Status;
       notes?: string | null;
+      archived?: boolean;
     };
 
     const patch: Record<string, unknown> = {};
+    if (body.archived !== undefined) {
+      if (typeof body.archived !== "boolean") {
+        return NextResponse.json(
+          { error: "Invalid archived value." },
+          { status: 400 }
+        );
+      }
+      patch.archived_at = body.archived ? new Date().toISOString() : null;
+    }
     if (body.status !== undefined) {
       if (!ALLOWED.includes(body.status)) {
         return NextResponse.json({ error: "Invalid status." }, { status: 400 });
@@ -43,7 +53,7 @@ export async function PATCH(
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json(
-        { error: "Provide status and/or notes." },
+        { error: "Provide status, notes, and/or archived." },
         { status: 400 }
       );
     }

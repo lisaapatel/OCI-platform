@@ -14,7 +14,8 @@ create table applications (
   drive_folder_url text,
   notes text,
   created_at timestamp with time zone default now(),
-  created_by uuid references auth.users(id)
+  created_by uuid references auth.users(id),
+  archived_at timestamp with time zone
 );
 
 -- Documents table
@@ -74,6 +75,9 @@ create policy "Authenticated users can do everything on documents"
 
 create policy "Authenticated users can do everything on extracted_fields"
   on extracted_fields for all using (auth.role() = 'authenticated');
+
+-- Existing databases: add archive column (run once if upgrading):
+-- alter table applications add column archived_at timestamp with time zone;
 
 -- Existing databases: add portal compression columns (run once if upgrading):
 -- alter table documents add column if not exists compressed_drive_file_id text;

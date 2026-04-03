@@ -190,7 +190,7 @@ describe("Form fill page", () => {
     );
 
     expect(screen.getByTestId("form-fill-progress")).toHaveTextContent(
-      /of 45 fields have values/
+      /of 42 fields have values/
     );
     expect(screen.getByTestId("form-fill-manual-banner")).toBeInTheDocument();
     expect(screen.getByTestId("form-fill-summary")).toHaveTextContent(

@@ -137,6 +137,7 @@ async function fetchApplications(): Promise<DashboardApplication[]> {
   const { data, error } = await supabase
     .from("applications")
     .select("*")
+    .is("archived_at", null)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);

@@ -27,6 +27,10 @@ export function applicationFromDbRow(row: Record<string, unknown>): Application 
     notes: String(row.notes ?? ""),
     created_at: String(row.created_at ?? ""),
     created_by: String(row.created_by ?? ""),
+    archived_at:
+      row.archived_at == null || String(row.archived_at) === ""
+        ? null
+        : String(row.archived_at),
     vfs_tracking_number:
       row.vfs_tracking_number == null || String(row.vfs_tracking_number) === ""
         ? null

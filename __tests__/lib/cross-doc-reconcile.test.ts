@@ -127,6 +127,27 @@ describe("computeReconciliationUpdates", () => {
     });
   });
 
+  test("confirmed across current passport + former Indian passport for date_of_birth", () => {
+    const rows: ReconRow[] = [
+      row({
+        id: "a",
+        field_name: "date_of_birth",
+        field_value: "1990-01-15",
+        source_doc_type: "current_passport",
+      }),
+      row({
+        id: "b",
+        field_name: "dob",
+        field_value: "15/01/1990",
+        source_doc_type: "former_indian_passport",
+      }),
+    ];
+    const u = recon(rows);
+    expect(u).toHaveLength(2);
+    expect(u.every((x) => x.flag_note === "AUTO_RECON:confirmed")).toBe(true);
+    expect(u.every((x) => !x.is_flagged)).toBe(true);
+  });
+
   test("confirmed across passport + birth certificate for date_of_birth", () => {
     const rows: ReconRow[] = [
       row({

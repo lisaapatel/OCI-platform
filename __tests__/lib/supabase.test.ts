@@ -49,6 +49,7 @@ describe("lib/supabase", () => {
     const sql = fs.readFileSync(schemaPath, "utf8");
 
     expect(sql).toContain("create table applications");
+    expect(sql).toContain("archived_at");
     expect(sql).toContain("create table documents");
     expect(sql).toContain("create table extracted_fields");
     expect(sql).toContain("uuid_generate_v4()");

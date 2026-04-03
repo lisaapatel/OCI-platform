@@ -2,47 +2,54 @@
  * @jest-environment jsdom
  */
 
+const dashboardApps = [
+  {
+    id: "1",
+    app_number: "APP-0001",
+    customer_name: "Priya Sharma",
+    customer_email: "priya@example.com",
+    customer_phone: "555-1234",
+    service_type: "oci_new",
+    status: "docs_pending",
+    created_at: "2026-03-01T00:00:00Z",
+    payment_status: "unpaid",
+    archived_at: null,
+  },
+  {
+    id: "2",
+    app_number: "APP-0002",
+    customer_name: "Raj Patel",
+    customer_email: "raj@example.com",
+    customer_phone: "555-5678",
+    service_type: "oci_renewal",
+    status: "ready_for_review",
+    created_at: "2026-03-05T00:00:00Z",
+    payment_status: "partial",
+    archived_at: null,
+  },
+  {
+    id: "3",
+    app_number: "APP-0003",
+    customer_name: "Meera Nair",
+    customer_email: "meera@example.com",
+    customer_phone: "555-9999",
+    service_type: "oci_new",
+    status: "submitted",
+    created_at: "2026-03-10T00:00:00Z",
+    payment_status: "paid",
+    archived_at: null,
+  },
+];
+
 jest.mock("@/lib/supabase", () => ({
   supabase: {
     from: jest.fn().mockReturnValue({
       select: jest.fn().mockReturnValue({
-        order: jest.fn().mockResolvedValue({
-          data: [
-            {
-              id: "1",
-              app_number: "APP-0001",
-              customer_name: "Priya Sharma",
-              customer_email: "priya@example.com",
-              customer_phone: "555-1234",
-              service_type: "oci_new",
-              status: "docs_pending",
-              created_at: "2026-03-01T00:00:00Z",
-              payment_status: "unpaid",
-            },
-            {
-              id: "2",
-              app_number: "APP-0002",
-              customer_name: "Raj Patel",
-              customer_email: "raj@example.com",
-              customer_phone: "555-5678",
-              service_type: "oci_renewal",
-              status: "ready_for_review",
-              created_at: "2026-03-05T00:00:00Z",
-              payment_status: "partial",
-            },
-            {
-              id: "3",
-              app_number: "APP-0003",
-              customer_name: "Meera Nair",
-              customer_email: "meera@example.com",
-              customer_phone: "555-9999",
-              service_type: "oci_new",
-              status: "submitted",
-              created_at: "2026-03-10T00:00:00Z",
-              payment_status: "paid",
-            },
-          ],
-          error: null,
+        is: jest.fn().mockReturnValue({
+          order: jest.fn().mockResolvedValue({
+            data: dashboardApps,
+            error: null,
+          }),
         }),
       }),
     }),

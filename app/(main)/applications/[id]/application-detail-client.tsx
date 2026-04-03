@@ -214,6 +214,7 @@ export function ApplicationDetailClient({
   const pollRef = useRef<number | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [patchError, setPatchError] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState(false);
   const [portalPrep, setPortalPrep] = useState<{
     documents: PortalPrepDoc[];
     summary: { ready: number; total: number };
@@ -650,7 +651,11 @@ export function ApplicationDetailClient({
     [application.id]
   );
 
-  async function patchApplication(body: { status?: Status; notes?: string }) {
+  async function patchApplication(body: {
+    status?: Status;
+    notes?: string;
+    archived?: boolean;
+  }) {
     setPatchError(null);
     const res = await fetch(`/api/applications/${application.id}`, {
       method: "PATCH",
@@ -669,6 +674,12 @@ export function ApplicationDetailClient({
     }
     if (body.notes !== undefined) {
       setApplication((a) => ({ ...a, notes: body.notes! }));
+    }
+    if (body.archived !== undefined) {
+      setApplication((a) => ({
+        ...a,
+        archived_at: body.archived ? new Date().toISOString() : null,
+      }));
     }
     refresh();
     return true;
@@ -1602,8 +1613,64 @@ export function ApplicationDetailClient({
               <option value="on_hold">On Hold</option>
             </select>
           </div>
+          {application.archived_at ? (
+            <button
+              type="button"
+              disabled={archiving}
+              onClick={() => {
+                void (async () => {
+                  setArchiving(true);
+                  try {
+                    await patchApplication({ archived: false });
+                  } finally {
+                    setArchiving(false);
+                  }
+                })();
+              }}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#16a34a] bg-green-50 px-4 text-sm font-medium text-green-900 transition-colors duration-150 hover:bg-green-100 disabled:opacity-60"
+            >
+              {archiving ? "Restoring…" : "Restore to dashboard"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={archiving}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Archive this application? It will disappear from the dashboard and dashboard counts (for test apps, etc.). You can reopen this link anytime and restore it."
+                  )
+                ) {
+                  return;
+                }
+                void (async () => {
+                  setArchiving(true);
+                  try {
+                    await patchApplication({ archived: true });
+                  } finally {
+                    setArchiving(false);
+                  }
+                })();
+              }}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-[#cbd5e1] bg-white px-4 text-sm font-medium text-[#64748b] transition-colors duration-150 hover:border-[#94a3b8] hover:bg-[#f8fafc] disabled:opacity-60"
+            >
+              {archiving ? "Archiving…" : "Archive (hide from dashboard)"}
+            </button>
+          )}
         </div>
         </div>
+        {application.archived_at ? (
+          <div
+            className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+            role="status"
+          >
+            <p className="font-semibold text-slate-900">Archived</p>
+            <p className="mt-1 text-slate-700">
+              Hidden from the dashboard and excluded from all dashboard totals.
+              Bookmark this page to manage or restore.
+            </p>
+          </div>
+        ) : null}
         {showReadyToSubmitPortalWarning ? (
           <div
             className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"

@@ -22,6 +22,8 @@ export interface Application {
   notes: string;
   created_at: string;
   created_by: string;
+  /** Set when archived — hidden from dashboard and excluded from dashboard counts */
+  archived_at?: string | null;
   vfs_tracking_number?: string | null;
   govt_tracking_number?: string | null;
   customer_price?: number | null;
