@@ -40,6 +40,9 @@ export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
     "passport_surname",
     "primary_surname",
     "surname_line",
+    "holder_surname",
+    "document_surname",
+    "passport_holder_surname",
   ],
   ["full_name", "complete_name", "name_in_full", "applicant_full_name", "name", "applicant_name"],
   ["date_of_birth", "dob", "birth_date"],
@@ -55,6 +58,16 @@ export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
     "birth_town",
     "place_of_birth_town",
     "place_of_birth_locality",
+    "place_of_birth_us",
+    "us_place_of_birth",
+    "birth_place_city",
+    "pob_city",
+    "born_in",
+    "born_at",
+    "birth_location",
+    "place_born",
+    "nativity",
+    "native_place",
   ],
   ["country_of_birth", "birth_country", "place_of_birth_country", "country_birth"],
   ["gender", "sex"],
@@ -67,7 +80,20 @@ export const EXTRACTED_KEY_SYNONYMS: readonly (readonly string[])[] = [
   ["passport_number", "passport_no", "passport_num"],
   ["passport_issue_date", "issue_date", "date_of_issue", "doi"],
   ["passport_expiry_date", "expiry_date", "date_of_expiry", "expiry", "doe"],
-  ["passport_issue_place", "place_of_issue", "issuing_authority", "issuing_office", "poi"],
+  [
+    "passport_issue_place",
+    "place_of_issue",
+    "issuing_authority",
+    "issuing_office",
+    "poi",
+    "issuing_city",
+    "issue_city",
+    "passport_place_of_issue",
+    "place_of_issue_city",
+    "authority",
+    "issuing_state",
+    "issuance_location",
+  ],
   [
     "passport_issue_country",
     "country_of_issue",
@@ -203,11 +229,14 @@ const PASSPORT_LAST_NAME_KEYS = [
   "passport_surname",
   "primary_surname",
   "surname_line",
+  "holder_surname",
+  "document_surname",
+  "passport_holder_surname",
 ] as const;
 
 /**
  * Full name from current passport only: full_name, then name, then applicant_name (exact keys);
- * if `name`/`applicant_name` omits a separate surname row, prefer composed first+middle+last.
+ * if any whole-name field omits a separate surname row, prefer composed first+middle+last.
  * Else concatenate first/given + middle + last/surname/… from current_passport only.
  */
 export function resolvePassportFullName(fields: ExtractedField[]): {
@@ -264,11 +293,6 @@ export function resolvePassportFullName(fields: ExtractedField[]): {
     };
   };
 
-  const fullRow = rowByExactKey("full_name");
-  const fullVal = fullRow?.field_value?.trim();
-  if (fullVal)
-    return { value: fullVal, row: fullRow, flagRows: fullRow ? [fullRow] : [] };
-
   const composed = buildComposed();
   const lastForHeuristic = findRowByKeysAndSources(
     fields,
@@ -289,18 +313,32 @@ export function resolvePassportFullName(fields: ExtractedField[]): {
     return composed.value.trim().length > wholeVal.trim().length;
   };
 
-  for (const key of ["name", "applicant_name"] as const) {
-    const r = rowByExactKey(key);
-    const v = r?.field_value?.trim() ?? "";
-    if (!v) continue;
-    if (preferComposedOver(r, v)) {
+  const emitWholeOrComposed = (
+    row: ExtractedField | undefined,
+    val: string,
+  ): { value: string; row?: ExtractedField; flagRows: ExtractedField[] } | null => {
+    if (!val) return null;
+    if (preferComposedOver(row, val)) {
       return {
         value: composed.value,
-        row: composed.row ?? r,
-        flagRows: composed.flagRows.length ? composed.flagRows : r ? [r] : [],
+        row: composed.row ?? row,
+        flagRows: composed.flagRows.length ? composed.flagRows : row ? [row] : [],
       };
     }
-    return { value: v, row: r, flagRows: r ? [r] : [] };
+    return { value: val, row, flagRows: row ? [row] : [] };
+  };
+
+  const fullRow = rowByExactKey("full_name");
+  const fromFull = emitWholeOrComposed(
+    fullRow,
+    fullRow?.field_value?.trim() ?? "",
+  );
+  if (fromFull) return fromFull;
+
+  for (const key of ["name", "applicant_name"] as const) {
+    const r = rowByExactKey(key);
+    const out = emitWholeOrComposed(r, r?.field_value?.trim() ?? "");
+    if (out) return out;
   }
 
   return composed;
@@ -414,6 +452,7 @@ Use snake_case keys only. Prefer these exact names when the value exists (use nu
 - Address proof (utility bill, lease, etc.): ONLY address/contact fields — address_line_1, address_line_2, city, state_province, postal_code, country, phone, email. Do NOT output applicant name keys (first_name, last_name, full_name, name, applicant_name, etc.) from address proof; those belong on passport/birth certificate only.
 - Address: address_line_1, address_line_2, city, state_province, postal_code, country, phone, email; permanent_* variants when a second address appears
 - Family: father_full_name, father_date_of_birth, father_place_of_birth, father_nationality, father_indian_passport_number, father_oci_number; mirror for mother; spouse_name, spouse_nationality, spouse_date_of_birth when applicable
+- Parent passport / parent_indian_doc: passport_number, passport_no, date_of_birth, place_of_birth, full_name (the parent's biodata on that upload only)
 - Birth cert / native place: address_at_birth, permanent_address when useful
 
 When you see one long address line, split into address_line_1, city, state_province, postal_code, and country when identifiable.
@@ -422,6 +461,7 @@ When you see one long address line, split into address_line_1, city, state_provi
 export const CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA = `
 Passport biodata: extract country_of_birth (country name as printed) whenever it appears—labeled "Country of birth", in MRZ-adjacent fields, or clearly part of place-of-birth (city + country). Use null only if no country is shown for birth.
 Always output place_of_birth when the biodata page shows a place, city, or locality of birth (US passports: the "Place of Birth" field)—use the city/locality text as printed, with key place_of_birth.
+For US-style passports that show separate Surname vs Given names, use keys surname (or last_name) and given_name (or first_name) plus full_name when you can concatenate them reliably.
 Also use these exact keys whenever the values appear on the passport biodata page: first_name, middle_name, last_name, full_name, date_of_birth, place_of_birth (do not substitute other key names for those concepts).
 `.trim();
 
@@ -601,9 +641,21 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       f("Date of birth", ["date_of_birth", "dob", "birth_date"], [...SRC_PASSPORT_THEN_BIRTH], {
         tag: "Passport first, then birth certificate",
       }),
-      f("Place of birth", ["place_of_birth", "birth_place", "pob"], [...SRC_CURRENT_PASSPORT], {
-        tag: "Current passport only",
-      }),
+      f(
+        "Place of birth",
+        [
+          "place_of_birth",
+          "birth_place",
+          "pob",
+          "birthplace",
+          "city_of_birth",
+          "birth_city",
+        ],
+        [...SRC_CURRENT_PASSPORT],
+        {
+          tag: "Current passport only",
+        },
+      ),
       f("Gender", ["gender", "sex"], [...SRC_PASSPORT_THEN_BIRTH]),
       f("Marital status", ["marital_status", "marital"], [...SRC_PASSPORT_THEN_BIRTH]),
       f(
@@ -641,7 +693,14 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       ),
       f(
         "Passport issue place",
-        ["passport_issue_place", "place_of_issue", "issuing_authority"],
+        [
+          "passport_issue_place",
+          "place_of_issue",
+          "issuing_authority",
+          "issuing_office",
+          "issuing_city",
+          "issue_city",
+        ],
         [...SRC_CURRENT_PASSPORT]
       ),
       f(
@@ -746,6 +805,8 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
           "father_passport_number",
           "passport_number",
           "passport_no",
+          "document_number",
+          "passport_id",
         ],
         [...SRC_PARENT_PASSPORT_ONLY]
       ),
@@ -771,6 +832,8 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
           "mother_passport_number",
           "passport_number",
           "passport_no",
+          "document_number",
+          "passport_id",
         ],
         [...SRC_PARENT_PASSPORT_ONLY]
       ),
