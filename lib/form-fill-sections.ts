@@ -458,13 +458,6 @@ Use snake_case keys only. Prefer these exact names when the value exists (use nu
 When you see one long address line, split into address_line_1, city, state_province, postal_code, and country when identifiable.
 `.trim();
 
-export const CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA = `
-Passport biodata: extract country_of_birth (country name as printed) whenever it appears—labeled "Country of birth", in MRZ-adjacent fields, or clearly part of place-of-birth (city + country). Use null only if no country is shown for birth.
-Always output place_of_birth when the biodata page shows a place, city, or locality of birth (US passports: the "Place of Birth" field)—use the city/locality text as printed, with key place_of_birth.
-For US-style passports that show separate Surname vs Given names, use keys surname (or last_name) and given_name (or first_name) plus full_name when you can concatenate them reliably.
-Also use these exact keys whenever the values appear on the passport biodata page: first_name, middle_name, last_name, full_name, date_of_birth, place_of_birth (do not substitute other key names for those concepts).
-`.trim();
-
 export const SRC_CURRENT_PASSPORT = ["current_passport"] as const;
 export const SRC_BIRTH_THEN_PASSPORT = [
   "birth_certificate",
@@ -474,10 +467,15 @@ export const SRC_PASSPORT_THEN_BIRTH = [
   "current_passport",
   "birth_certificate",
 ] as const;
-export const SRC_ADDRESS_THEN_PASSPORT = [
+/** Address fields: proof documents only (no current_passport — US passports lack address rows). */
+export const SRC_ADDRESS_PROOF_ORDER = [
   "address_proof",
-  "current_passport",
+  "us_address_proof",
+  "indian_address_proof",
 ] as const;
+
+/** @deprecated Use SRC_ADDRESS_PROOF_ORDER — kept for older imports; no longer includes current_passport. */
+export const SRC_ADDRESS_THEN_PASSPORT = [...SRC_ADDRESS_PROOF_ORDER];
 export const SRC_FORMER_INDIAN = [
   "former_indian_passport",
   "old_passport",
@@ -558,14 +556,14 @@ export function resolveFormFillSourceOrder(
   ctx: FormFillSourceResolutionContext,
 ): string[] {
   if (ctx.blockId === "present_address" && ctx.applicantIsMinor) {
-    return ["address_proof"];
+    return [...SRC_ADDRESS_PROOF_ORDER];
   }
   if (ctx.blockId === "present_address" && !ctx.applicantIsMinor) {
-    return ["address_proof", DOC_TYPE_CURRENT_PASSPORT];
+    return [...SRC_ADDRESS_PROOF_ORDER];
   }
 
   if (ctx.blockId === "permanent_address") {
-    return ["address_proof"];
+    return [...SRC_ADDRESS_PROOF_ORDER];
   }
 
   const canon = canonicalSynonymKey(def.keys[0] ?? "");
@@ -603,6 +601,12 @@ export function formFillSourceTagForRow(
       return { label: "Address Proof (Parent)", variant: "orange" };
     }
     return { label: "Address Proof", variant: "grey" };
+  }
+  if (dt === "us_address_proof") {
+    return { label: "US Address Proof", variant: "grey" };
+  }
+  if (dt === "indian_address_proof") {
+    return { label: "Indian Address Proof", variant: "grey" };
   }
   if (dt === "parent_passport" || dt === "parent_indian_doc") {
     return { label: "Parent Passport", variant: "grey" };
@@ -750,15 +754,15 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       f(
         "Address line 1",
         ["address_line_1", "address_line1", "street", "street_address"],
-        [...SRC_ADDRESS_THEN_PASSPORT]
+        [...SRC_ADDRESS_PROOF_ORDER]
       ),
-      f("Address line 2", ["address_line_2", "address_line2"], [...SRC_ADDRESS_THEN_PASSPORT]),
-      f("City", ["city", "town"], [...SRC_ADDRESS_THEN_PASSPORT]),
-      f("State / Province", ["state_province", "state", "province"], [...SRC_ADDRESS_THEN_PASSPORT]),
-      f("Country", ["country", "country_name"], [...SRC_ADDRESS_THEN_PASSPORT]),
-      f("Postal code", ["postal_code", "zip", "pin_code"], [...SRC_ADDRESS_THEN_PASSPORT]),
-      f("Phone", ["phone", "mobile", "mobile_no"], [...SRC_ADDRESS_THEN_PASSPORT]),
-      f("Email", ["email", "e_mail"], [...SRC_ADDRESS_THEN_PASSPORT]),
+      f("Address line 2", ["address_line_2", "address_line2"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("City", ["city", "town"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("State / Province", ["state_province", "state", "province"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Country", ["country", "country_name"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Postal code", ["postal_code", "zip", "pin_code"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Phone", ["phone", "mobile", "mobile_no"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Email", ["email", "e_mail"], [...SRC_ADDRESS_PROOF_ORDER]),
     ],
   },
   {
@@ -769,19 +773,19 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       f(
         "Address line 1",
         ["permanent_address_line_1", "permanent_address_line1", "address_line_1"],
-        ["address_proof"]
+        [...SRC_ADDRESS_PROOF_ORDER]
       ),
       f(
         "Address line 2",
         ["permanent_address_line_2", "permanent_address_line2", "address_line_2"],
-        ["address_proof"]
+        [...SRC_ADDRESS_PROOF_ORDER]
       ),
-      f("City", ["permanent_city", "city"], ["address_proof"]),
-      f("State / Province", ["permanent_state", "state_province", "state"], ["address_proof"]),
-      f("Country", ["permanent_country", "country"], ["address_proof"]),
-      f("Postal code", ["permanent_postal_code", "postal_code", "pin_code"], ["address_proof"]),
-      f("Phone", ["phone", "mobile"], ["address_proof"]),
-      f("Email", ["email"], ["address_proof"]),
+      f("City", ["permanent_city", "city"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("State / Province", ["permanent_state", "state_province", "state"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Country", ["permanent_country", "country"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Postal code", ["permanent_postal_code", "postal_code", "pin_code"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Phone", ["phone", "mobile"], [...SRC_ADDRESS_PROOF_ORDER]),
+      f("Email", ["email"], [...SRC_ADDRESS_PROOF_ORDER]),
     ],
   },
   {

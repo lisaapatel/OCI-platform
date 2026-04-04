@@ -9,11 +9,11 @@ import {
   dedupeExtractedFieldsLatest,
   type ExtractedFieldRow,
 } from "@/lib/extracted-fields-dedupe";
-import { parseAutoReconNote } from "@/lib/cross-doc-reconcile/constants";
 import {
   isAutoReconConflictNote,
   parseConflictSourcesFromFlagNote,
-} from "@/lib/review-conflict-display";
+  parseLegacyAutoReconNote,
+} from "@/lib/review-legacy-auto-recon";
 import {
   REVIEW_SECTION_ORDER,
   documentTabLabel,
@@ -65,7 +65,7 @@ function fieldHasValue(f: ExtractedField): boolean {
 }
 
 function reviewFieldSortKey(f: ExtractedField): number {
-  const recon = parseAutoReconNote(f.flag_note);
+  const recon = parseLegacyAutoReconNote(f.flag_note);
   const isConflict = recon === "conflict" && f.is_flagged;
   const filled = fieldHasValue(f);
   if (isConflict) return 0;
@@ -138,11 +138,12 @@ export function ReviewPageClient({
       const list = fieldsDeduped.filter((f) => f.source_doc_type === d.doc_type);
       const filled = list.filter((f) => fieldHasValue(f)).length;
       const conflicts = list.filter(
-        (f) => parseAutoReconNote(f.flag_note) === "conflict" && f.is_flagged
+        (f) =>
+          parseLegacyAutoReconNote(f.flag_note) === "conflict" && f.is_flagged
       ).length;
       const manualFlags = list.filter((f) => {
         if (!f.is_flagged) return false;
-        return parseAutoReconNote(f.flag_note) !== "conflict";
+        return parseLegacyAutoReconNote(f.flag_note) !== "conflict";
       }).length;
       m.set(d.id, {
         total: list.length,
@@ -171,7 +172,8 @@ export function ReviewPageClient({
     const totalFieldCount = fieldsDeduped.length;
     const filledFieldCount = fieldsDeduped.filter(fieldHasValue).length;
     const conflictFieldCount = fieldsDeduped.filter(
-      (f) => parseAutoReconNote(f.flag_note) === "conflict" && f.is_flagged
+      (f) =>
+        parseLegacyAutoReconNote(f.flag_note) === "conflict" && f.is_flagged
     ).length;
     const docsWithConflicts = documents.filter((d) => {
       const st = statsByDocId.get(d.id);
@@ -214,18 +216,6 @@ export function ReviewPageClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(partial),
     });
-  }
-
-  async function refreshReconciliation() {
-    const res = await fetch("/api/reconcile/application", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ application_id: applicationId }),
-    });
-    const j = (await res.json()) as { ok?: boolean; fields?: ExtractedField[] };
-    if (res.ok && Array.isArray(j.fields)) {
-      setFields(j.fields);
-    }
   }
 
   function updateLocal(id: string, partial: Partial<ExtractedField>) {
@@ -300,6 +290,11 @@ export function ReviewPageClient({
               <p className="shrink-0 text-sm font-semibold text-[#64748b]">
                 {activeDoc.file_name || documentTabLabel(activeDoc.doc_type, "")}
               </p>
+              {activeDoc.quality_hint ? (
+                <p className="mt-1 shrink-0 text-xs leading-snug text-amber-800">
+                  {activeDoc.quality_hint}
+                </p>
+              ) : null}
               <ReviewPreviewToolbar
                 rotationDeg={previewRotationDeg}
                 scale={previewScale}
@@ -471,7 +466,7 @@ export function ReviewPageClient({
                     const label = humanFieldLabel(f.field_name);
                     const source = sourceDocumentLabel(f.source_doc_type);
                     const empty = !fieldHasValue(f);
-                    const recon = parseAutoReconNote(f.flag_note);
+                    const recon = parseLegacyAutoReconNote(f.flag_note);
                     const isConflict =
                       recon === "conflict" && f.is_flagged;
                     const conflictSources = isConflict
@@ -509,16 +504,6 @@ export function ReviewPageClient({
                               >
                                 {label}
                               </label>
-                              {recon === "confirmed" && !f.is_flagged ? (
-                                <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
-                                  OK
-                                </span>
-                              ) : null}
-                              {recon === "single_source" && !f.is_flagged ? (
-                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
-                                  1 src
-                                </span>
-                              ) : null}
                               {isConflict ? (
                                 <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800">
                                   Conflict
@@ -564,12 +549,9 @@ export function ReviewPageClient({
                                 })
                               }
                               onBlur={(e) =>
-                                void (async () => {
-                                  await saveField(f.id, {
-                                    field_value: e.currentTarget.value,
-                                  });
-                                  await refreshReconciliation();
-                                })()
+                                void saveField(f.id, {
+                                  field_value: e.currentTarget.value,
+                                })
                               }
                             />
                             {isConflict && conflictSources.length > 0 ? (
@@ -605,13 +587,10 @@ export function ReviewPageClient({
                                 is_flagged: next,
                                 ...(!next ? { flag_note: "" } : {}),
                               });
-                              void (async () => {
-                                await saveField(f.id, {
-                                  is_flagged: next,
-                                  ...(!next ? { flag_note: "" } : {}),
-                                });
-                                await refreshReconciliation();
-                              })();
+                              void saveField(f.id, {
+                                is_flagged: next,
+                                ...(!next ? { flag_note: "" } : {}),
+                              });
                             }}
                           >
                             🚩
@@ -641,19 +620,16 @@ export function ReviewPageClient({
                                   ),
                                 })
                               }
-                              onBlur={(e) =>
-                                void (async () => {
-                                  const merged = mergeFlagNoteInput(
-                                    f.flag_note,
-                                    e.currentTarget.value
-                                  );
-                                  await saveField(f.id, {
-                                    is_flagged: true,
-                                    flag_note: merged,
-                                  });
-                                  await refreshReconciliation();
-                                })()
-                              }
+                              onBlur={(e) => {
+                                const merged = mergeFlagNoteInput(
+                                  f.flag_note,
+                                  e.currentTarget.value
+                                );
+                                void saveField(f.id, {
+                                  is_flagged: true,
+                                  flag_note: merged,
+                                });
+                              }}
                             />
                           </div>
                         ) : null}
@@ -667,13 +643,7 @@ export function ReviewPageClient({
         </main>
       </div>
 
-      <div className="fixed bottom-0 left-56 right-0 z-20 flex flex-col gap-3 border-t border-[#e2e8f0] bg-[#1e3a5f] px-6 py-4 text-white shadow-[0_-4px_12px_rgba(0,0,0,0.12)]">
-        <div className="no-print rounded-lg border border-white/30 bg-white/10 px-4 py-2 text-xs text-white/95">
-          Before marking ready: on the application page, confirm{" "}
-          <strong>Govt portal readiness</strong> is green (PDFs within limit,
-          photo &amp; signature valid). Missing or oversize uploads on the
-          official portal can cause rejection.
-        </div>
+      <div className="fixed bottom-0 left-56 right-0 z-20 flex flex-col border-t border-[#e2e8f0] bg-[#1e3a5f] px-6 py-4 text-white shadow-[0_-4px_12px_rgba(0,0,0,0.12)]">
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm text-white/90">
             {flaggedCount === 0

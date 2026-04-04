@@ -1,3 +1,5 @@
+import { getExtractionProfile } from "@/lib/extraction-profiles";
+
 export type ChecklistItem = {
   doc_type: string;
   label: string;
@@ -56,15 +58,9 @@ export const OCI_NEW_CHECKLIST: ChecklistItem[] = [
 export const OCI_NEW_REQUIRED_COUNT = OCI_NEW_CHECKLIST.filter((i) => i.required)
   .length;
 
-const SKIP_AI_EXTRACTION_DOC_TYPES = new Set([
-  "applicant_photo",
-  "applicant_signature",
-  "photo",
-]);
-
-/** Image-only uploads: no Claude extraction (would be sent as invalid PDF). */
+/** Image-only uploads: no Claude extraction (profile `photo_signature_skip`). */
 export function shouldSkipAiExtraction(docType: unknown): boolean {
-  return SKIP_AI_EXTRACTION_DOC_TYPES.has(String(docType ?? "").trim());
+  return getExtractionProfile(String(docType ?? "").trim()).skipAiExtraction;
 }
 
 export function getOciChecklistLabel(docType: string): string {

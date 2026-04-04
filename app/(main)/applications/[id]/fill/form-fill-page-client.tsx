@@ -424,13 +424,18 @@ export function FormFillPageClient({
         }),
       });
       if (!res.ok) return;
-      const rec = await fetch("/api/reconcile/application", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ application_id: applicationId }),
-      });
-      const j = (await rec.json()) as { fields?: ExtractedField[] };
-      if (rec.ok && Array.isArray(j.fields)) setFields(j.fields);
+      setFields((prev) =>
+        prev.map((f) =>
+          f.id === fieldId
+            ? {
+                ...f,
+                field_value: value,
+                is_flagged: false,
+                flag_note: "",
+              }
+            : f
+        )
+      );
     },
     [applicationId]
   );

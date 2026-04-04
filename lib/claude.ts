@@ -1,9 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import {
-  CLAUDE_EXTRACTION_KEY_INSTRUCTIONS,
-  CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA,
-} from "@/lib/form-fill-sections";
+  buildProfileExtractionPromptAppendix,
+  filterExtractedByProfile,
+  getExtractionProfile,
+  type PassportRoutingContext,
+} from "@/lib/extraction-profiles";
+import { mergeMrzOverVision } from "@/lib/passport-mrz-merge";
 import { extractMRZ } from "@/lib/mrz-parse";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 
@@ -11,29 +14,6 @@ export function getAnthropicClient() {
   return new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY ?? "",
   });
-}
-
-/** Passport biodata doc types: MRZ pre-pass + extended Claude fields (no MRZ). */
-const PASSPORT_MRZ_DOC_TYPES = new Set([
-  "current_passport",
-  "old_passport",
-  "former_indian_passport",
-  "parent_passport_father",
-  "parent_passport_mother",
-]);
-
-const CLAUDE_PASSPORT_VISION_EXTRA = `
-Also extract if visible: country_of_birth (place of birth full text as printed — city, state, country), spouse_name (from personal particulars / observation page on Indian passports if present), and address fields address_line1, address_line2, address_city, address_state, address_country (from personal particulars / last page if present). If a field is not visible on the document, omit it — do not guess.
-Also use passport_issue_date, passport_issue_place, passport_issue_country (or place_of_issue / country_of_issue) when shown; these are not in the MRZ.
-`.trim();
-
-function isPassportMrzDocType(docType: string): boolean {
-  return PASSPORT_MRZ_DOC_TYPES.has(docType.trim());
-}
-
-function passportPromptExtras(docType: string): string {
-  if (!isPassportMrzDocType(docType)) return "";
-  return `\n\n${CLAUDE_PASSPORT_COUNTRY_OF_BIRTH_EXTRA}\n\n${CLAUDE_PASSPORT_VISION_EXTRA}`;
 }
 
 /** Verbatim text transcription for MRZ discovery (cheap single pass). */
@@ -89,6 +69,7 @@ export async function callClaudeExtractFieldsRaw(input: {
   base64: string;
   mimeType: string;
   docType: string;
+  passportRouting?: PassportRoutingContext;
 }): Promise<string> {
   const client = getAnthropicClient();
   const mediaType = input.mimeType?.trim() || "application/pdf";
@@ -110,12 +91,18 @@ export async function callClaudeExtractFieldsRaw(input: {
             data: input.base64,
           },
         } as any);
-  const passportExtra = passportPromptExtras(input.docType);
+  const profile = getExtractionProfile(
+    input.docType,
+    input.passportRouting
+  );
+  const profileBlock = buildProfileExtractionPromptAppendix(
+    input.docType,
+    profile
+  );
   const userPromptText = `You extract structured data from a document.
-Document type key: ${input.docType}
 MIME: ${mediaType}
 
-${CLAUDE_EXTRACTION_KEY_INSTRUCTIONS}${passportExtra}
+${profileBlock}
 
 Return ONLY a single JSON object mapping field names to string values or null. No markdown.`;
 
@@ -161,49 +148,26 @@ export function parseClaudeExtractedFieldsText(
   return out;
 }
 
-const MRZ_OVERLAY_KEYS = new Set([
-  "last_name",
-  "first_name",
-  "passport_number",
-  "nationality",
-  "date_of_birth",
-  "gender",
-  "expiry_date",
-]);
-
-function mergeMrzOverVision(
-  vision: Record<string, string | null>,
-  mrz: Record<string, string> | null
-): Record<string, string | null> {
-  const out: Record<string, string | null> = { ...vision };
-  if (!mrz) return out;
-  for (const [k, v] of Object.entries(mrz)) {
-    const t = v.trim();
-    if (!t) continue;
-    if (MRZ_OVERLAY_KEYS.has(k)) {
-      out[k] = t;
-    }
-  }
-  const exp = out.expiry_date?.trim();
-  if (exp) {
-    out.passport_expiry_date = exp;
-  }
-  return out;
-}
-
 /** Returns flat field map for persistence in `extracted_fields`. Tests mock this. */
 export async function extractFieldsFromDocument(input: {
   base64: string;
   mimeType: string;
   docType: string;
+  passportRouting?: PassportRoutingContext;
 }): Promise<Record<string, string | null>> {
   if (shouldSkipAiExtraction(input.docType)) {
     return {};
   }
 
-  if (!isPassportMrzDocType(input.docType)) {
+  const profile = getExtractionProfile(
+    input.docType,
+    input.passportRouting
+  );
+
+  if (!profile.preferMrzFirst) {
     const text = await callClaudeExtractFieldsRaw(input);
-    return parseClaudeExtractedFieldsText(text);
+    const parsed = parseClaudeExtractedFieldsText(text);
+    return filterExtractedByProfile(parsed, profile);
   }
 
   let mrzFields: Record<string, string> | null = null;
@@ -219,5 +183,6 @@ export async function extractFieldsFromDocument(input: {
 
   const visionText = await callClaudeExtractFieldsRaw(input);
   const visionParsed = parseClaudeExtractedFieldsText(visionText);
-  return mergeMrzOverVision(visionParsed, mrzFields);
+  const merged = mergeMrzOverVision(visionParsed, mrzFields);
+  return filterExtractedByProfile(merged, profile);
 }

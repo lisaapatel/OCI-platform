@@ -23,10 +23,6 @@ jest.mock("@/lib/supabase-admin", () => ({
   },
 }));
 
-jest.mock("@/lib/cross-doc-reconcile/reconcile-application", () => ({
-  reconcileApplication: jest.fn().mockResolvedValue({ ok: true, fields: [] }),
-}));
-
 import { POST } from "../../app/api/extract/all/route";
 
 function mockExtractedFieldsDelete() {

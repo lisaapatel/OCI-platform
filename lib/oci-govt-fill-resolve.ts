@@ -1,6 +1,6 @@
 import { format, isValid, parseISO } from "date-fns";
 
-import { isAutoReconNote } from "@/lib/cross-doc-reconcile/constants";
+import { isLegacyAutoReconNote } from "@/lib/review-legacy-auto-recon";
 import { FORM_FILL_ALL_FIELDS } from "@/lib/form-fill-sections";
 import type { ExtractedField } from "@/lib/types";
 
@@ -69,7 +69,7 @@ export function collectFlagMeta(
   return { flagged, notes };
 }
 
-/** Govt fill page: hide AUTO_RECON notes; dedupe manual operator notes. */
+/** Govt fill page: hide legacy AUTO_RECON notes; dedupe manual operator notes. */
 export function collectFlagMetaForFillPage(
   rows: (ExtractedField | undefined)[]
 ): { flagged: boolean; notes: string[] } {
@@ -78,7 +78,7 @@ export function collectFlagMetaForFillPage(
   for (const r of rows) {
     if (!r?.is_flagged) continue;
     const n = r.flag_note?.trim();
-    if (!n || isAutoReconNote(n)) continue;
+    if (!n || isLegacyAutoReconNote(n)) continue;
     if (seen.has(n)) continue;
     seen.add(n);
     notes.push(n);

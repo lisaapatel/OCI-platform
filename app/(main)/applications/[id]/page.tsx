@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { applicationFromDbRow } from "@/lib/application-from-row";
 import { coerceExtractionStatus } from "@/lib/document-utils";
+import type { DocumentQualityResult } from "@/lib/document-quality-gate";
 import type { Application, Document } from "@/lib/types";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -47,6 +48,12 @@ function mapDocuments(rows: Record<string, unknown>[]): Document[] {
       row.fixed_size_bytes == null || row.fixed_size_bytes === ""
         ? null
         : Number(row.fixed_size_bytes),
+    pre_extraction_quality:
+      !("pre_extraction_quality" in row)
+        ? undefined
+        : row.pre_extraction_quality == null
+          ? null
+          : (row.pre_extraction_quality as DocumentQualityResult),
   }));
 }
 

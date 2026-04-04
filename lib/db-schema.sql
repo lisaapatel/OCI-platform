@@ -38,7 +38,8 @@ create table documents (
   compressed_size_bytes bigint,
   fixed_drive_file_id text,
   fixed_drive_url text,
-  fixed_size_bytes bigint
+  fixed_size_bytes bigint,
+  pre_extraction_quality jsonb
 );
 
 -- Extracted fields table

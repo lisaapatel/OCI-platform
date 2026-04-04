@@ -125,8 +125,11 @@ If the needle is missing, the append is concatenated at the end (fallback). **OC
 ## AI extraction nuances
 
 - **Skipped doc types** (no Claude JSON extraction): `applicant_photo`, `applicant_signature`, `photo` — `shouldSkipAiExtraction()` in `lib/oci-new-checklist.ts`.
-- **Passport MRZ path** (`lib/claude.ts`): for `current_passport`, `old_passport`, `former_indian_passport`, `parent_passport_father`, `parent_passport_mother` — verbatim transcription call → `extractMRZ()` → full vision JSON; MRZ wins on overlapping identity fields; extra passport fields via prompt (address, spouse, etc.).
+- **Passport MRZ path** (`lib/claude.ts` + `lib/extraction-profiles.ts`): same doc types as before — `indian_passport_core` vs `foreign_passport_core` (routing from `doc_type` plus application `service_type` / `oci_intake_variant` where needed); verbatim transcription → `extractMRZ()` → vision JSON; MRZ wins on overlapping identity fields.
+- **Passport MRZ merge** (`lib/passport-mrz-merge.ts`): MRZ overlays vision for identity fields; when MRZ has both `first_name` and `last_name`, vision applicant-name fields are cleared before merge (avoids Indian passport family-page names in applicant slots); `date_of_birth` more than one calendar year in the future is nulled as likely expiry confusion.
+- **Form fill address sources:** present and permanent address blocks use `SRC_ADDRESS_PROOF_ORDER`: `address_proof`, `us_address_proof`, `indian_address_proof` — not `current_passport`.
 - **Field naming:** snake_case; canonical hints in `CLAUDE_EXTRACTION_KEY_INSTRUCTIONS` (`lib/form-fill-sections.ts`). Form fill / review map synonyms there.
+- **Reconciliation API:** This codebase does not ship `POST /api/reconcile/rerun-all`. To bulk-clear stale review flags after deploy, use the review UI or a one-off script/Supabase update unless a future route is added.
 
 ---
 

@@ -4,9 +4,12 @@ import { getChecklistForApplication } from "@/lib/application-checklist";
 import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
 import { extractFieldsFromDocument } from "@/lib/claude";
+import {
+  analyzeDocumentQuality,
+  type DocumentQualityResult,
+} from "@/lib/document-quality-gate";
 import { resolveMimeTypeForExtraction } from "@/lib/extraction-mime";
 import { getFileAsBase64 } from "@/lib/google-drive";
-import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { Application } from "@/lib/types";
 
@@ -84,6 +87,12 @@ export async function POST(req: Request) {
 
     const serviceType =
       (appRow?.service_type as Application["service_type"]) ?? "oci_new";
+    const passportRouting = {
+      serviceType,
+      ociIntakeVariant: normalizeStoredOciIntakeVariant(
+        appRow?.oci_intake_variant
+      ),
+    };
     const checklist = getChecklistForApplication({
       service_type: serviceType,
       is_minor: appRow?.is_minor === true,
@@ -111,9 +120,11 @@ export async function POST(req: Request) {
       document_id: string;
       doc_type: string;
       status: "extracted" | "failed";
+      quality?: DocumentQualityResult;
     }> = [];
 
     for (const doc of pending) {
+      let quality: DocumentQualityResult | undefined;
       try {
         await supabaseAdmin
           .from("documents")
@@ -138,10 +149,35 @@ export async function POST(req: Request) {
           String(doc.drive_file_id ?? ""),
           String((doc as { file_name?: string }).file_name ?? "")
         );
+        try {
+          quality = await analyzeDocumentQuality({
+            buffer: Buffer.from(b64, "base64"),
+            mimeType,
+            fileName: String((doc as { file_name?: string }).file_name ?? ""),
+          });
+          await supabaseAdmin
+            .from("documents")
+            .update({ pre_extraction_quality: quality })
+            .eq("id", doc.id);
+          if (quality.status === "manual_review_recommended") {
+            console.log(
+              `[extract/all] Document ${String(doc.id)} pre-extraction quality: manual_review_recommended`,
+              quality.issues
+            );
+          }
+        } catch (err) {
+          console.error("[extract/all] pre-extraction quality failed:", err);
+          quality = {
+            status: "ok",
+            issues: [],
+            details: { analyzedAt: new Date().toISOString() },
+          };
+        }
         const extracted = await extractFieldsFromDocument({
           base64: b64,
           mimeType,
           docType: doc.doc_type,
+          passportRouting,
         });
 
         const { error: delErr } = await supabaseAdmin
@@ -176,6 +212,7 @@ export async function POST(req: Request) {
           document_id: String(doc.id),
           doc_type: String(doc.doc_type ?? ""),
           status: "extracted",
+          quality,
         });
       } catch {
         await supabaseAdmin
@@ -186,13 +223,10 @@ export async function POST(req: Request) {
           document_id: String(doc.id),
           doc_type: String(doc.doc_type ?? ""),
           status: "failed",
+          ...(quality ? { quality } : {}),
         });
       }
     }
-
-    void reconcileApplication(application_id).catch((e) =>
-      console.error("reconcileApplication after extract/all:", e)
-    );
 
     return NextResponse.json(
       {

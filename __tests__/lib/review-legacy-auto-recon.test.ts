@@ -1,7 +1,8 @@
 import {
   isAutoReconConflictNote,
   parseConflictSourcesFromFlagNote,
-} from "../../lib/review-conflict-display";
+  parseLegacyAutoReconNote,
+} from "../../lib/review-legacy-auto-recon";
 
 describe("parseConflictSourcesFromFlagNote", () => {
   test("splits AUTO_RECON conflict body on pipes", () => {
@@ -34,5 +35,16 @@ describe("isAutoReconConflictNote", () => {
   test("detects conflict prefix", () => {
     expect(isAutoReconConflictNote("AUTO_RECON:conflict|x")).toBe(true);
     expect(isAutoReconConflictNote("AUTO_RECON:confirmed")).toBe(false);
+  });
+});
+
+describe("parseLegacyAutoReconNote", () => {
+  test("parses known legacy kinds", () => {
+    expect(parseLegacyAutoReconNote("AUTO_RECON:confirmed")).toBe("confirmed");
+    expect(parseLegacyAutoReconNote("AUTO_RECON:single_source")).toBe(
+      "single_source"
+    );
+    expect(parseLegacyAutoReconNote("AUTO_RECON:conflict|a")).toBe("conflict");
+    expect(parseLegacyAutoReconNote("manual")).toBe(null);
   });
 });

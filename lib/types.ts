@@ -1,3 +1,5 @@
+import type { DocumentQualityResult } from "@/lib/document-quality-gate";
+
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
 /** OCI intake lane; null/omitted = legacy behavior. See `lib/oci-intake-variant.ts`. */
@@ -62,6 +64,8 @@ export interface Document {
   fixed_drive_file_id?: string | null;
   fixed_drive_url?: string | null;
   fixed_size_bytes?: number | null;
+  /** Last pre-extraction quality scan (advisory). */
+  pre_extraction_quality?: DocumentQualityResult | null;
 }
 
 /** 200 JSON body from POST /api/extract/single (non-streaming) */
@@ -74,6 +78,7 @@ export type ExtractSingleResultBody = {
   field_data: { field_name: string; field_value: string | null }[];
   skipped?: boolean;
   document_id?: string;
+  document_quality?: DocumentQualityResult;
 };
 
 export interface ExtractedField {

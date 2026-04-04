@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 
+import { extractFieldsFromDocument } from "@/lib/claude";
 import {
-  callClaudeExtractFieldsRaw,
-  parseClaudeExtractedFieldsText,
-} from "@/lib/claude";
+  PASSPORT_DOC_TYPES,
+  type PassportRoutingContext,
+} from "@/lib/extraction-profiles";
+import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
 import type { ExtractionFailureCode } from "@/lib/extraction-failure-reasons";
 import { FAILURE_REASON_LABELS } from "@/lib/extraction-failure-reasons";
+import {
+  analyzeDocumentQuality,
+  type DocumentQualityResult,
+} from "@/lib/document-quality-gate";
 import { resolveMimeTypeForExtraction } from "@/lib/extraction-mime";
 import { getFileAsBase64 } from "@/lib/google-drive";
 import { resolveDocTypeChecklistLabel } from "@/lib/application-checklist";
 import { shouldSkipAiExtraction } from "@/lib/oci-new-checklist";
-import { reconcileApplication } from "@/lib/cross-doc-reconcile/reconcile-application";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { ExtractSingleResultBody } from "@/lib/types";
+import type { Application, ExtractSingleResultBody } from "@/lib/types";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -53,6 +58,16 @@ async function markDocument(
   }
 ) {
   await supabaseAdmin.from("documents").update(fields).eq("id", docId);
+}
+
+async function persistPreExtractionQuality(
+  docId: string,
+  result: DocumentQualityResult
+) {
+  await supabaseAdmin
+    .from("documents")
+    .update({ pre_extraction_quality: result })
+    .eq("id", docId);
 }
 
 function failPayload(
@@ -153,21 +168,78 @@ async function runExtraction(args: {
     return { ...failPayload("drive_download_failed"), document_id: docId };
   }
 
-  progress(2, "Sending to AI…");
-
   const driveRef = String(doc.drive_file_id ?? "");
   const fileName = String(doc.file_name ?? "");
   const mimeType = await resolveMimeTypeForExtraction(driveRef, fileName);
-
-  let rawText: string;
+  const docBuffer = Buffer.from(b64, "base64");
+  let document_quality: DocumentQualityResult;
   try {
-    rawText = await callClaudeExtractFieldsRaw({
+    document_quality = await analyzeDocumentQuality({
+      buffer: docBuffer,
+      mimeType,
+      fileName,
+    });
+    await persistPreExtractionQuality(docId, document_quality);
+    if (document_quality.status === "manual_review_recommended") {
+      console.log(
+        `[extract/single] Document ${docId} pre-extraction quality: manual_review_recommended`,
+        document_quality.issues
+      );
+    }
+  } catch (err) {
+    console.error("[extract/single] pre-extraction quality failed:", err);
+    document_quality = {
+      status: "ok",
+      issues: [],
+      details: { analyzedAt: new Date().toISOString() },
+    };
+  }
+
+  progress(2, "Sending to AI…");
+
+  let passportRouting: PassportRoutingContext | undefined;
+  if (PASSPORT_DOC_TYPES.has(docType)) {
+    const { data: appRow } = await supabaseAdmin
+      .from("applications")
+      .select("service_type, oci_intake_variant")
+      .eq("id", application_id)
+      .maybeSingle();
+    passportRouting = {
+      serviceType:
+        (appRow?.service_type as Application["service_type"]) ?? null,
+      ociIntakeVariant: normalizeStoredOciIntakeVariant(
+        appRow?.oci_intake_variant
+      ),
+    };
+  }
+
+  let extracted: Record<string, string | null>;
+  try {
+    extracted = await extractFieldsFromDocument({
       base64: b64,
       mimeType,
       docType,
+      passportRouting,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const isParse =
+      err instanceof SyntaxError ||
+      /JSON|parse/i.test(msg) ||
+      msg.includes("No JSON object");
+    if (isParse) {
+      console.error("Parse error:", msg);
+      await markDocument(docId, {
+        extraction_status: "failed",
+        failure_reason: "parse_failed",
+      });
+      return {
+        ...failPayload("parse_failed"),
+        human_reason: msg.slice(0, 200) || FAILURE_REASON_LABELS.parse_failed,
+        document_id: docId,
+        document_quality,
+      };
+    }
     console.error("Claude API error:", msg);
     await markDocument(docId, {
       extraction_status: "failed",
@@ -177,27 +249,11 @@ async function runExtraction(args: {
       ...failPayload("claude_api_failed"),
       human_reason: msg.slice(0, 200) || FAILURE_REASON_LABELS.claude_api_failed,
       document_id: docId,
+      document_quality,
     };
   }
 
-  progress(3, "Parsing results…");
-
-  let extracted: Record<string, string | null>;
-  try {
-    extracted = parseClaudeExtractedFieldsText(rawText);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("Parse error:", msg);
-    await markDocument(docId, {
-      extraction_status: "failed",
-      failure_reason: "parse_failed",
-    });
-    return {
-      ...failPayload("parse_failed"),
-      human_reason: msg.slice(0, 200) || FAILURE_REASON_LABELS.parse_failed,
-      document_id: docId,
-    };
-  }
+  progress(3, "Preparing results…");
 
   const entries = Object.entries(extracted);
   progress(
@@ -249,12 +305,9 @@ async function runExtraction(args: {
       fields_extracted: field_data.length,
       field_data,
       document_id: docId,
+      document_quality,
     };
   }
-
-  void reconcileApplication(application_id).catch((e) =>
-    console.error("reconcileApplication after extract/single:", e)
-  );
 
   return {
     ok: true,
@@ -262,6 +315,7 @@ async function runExtraction(args: {
     fields_extracted: field_data.length,
     field_data,
     document_id: docId,
+    document_quality,
   };
 }
 
