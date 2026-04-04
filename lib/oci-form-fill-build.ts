@@ -89,8 +89,13 @@ export function buildOciFormFillPlan(args: {
 
   const hasParentPassport =
     uploadedDocSet.has("parent_passport") ||
-    uploadedDocSet.has("parent_indian_doc");
-  const hasParentOci = uploadedDocSet.has("parent_oci");
+    uploadedDocSet.has("parent_indian_doc") ||
+    uploadedDocSet.has("parent_passport_father") ||
+    uploadedDocSet.has("parent_passport_mother");
+  const hasParentOci =
+    uploadedDocSet.has("parent_oci") ||
+    uploadedDocSet.has("parent_oci_father") ||
+    uploadedDocSet.has("parent_oci_mother");
 
   const parentDocTypeLabel =
     !hasParentPassport && !hasParentOci

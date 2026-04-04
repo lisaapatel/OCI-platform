@@ -62,7 +62,8 @@ const PASSPORT_EXTENDED_FIELDS = [
   "email",
 ] as const;
 
-const INDIAN_PASSPORT_EXTRA_FIELDS = [
+/** Indian booklet-only fields (parent pages, former Indian passport, etc.). */
+export const INDIAN_PASSPORT_EXTRA_FIELDS = [
   "former_indian_passport_number",
   "former_indian_passport_issue_date",
   "former_indian_passport_issue_place",
@@ -81,33 +82,75 @@ const INDIAN_PASSPORT_TARGET_FIELDS = [
   ...INDIAN_PASSPORT_EXTRA_FIELDS,
 ] as const;
 
+/** Non-Indian passports (not US-specific layout). */
 const FOREIGN_PASSPORT_INSTRUCTIONS = `
-Passport biodata page only. Prefer printed labels over guesses.
-place_of_birth: the city or town (or state if that is all that is printed) from the Place of birth / POB / lieu de naissance field — not the country name alone; put the country in country_of_birth when a separate field or clearly distinct.
-For names: fill first_name AND given_name with the same given-name value; last_name AND surname with the same surname value; full_name as "Given … Surname" including any middle name in middle_name when shown.
-For US-style Surname / Given names, map to last_name / first_name and full_name when you can combine reliably.
-passport_issue_date, passport_issue_place, passport_issue_country (or place_of_issue / country_of_issue) are not in the MRZ — extract from the visual page when visible.
+Passport biodata page only. Match values to their PRINTED FIELD LABELS — not by position on the page.
+
+DATES AND PLACES (do not swap or merge):
+- date_of_birth: ONLY from the field explicitly labeled for birth (e.g. "Date of birth", "D.O.B."). Never copy the issue date or expiry date here.
+- passport_issue_date: from the issue / date of issue field only. It must be earlier than expiry.
+- passport_expiry_date / expiry_date: from expiry / date of expiration only.
+- place_of_birth + country_of_birth: ONLY from "Place of birth" (or equivalent). Never use the issuing office city, "place of issue", or visa page text.
+- passport_issue_place / place_of_issue / country_of_issue: from issue / authority / place of issue fields — not from place of birth.
+
+NAME RULES:
+- last_name / surname: value next to "Surname", "Family name", or equivalent — typically one family token; do not put a patronymic or second given name into last_name unless the label groups it as surname.
+- first_name / given_name: value next to "Given names", "Forenames", etc. If two given tokens appear under one label, first → first_name, second → middle_name.
+- Fill first_name AND given_name consistently; last_name AND surname consistently.
+
+If issue and expiry dates look reversed relative to each other, re-read the labels and correct before output.
+`.trim();
+
+/** US passport biodata (photo page). */
+const US_PASSPORT_INSTRUCTIONS = `
+US passport — photo / biodata page only. Every value must come from the label next to it.
+
+DATES (never swap):
+- date_of_birth: only from "Date of Birth" (or the birth line in the data block). Never use "Date of Issue" or "Date of Expiration".
+- passport_issue_date: from "Date of Issue" / issuance date only.
+- passport_expiry_date and expiry_date: from "Date of Expiration" / expiration only. Issue date is always before expiration.
+
+PLACES (never swap):
+- place_of_birth: city/state line from the labeled place-of-birth field — not the issuing authority location.
+- country_of_birth: country shown for birth when printed separately; otherwise infer only if clearly labeled.
+- passport_issue_place / place_of_issue / country_of_issue: from "Place of Issue", "Issuing authority", or the city shown as issuance — not place of birth.
+
+NAMES (MRZ order is not visual reading order):
+- On the printed card, "Surname" appears above "Given Names". Map Surname → last_name and surname; Given Names → first_name (and middle_name for an additional given token).
+- WRONG: treating the first line of text in reading order as first_name. Always use the printed labels.
+- WRONG: first_name="SHAH", last_name="AARIT HARSHAL". RIGHT: last_name="SHAH", first_name="AARIT", middle_name="HARSHAL" when Given Names show two tokens.
+- Do not move a parent or spouse name into first_name or last_name.
 `.trim();
 
 const INDIAN_PASSPORT_INSTRUCTIONS = `
-${FOREIGN_PASSPORT_INSTRUCTIONS}
+=== INDIAN PASSPORT — USE THE BIODATA PAGE FIRST ===
+The biodata page shows the holder PHOTO and exactly two MRZ lines (A–Z, 0–9, <) at the bottom. It may be page 2 or the last page. Extract core identity from this page before other pages.
 
-Indian passport layout: labels may be bilingual (English/Hindi). Surname and Given names appear as printed; map to last_name/surname and first_name/given_name with the same values in each pair; set full_name when you can combine reliably.
-If a "File No." or observation/endorsement strip is visible on the biodata page, do not invent values — only output fields in the allowed key list when text clearly matches.
+=== NAMES (labels only — never infer from order) ===
+- "Surname" (English and/or Hindi) → last_name AND surname. Family name only — one short token (SHAH, PARIKH, KUMAR, PATEL). Never put the second half of "Given Names" into last_name.
+- "Given Name(s)" / "Given Names" → first_name AND given_name. Two words under this label: FIRST word → first_name, SECOND → middle_name.
+- WRONG: Given Name(s)="REEMABEN RAJESHBHAI", Surname="PARIKH" → last_name="RAJESHBHAI". NEVER.
+- RIGHT: last_name="PARIKH", first_name="REEMABEN", middle_name="RAJESHBHAI".
+- Do not copy father, mother, or spouse names into first_name or last_name. Indian states (e.g. GUJARAT, MAHARASHTRA) are never given names.
 
-CRITICAL: An Indian passport has TWO different name sections:
-1. BIODATA PAGE (photo page): Shows the applicant's own "Surname" and "Given Name(s)" in the top section. This is what must go into first_name, last_name, full_name.
-2. PERSONAL PARTICULARS PAGE (last page): Shows "Name of Father/Legal Guardian", "Name of Mother", "Name of Spouse". These are FAMILY members, NOT the applicant.
+=== DATES (critical — do not swap) ===
+- date_of_birth: ONLY from the field labeled "Date of Birth" / "जन्म तिथि". It must be a date many years before the issue date (passport holders are at least 1 year old). If the date you read for date_of_birth is the same year as the issue date or expiry date, you have read the wrong field — set date_of_birth to null.
+- passport_issue_date: from issue / date of issue only. passport_expiry_date / expiry_date: from expiry only. Issue must precede expiry; if reversed, re-read labels.
+- place_of_birth: only from "Place of Birth" — never from "Place of Issue" or "Domicile".
+- passport_issue_place: from issue / authority fields — never from place of birth.
 
-Rules:
-- first_name and last_name must ONLY come from the biodata page Surname/Given Name fields or the MRZ
-- Do NOT use "Name of Father", "Name of Mother", or "Name of Spouse" values as first_name or last_name
-- father_full_name, mother_full_name, and spouse_name are separate keys — output family names there only when printed on the personal particulars page
-- If you are unsure which page a name is from, use the MRZ at the bottom of the biodata page as the source of truth
+=== PERSONAL PARTICULARS PAGE ===
+- "Name of Father" → father_full_name only. Never copy into first_name, last_name, or address fields.
+- "Name of Mother" → mother_full_name only. Never copy into first_name, last_name, or address fields.
+- "Name of Spouse" → spouse_name only.
+- ADDRESS FIELDS (address_line1, address_line2, address_line_1, address_line_2, address_city, city, etc.): must contain a physical address — street number, road, locality, city, PIN code. If a line contains only a person's name (no street number or road), it is NOT an address line — set it to null. The "Name of Father/Mother" lines printed above the address block are NOT address content.
+
+Bilingual labels: prefer the English label. File No. / observations: only output when clearly printed; do not invent.
 `.trim();
 
 export type ExtractionProfileId =
   | "indian_passport_core"
+  | "us_passport_core"
   | "foreign_passport_core"
   | "birth_certificate_core"
   | "address_proof_core"
@@ -145,7 +188,7 @@ export const PASSPORT_DOC_TYPES = new Set([
 export function resolvePassportProfileId(
   docType: string,
   ctx?: PassportRoutingContext
-): "indian_passport_core" | "foreign_passport_core" {
+): "indian_passport_core" | "us_passport_core" | "foreign_passport_core" {
   const dt = docType.trim();
   if (dt === "former_indian_passport") {
     if (ctx?.ociIntakeVariant === "new_foreign_birth") {
@@ -157,7 +200,21 @@ export function resolvePassportProfileId(
     if (ctx?.serviceType === "passport_renewal") {
       return "indian_passport_core";
     }
+    if (
+      ctx?.serviceType === "oci_new" ||
+      ctx?.serviceType === "oci_renewal" ||
+      ctx?.serviceType === "passport_us_renewal_test"
+    ) {
+      return "us_passport_core";
+    }
     return "foreign_passport_core";
+  }
+  if (
+    dt === "parent_passport_father" ||
+    dt === "parent_passport_mother" ||
+    dt === "parent_passport"
+  ) {
+    return "indian_passport_core";
   }
   return "foreign_passport_core";
 }
@@ -248,6 +305,13 @@ const PROFILES: Record<ExtractionProfileId, ExtractionProfile> = {
     preferMrzFirst: true,
     skipAiExtraction: false,
   },
+  us_passport_core: {
+    id: "us_passport_core",
+    targetFieldNames: FOREIGN_PASSPORT_TARGET_FIELDS,
+    instructions: US_PASSPORT_INSTRUCTIONS,
+    preferMrzFirst: true,
+    skipAiExtraction: false,
+  },
   foreign_passport_core: {
     id: "foreign_passport_core",
     targetFieldNames: FOREIGN_PASSPORT_TARGET_FIELDS,
@@ -308,6 +372,8 @@ export const DOC_TYPE_TO_EXTRACTION_PROFILE: Record<
   indian_address_proof: "address_proof_core",
   applicant_oci_card: "oci_card_core",
   parent_oci: "oci_card_core",
+  parent_oci_father: "oci_card_core",
+  parent_oci_mother: "oci_card_core",
   applicant_photo: "photo_signature_skip",
   applicant_signature: "photo_signature_skip",
   photo: "photo_signature_skip",
@@ -336,6 +402,25 @@ export function buildProfileExtractionPromptAppendix(
   }
 
   const keys = profile.targetFieldNames.join(", ");
+
+  // Indian + US: layout-specific rules before the generic strict block so they are not diluted.
+  if (
+    profile.id === "indian_passport_core" ||
+    profile.id === "us_passport_core"
+  ) {
+    return `
+Extract data from this document. Document type key: ${docType}
+
+${profile.instructions}
+
+Strict output rules:
+- Return ONE JSON object; snake_case keys only.
+- Include ONLY these keys (each value a string or null): ${keys}
+- Set a value only when it is clearly printed on this document. If absent, illegible, or uncertain, use null.
+- Do not infer, guess, or fill from context. Do not output keys outside the list above.
+`.trim();
+  }
+
   return `
 Extract data from this document. Document type key: ${docType}
 

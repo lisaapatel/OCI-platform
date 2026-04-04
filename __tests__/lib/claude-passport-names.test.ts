@@ -3,6 +3,7 @@
  */
 
 import {
+  isMrzDevoidOfParsedData,
   mergeMrzOverVision,
   normalizePassportNameSynonyms,
 } from "../../lib/passport-mrz-merge";
@@ -88,7 +89,7 @@ describe("mergeMrzOverVision", () => {
     expect(merged.full_name).toBe("JANE ROE");
   });
 
-  test("normalizes when MRZ is null", () => {
+  test("when MRZ is null, returns vision unchanged except future-DOB sanity", () => {
     const vision: Record<string, string | null> = {
       first_name: null,
       last_name: null,
@@ -97,9 +98,42 @@ describe("mergeMrzOverVision", () => {
       full_name: null,
     };
     const merged = mergeMrzOverVision(vision, null);
-    expect(merged.first_name).toBe("ALEX");
-    expect(merged.last_name).toBe("KIM");
-    expect(merged.full_name).toBe("ALEX KIM");
+    expect(merged).toEqual(vision);
+    expect(merged.first_name).toBeNull();
+    expect(merged.given_name).toBe("ALEX");
+  });
+
+  test("when MRZ is null, clears impossible future date_of_birth from vision", () => {
+    const vision: Record<string, string | null> = {
+      first_name: "A",
+      last_name: "B",
+      date_of_birth: "2099-03-15",
+    };
+    const merged = mergeMrzOverVision(vision, null);
+    expect(merged.date_of_birth).toBeNull();
+    expect(merged.first_name).toBe("A");
+  });
+
+  test("when MRZ object is empty, returns vision unchanged", () => {
+    const vision: Record<string, string | null> = {
+      first_name: "VIS",
+      last_name: "ION",
+      date_of_birth: "1991-01-01",
+    };
+    const merged = mergeMrzOverVision(vision, {});
+    expect(merged).toEqual(vision);
+  });
+
+  test("isMrzDevoidOfParsedData is true for null and all-empty values", () => {
+    expect(isMrzDevoidOfParsedData(null)).toBe(true);
+    expect(isMrzDevoidOfParsedData({})).toBe(true);
+    expect(
+      isMrzDevoidOfParsedData({
+        first_name: "",
+        last_name: "  ",
+      })
+    ).toBe(true);
+    expect(isMrzDevoidOfParsedData({ passport_number: "N1" })).toBe(false);
   });
 
   test("when MRZ has both names, drops vision applicant-name fields before overlay", () => {
@@ -153,14 +187,18 @@ describe("mergeMrzOverVision", () => {
     expect(merged.passport_number).toBe("P9");
   });
 
-  test("clears date_of_birth when year is more than one year in the future", () => {
+  test("clears date_of_birth when year is more than one year in the future (merge path)", () => {
     const vision: Record<string, string | null> = {
       first_name: "A",
       last_name: "B",
       date_of_birth: "2099-03-15",
     };
-    const merged = mergeMrzOverVision(vision, null);
+    const mrz: Record<string, string> = {
+      passport_number: "Z9",
+    };
+    const merged = mergeMrzOverVision(vision, mrz);
     expect(merged.date_of_birth).toBeNull();
+    expect(merged.passport_number).toBe("Z9");
   });
 
   test("clears impossible DOB after MRZ merge", () => {

@@ -8,6 +8,8 @@ const config: Config = {
   forceExit: true,
   detectOpenHandles: true,
   testMatch: ["**/__tests__/**/*.test.ts", "**/__tests__/**/*.test.tsx"],
+  // mrz is ESM-only; allow ts-jest to transform it
+  transformIgnorePatterns: ["node_modules/(?!(mrz)/)"],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",

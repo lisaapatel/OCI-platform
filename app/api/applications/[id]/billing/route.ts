@@ -15,6 +15,7 @@ export async function PATCH(
     const body = (await req.json()) as {
       vfs_tracking_number?: string | null;
       govt_tracking_number?: string | null;
+      oci_file_reference_number?: string | null;
       customer_price?: number | null;
       our_cost?: number | null;
       payment_status?: PaymentStatus | null;
@@ -30,6 +31,11 @@ export async function PATCH(
     if (body.govt_tracking_number !== undefined) {
       const v = body.govt_tracking_number;
       patch.govt_tracking_number =
+        v == null || String(v).trim() === "" ? null : String(v).trim();
+    }
+    if (body.oci_file_reference_number !== undefined) {
+      const v = body.oci_file_reference_number;
+      patch.oci_file_reference_number =
         v == null || String(v).trim() === "" ? null : String(v).trim();
     }
 

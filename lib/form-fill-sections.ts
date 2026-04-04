@@ -484,15 +484,43 @@ export const SRC_PARENT_PASSPORT_ONLY = [
   "parent_passport",
   "parent_indian_doc",
 ] as const;
+/** Father passport number row: minor father slot first, then generic parent passport. */
+export const SRC_FATHER_INDIAN_PASSPORT_NUMBER = [
+  "parent_passport_father",
+  "parent_passport",
+  "parent_indian_doc",
+  "parent_passport_mother",
+] as const;
+/** Mother passport number row: minor mother slot first. */
+export const SRC_MOTHER_INDIAN_PASSPORT_NUMBER = [
+  "parent_passport_mother",
+  "parent_passport",
+  "parent_indian_doc",
+  "parent_passport_father",
+] as const;
 export const SRC_PARENT_OCI_ONLY = ["parent_oci"] as const;
+export const SRC_FATHER_OCI_NUMBER = [
+  "parent_oci_father",
+  "parent_oci",
+  "parent_oci_mother",
+] as const;
+export const SRC_MOTHER_OCI_NUMBER = [
+  "parent_oci_mother",
+  "parent_oci",
+  "parent_oci_father",
+] as const;
 export const SRC_FATHER_NAME = [
   "birth_certificate",
+  "parent_passport_father",
+  "parent_oci_father",
   "parent_passport",
   "parent_oci",
   "parent_indian_doc",
 ] as const;
 export const SRC_MOTHER_NAME = [
   "birth_certificate",
+  "parent_passport_mother",
+  "parent_oci_mother",
   "parent_passport",
   "parent_oci",
   "parent_indian_doc",
@@ -611,7 +639,13 @@ export function formFillSourceTagForRow(
   if (dt === "parent_passport" || dt === "parent_indian_doc") {
     return { label: "Parent Passport", variant: "grey" };
   }
+  if (dt === "parent_passport_father" || dt === "parent_passport_mother") {
+    return { label: "Parent Passport", variant: "grey" };
+  }
   if (dt === "parent_oci") {
+    return { label: "Parent OCI", variant: "grey" };
+  }
+  if (dt === "parent_oci_father" || dt === "parent_oci_mother") {
     return { label: "Parent OCI", variant: "grey" };
   }
   if (dt === "former_indian_passport" || dt === "old_passport") {
@@ -812,12 +846,12 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
           "document_number",
           "passport_id",
         ],
-        [...SRC_PARENT_PASSPORT_ONLY]
+        [...SRC_FATHER_INDIAN_PASSPORT_NUMBER]
       ),
       f(
         "Father's OCI number",
         ["father_oci_number", "father_oci_card_number"],
-        [...SRC_PARENT_OCI_ONLY]
+        [...SRC_FATHER_OCI_NUMBER]
       ),
       f("Mother's name", ["mother_full_name", "mother_name", "mother"], [...SRC_MOTHER_NAME]),
       f("Mother's date of birth", ["mother_date_of_birth", "mother_dob"], [...SRC_MOTHER_NAME]),
@@ -839,12 +873,12 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
           "document_number",
           "passport_id",
         ],
-        [...SRC_PARENT_PASSPORT_ONLY]
+        [...SRC_MOTHER_INDIAN_PASSPORT_NUMBER]
       ),
       f(
         "Mother's OCI number",
         ["mother_oci_number", "mother_oci_card_number"],
-        [...SRC_PARENT_OCI_ONLY]
+        [...SRC_MOTHER_OCI_NUMBER]
       ),
       f(
         "Spouse name",

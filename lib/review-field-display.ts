@@ -109,6 +109,8 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   parent_passport: "Parent's Indian Passport",
   parent_passport_father: "Father's Passport / OCI",
   parent_passport_mother: "Mother's Passport / OCI",
+  parent_oci_father: "Father's OCI Card",
+  parent_oci_mother: "Mother's OCI Card",
   parent_address_proof: "Parent's Address Proof",
   parent_oci: "Parent's OCI Card",
   parent_indian_doc: "Parent Indian Document (legacy)",

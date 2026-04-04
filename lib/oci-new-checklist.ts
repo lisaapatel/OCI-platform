@@ -74,6 +74,8 @@ export function getOciChecklistLabel(docType: string): string {
   if (key === "old_passport") return "Old/Previous Passport (legacy)";
   if (key === "parent_indian_doc")
     return "Parent's Indian Passport or OCI Card (legacy)";
+  if (key === "parent_oci_father") return "Father's OCI Card";
+  if (key === "parent_oci_mother") return "Mother's OCI Card";
   return docType;
 }
 

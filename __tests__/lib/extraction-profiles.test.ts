@@ -23,13 +23,13 @@ describe("getExtractionProfile", () => {
       "foreign_passport_core"
     );
     expect(getExtractionProfile("parent_passport_father").id).toBe(
-      "foreign_passport_core"
+      "indian_passport_core"
     );
     expect(getExtractionProfile("parent_passport_mother").id).toBe(
-      "foreign_passport_core"
+      "indian_passport_core"
     );
     expect(getExtractionProfile("parent_passport").id).toBe(
-      "foreign_passport_core"
+      "indian_passport_core"
     );
     expect(getExtractionProfile("birth_certificate").id).toBe(
       "birth_certificate_core"
@@ -42,6 +42,8 @@ describe("getExtractionProfile", () => {
     );
     expect(getExtractionProfile("applicant_oci_card").id).toBe("oci_card_core");
     expect(getExtractionProfile("parent_oci").id).toBe("oci_card_core");
+    expect(getExtractionProfile("parent_oci_father").id).toBe("oci_card_core");
+    expect(getExtractionProfile("parent_oci_mother").id).toBe("oci_card_core");
     expect(getExtractionProfile("applicant_photo").id).toBe(
       "photo_signature_skip"
     );
@@ -83,6 +85,15 @@ describe("getExtractionProfile", () => {
         ociIntakeVariant: "new_foreign_birth",
       })
     ).toBe("foreign_passport_core");
+    expect(resolvePassportProfileId("parent_passport_father")).toBe(
+      "indian_passport_core"
+    );
+    expect(resolvePassportProfileId("parent_passport_mother")).toBe(
+      "indian_passport_core"
+    );
+    expect(resolvePassportProfileId("parent_passport")).toBe(
+      "indian_passport_core"
+    );
   });
 
   test("unknown doc type uses general_fallback", () => {
@@ -206,6 +217,8 @@ describe("DOC_TYPE_TO_EXTRACTION_PROFILE", () => {
       "address_proof",
       "applicant_oci_card",
       "parent_oci",
+      "parent_oci_father",
+      "parent_oci_mother",
     ]) {
       expect(DOC_TYPE_TO_EXTRACTION_PROFILE[dt]).toBeDefined();
     }

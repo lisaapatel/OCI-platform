@@ -1,9 +1,17 @@
 "use client";
 
 import clsx from "clsx";
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useDropzone } from "react-dropzone";
 
 import { coerceExtractionStatus } from "@/lib/document-utils";
@@ -33,6 +41,10 @@ import {
 } from "@/lib/oci-intake-ui";
 import { isOciServiceType } from "@/lib/oci-intake-variant";
 import {
+  allDocTypesInSameMinorParentSlot,
+  findDocumentForMinorParentSlot,
+  minorParentDocTypeCoveredByChecklist,
+  minorParentSlotChecklistAlias,
   PARENT_DOCUMENT_CHECKLIST_ITEMS,
   PARENT_PASSPORT_BANNER,
   minorParentPassportMet,
@@ -40,9 +52,45 @@ import {
 import { PASSPORT_RENEWAL_PHOTO_SPECS } from "@/lib/passport-photo-specs";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
+import { ApplicationPdfDownloadsForApplication } from "./application-pdf-downloads";
 import { BillingTrackingSection } from "./billing-tracking-section";
 import { PhotoCropEditorModal } from "./photo-crop-editor-modal";
 import { SignatureCropEditorModal } from "./signature-crop-editor-modal";
+
+function isUploadingForChecklistItem(
+  itemDocType: string,
+  uploadingDocType: string | null
+): boolean {
+  if (!uploadingDocType) return false;
+  if (itemDocType === "parent_passport_father") {
+    return allDocTypesInSameMinorParentSlot("parent_passport_father").includes(
+      uploadingDocType
+    );
+  }
+  if (itemDocType === "parent_passport_mother") {
+    return allDocTypesInSameMinorParentSlot("parent_passport_mother").includes(
+      uploadingDocType
+    );
+  }
+  return itemDocType === uploadingDocType;
+}
+
+function uploadProgressForChecklistItem(
+  itemDocType: string,
+  progress: Record<string, number | null>
+): number | null {
+  if (itemDocType === "parent_passport_father") {
+    return (
+      progress.parent_passport_father ?? progress.parent_oci_father ?? null
+    );
+  }
+  if (itemDocType === "parent_passport_mother") {
+    return (
+      progress.parent_passport_mother ?? progress.parent_oci_mother ?? null
+    );
+  }
+  return progress[itemDocType] ?? null;
+}
 
 function normalizeDocumentFromApi(row: Record<string, unknown>): Document {
   return {
@@ -255,6 +303,98 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
+type CollapsibleReadinessHubProps = {
+  hubNeedsAttention: boolean;
+  hubTitle: string;
+  readinessSummaryLine: string;
+  children: ReactNode;
+};
+
+function CollapsibleReadinessHub({
+  hubNeedsAttention,
+  hubTitle,
+  readinessSummaryLine,
+  children,
+}: CollapsibleReadinessHubProps) {
+  const [open, setOpen] = useState(hubNeedsAttention);
+  useEffect(() => {
+    if (hubNeedsAttention) setOpen(true);
+  }, [hubNeedsAttention]);
+
+  return (
+    <details
+      id="govt-portal-readiness"
+      className="group scroll-mt-24 rounded-xl border border-slate-200 border-t-4 border-t-[#1e3a5f] bg-white shadow-sm transition-shadow duration-150 hover:shadow-md [&_summary::-webkit-details-marker]:hidden"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      suppressHydrationWarning
+    >
+      <summary className="cursor-pointer list-none rounded-xl px-4 py-4 outline-none transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/20 sm:px-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
+              {hubTitle}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">{readinessSummaryLine}</p>
+          </div>
+          <ChevronDown
+            className="mt-0.5 h-5 w-5 shrink-0 text-[#1e3a5f] opacity-90 transition-transform duration-200 group-open:rotate-180 sm:mt-0"
+            aria-hidden
+            strokeWidth={2.5}
+          />
+        </div>
+      </summary>
+      <div className="border-t border-slate-100 px-4 pb-6 pt-2 sm:px-5">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+type CollapsibleAiExtractionSectionProps = {
+  attention: boolean;
+  summaryLine: string;
+  children: ReactNode;
+};
+
+function CollapsibleAiExtractionSection({
+  attention,
+  summaryLine,
+  children,
+}: CollapsibleAiExtractionSectionProps) {
+  const [open, setOpen] = useState(attention);
+  useEffect(() => {
+    if (attention) setOpen(true);
+  }, [attention]);
+
+  return (
+    <details
+      id="ai-document-extraction"
+      className="group scroll-mt-24 rounded-xl border border-slate-200 bg-slate-50 shadow-sm transition-shadow duration-150 hover:shadow-md [&_summary::-webkit-details-marker]:hidden"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      suppressHydrationWarning
+    >
+      <summary className="cursor-pointer list-none rounded-xl px-4 py-4 outline-none transition-colors hover:bg-slate-100/90 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/20 sm:px-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold tracking-tight text-[#1e3a5f]">
+              AI document extraction
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">{summaryLine}</p>
+          </div>
+          <ChevronDown
+            className="mt-0.5 h-5 w-5 shrink-0 text-[#1e3a5f] opacity-90 transition-transform duration-200 group-open:rotate-180 sm:mt-0"
+            aria-hidden
+            strokeWidth={2.5}
+          />
+        </div>
+      </summary>
+      <div className="border-t border-slate-200 p-5 pt-4">{children}</div>
+    </details>
+  );
+}
+
 type Props = {
   application: Application;
   initialDocuments: Document[];
@@ -314,6 +454,13 @@ export function ApplicationDetailClient({
   const [signatureEditorDoc, setSignatureEditorDoc] = useState<Document | null>(
     null
   );
+  const [minorParentUploadKind, setMinorParentUploadKind] = useState<{
+    father: "passport" | "oci";
+    mother: "passport" | "oci";
+  }>({ father: "passport", mother: "passport" });
+  const [parentDocKindSavingId, setParentDocKindSavingId] = useState<
+    string | null
+  >(null);
 
   const docByType = useMemo(() => {
     const m = new Map<string, Document>();
@@ -389,19 +536,48 @@ export function ApplicationDetailClient({
     [documents, portalPrep, displayChecklist]
   );
 
-  const showReadyToSubmitPortalWarning =
-    application.status === "ready_to_submit" &&
-    showDocumentChecklist &&
-    !portalPrepLoading &&
-    !photoValLoading &&
-    !sigValLoading &&
-    !(
-      allRequiredUploaded &&
-      portalPdfClientReady &&
-      photoValResult?.valid === true &&
-      (!docByType.get("applicant_signature") ||
-        sigValResult?.valid === true)
+  const extractionAttention = useMemo(() => {
+    if (documents.length === 0) return false;
+    const extractable = documents.filter((d) => !shouldSkipAiExtraction(d.doc_type));
+    if (extractable.length === 0) return false;
+    return (
+      isProcessing ||
+      extractable.some(
+        (d) =>
+          d.extraction_status === "pending" ||
+          d.extraction_status === "processing" ||
+          d.extraction_status === "failed",
+      )
     );
+  }, [documents, isProcessing]);
+
+  const extractionSummaryLine = useMemo(() => {
+    if (documents.length === 0) return "";
+    const extractable = documents.filter((d) => !shouldSkipAiExtraction(d.doc_type));
+    if (extractable.length === 0) {
+      return "No uploads in this checklist require AI extraction.";
+    }
+    if (isProcessing) return "Extraction in progress…";
+    const pending = extractable.filter((d) => d.extraction_status === "pending")
+      .length;
+    const failed = extractable.filter((d) => d.extraction_status === "failed")
+      .length;
+    const processing = extractable.filter(
+      (d) => d.extraction_status === "processing",
+    ).length;
+    if (failed > 0) {
+      return `${failed} document${failed === 1 ? "" : "s"} need attention — expand to retry`;
+    }
+    if (processing > 0) return "Extraction running on server…";
+    if (pending > 0) {
+      return `${pending} ready to process — expand to run AI extraction`;
+    }
+    const allDone = extractable.every((d) => d.extraction_status === "done");
+    if (allDone) {
+      return "All eligible documents extracted — expand for history or to re-run";
+    }
+    return "Expand for extraction tools";
+  }, [documents, isProcessing]);
 
   const showPhotoSigCard =
     showDocumentChecklist ||
@@ -885,7 +1061,11 @@ export function ApplicationDetailClient({
 
       const initialRows: BulkExtractRow[] = [
         ...displayChecklist.map((item) => {
-          const doc = byType.get(item.doc_type);
+          const doc =
+            item.doc_type === "parent_passport_father" ||
+            item.doc_type === "parent_passport_mother"
+              ? findDocumentForMinorParentSlot(item.doc_type, byType)
+              : byType.get(item.doc_type);
           return {
             key: item.doc_type,
             label: item.label,
@@ -894,7 +1074,10 @@ export function ApplicationDetailClient({
           };
         }),
         ...fresh
-          .filter((d) => !checklistTypeSet.has(d.doc_type))
+          .filter(
+            (d) =>
+              !minorParentDocTypeCoveredByChecklist(d.doc_type, checklistTypeSet)
+          )
           .map((d) => ({
             key: d.id,
             label: resolveDocTypeChecklistLabel(d.doc_type),
@@ -917,11 +1100,13 @@ export function ApplicationDetailClient({
       const toProcess = fresh
         .filter((d) => d.extraction_status === "pending")
         .sort((a, b) => {
-          const ia = checklistOrder.has(a.doc_type)
-            ? checklistOrder.get(a.doc_type)!
+          const aliasA = minorParentSlotChecklistAlias(a.doc_type);
+          const aliasB = minorParentSlotChecklistAlias(b.doc_type);
+          const ia = checklistOrder.has(aliasA)
+            ? checklistOrder.get(aliasA)!
             : 999;
-          const ib = checklistOrder.has(b.doc_type)
-            ? checklistOrder.get(b.doc_type)!
+          const ib = checklistOrder.has(aliasB)
+            ? checklistOrder.get(aliasB)!
             : 999;
           return ia - ib;
         });
@@ -1037,6 +1222,46 @@ export function ApplicationDetailClient({
     }
   }
 
+  async function patchMinorParentDocKind(
+    doc: Document,
+    checklistSlotDocType: string,
+    kind: "passport" | "oci"
+  ) {
+    const targetType =
+      checklistSlotDocType === "parent_passport_father"
+        ? kind === "oci"
+          ? "parent_oci_father"
+          : "parent_passport_father"
+        : kind === "oci"
+          ? "parent_oci_mother"
+          : "parent_passport_mother";
+    if (doc.doc_type === targetType) return;
+    setPatchError(null);
+    setParentDocKindSavingId(doc.id);
+    try {
+      const res = await fetch(`/api/documents/${encodeURIComponent(doc.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doc_type: targetType }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        document?: Record<string, unknown>;
+      };
+      if (!res.ok) {
+        setPatchError(
+          typeof data.error === "string" ? data.error : "Update failed."
+        );
+        return;
+      }
+      const list = await loadDocuments();
+      setDocuments(list);
+      refresh();
+    } finally {
+      setParentDocKindSavingId(null);
+    }
+  }
+
   async function uploadFile(docType: string, file: File) {
     setUploadingDocType(docType);
     setPatchError(null);
@@ -1090,8 +1315,9 @@ export function ApplicationDetailClient({
         }));
 
         if (data.document && uploadedChunks === totalChunks) {
+          const slotTypes = allDocTypesInSameMinorParentSlot(docType);
           setDocuments((prev) => [
-            ...prev.filter((d) => d.doc_type !== docType),
+            ...prev.filter((d) => !slotTypes.includes(d.doc_type)),
             normalizeDocumentFromApi(
               data.document as unknown as Record<string, unknown>
             ),
@@ -1301,16 +1527,11 @@ export function ApplicationDetailClient({
     }
 
     return (
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="rounded-lg border border-amber-200/80 bg-amber-50/50 px-4 py-3 text-sm leading-relaxed text-amber-950/90">
-          <p className="font-semibold text-amber-950">Govt portal image rules</p>
-          <p className="mt-1 text-amber-950/90">
-            {isPassportRenewalFlow
-              ? "VFS-oriented passport photo: validate dimensions and file size before upload."
-              : "The govt portal requires specific photo dimensions. Validate before starting the application to avoid rejection."}
-          </p>
-        </div>
-        <h2 className="mt-6 text-lg font-bold tracking-tight text-[#1e3a5f]">
+      <section
+        className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+        id="photo-signature-check"
+      >
+        <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
           {isPassportRenewalFlow
             ? "Passport photo check"
             : "Photo & Signature Check"}
@@ -1369,64 +1590,77 @@ export function ApplicationDetailClient({
     const isPassportTest =
       application.service_type === "passport_us_renewal_test";
     const isPassportRenewalPrep = isPassportRenewalFlow;
+    const prepTitle =
+      isPassportTest
+        ? "Passport PDF (extraction)"
+        : isPassportRenewalPrep
+          ? "Supporting documents (PDF)"
+          : "Supporting documents (PDF) for portal";
+    const statusLine = portalPrepLoading
+      ? "Loading file sizes from Google Drive…"
+      : portalPrep
+        ? `${portalPrep.summary.ready} of ${portalPrep.summary.total} ready for portal`
+        : "—";
+    const anyNeedCompress = Boolean(
+      portalPrep?.documents.some(portalNeedsCompress),
+    );
+
     return (
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow duration-150 hover:shadow-md">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
-              {isPassportTest
-                ? "Passport PDF (extraction)"
-                : isPassportRenewalPrep
-                  ? "Supporting documents (PDF)"
-                  : "Supporting documents (PDF) for portal"}
-            </h2>
-            <p className="mt-1 text-sm leading-relaxed text-slate-600">
-              {isPassportTest ? (
-                <>
-                  Current passport uploads should be PDFs up to{" "}
-                  {PORTAL_PDF_MAX_KB}
-                  KB for this test flow. Compress oversized scans; copies are saved
-                  in Drive →{" "}
-                  <span className="font-medium text-[#1e293b]">Compressed</span>.
-                </>
-              ) : isPassportRenewalPrep ? (
-                <>
-                  Passport scan and optional proofs should be PDFs up to{" "}
-                  {PORTAL_PDF_MAX_KB}
-                  KB for typical portal limits. Compress oversized scans; copies are
-                  saved in Drive →{" "}
-                  <span className="font-medium text-[#1e293b]">Compressed</span>.
-                </>
-              ) : (
-                <>
-                  The OCI portal accepts supporting PDFs up to {PORTAL_PDF_MAX_KB}
-                  KB each. Use compression for oversized scans; copies are saved in
-                  Drive →{" "}
-                  <span className="font-medium text-[#1e293b]">Compressed</span>.
-                </>
-              )}
-            </p>
+      <details
+        id="portal-pdf-prep"
+        className="group scroll-mt-24 rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-150 hover:shadow-md [&_summary::-webkit-details-marker]:hidden"
+      >
+        <summary className="cursor-pointer list-none rounded-xl px-4 py-4 outline-none transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/20 sm:px-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
+                {prepTitle}
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">{statusLine}</p>
+            </div>
+            <ChevronDown
+              className="mt-0.5 h-5 w-5 shrink-0 text-[#1e3a5f] opacity-90 transition-transform duration-200 group-open:rotate-180 sm:mt-0"
+              aria-hidden
+              strokeWidth={2.5}
+            />
           </div>
-          {portalPrep &&
-          portalPrep.documents.some(portalNeedsCompress) ? (
+        </summary>
+        <div className="border-t border-slate-100 px-4 pb-5 pt-2 sm:px-5">
+          <p className="text-sm leading-relaxed text-slate-600">
+            {isPassportTest ? (
+              <>
+                Current passport uploads should be PDFs up to {PORTAL_PDF_MAX_KB}
+                KB for this test flow. Compress oversized scans; copies are saved
+                in Drive →{" "}
+                <span className="font-medium text-[#1e293b]">Compressed</span>.
+              </>
+            ) : isPassportRenewalPrep ? (
+              <>
+                Passport scan and optional proofs should be PDFs up to{" "}
+                {PORTAL_PDF_MAX_KB}
+                KB for typical portal limits. Compress oversized scans; copies are
+                saved in Drive →{" "}
+                <span className="font-medium text-[#1e293b]">Compressed</span>.
+              </>
+            ) : (
+              <>
+                The OCI portal accepts supporting PDFs up to {PORTAL_PDF_MAX_KB}
+                KB each. Use compression for oversized scans; copies are saved in
+                Drive →{" "}
+                <span className="font-medium text-[#1e293b]">Compressed</span>.
+              </>
+            )}
+          </p>
+          {portalPrep && anyNeedCompress ? (
             <button
               type="button"
               disabled={compressAllRunning || portalPrepLoading}
               onClick={() => void compressAllOversized()}
-              className="mt-2 inline-flex h-10 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#2d4d73] disabled:opacity-50 sm:mt-0"
+              className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#1e3a5f] px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#2d4d73] disabled:opacity-50 sm:w-auto"
             >
               {compressAllRunning ? "Compressing…" : "Compress All"}
             </button>
           ) : null}
-        </div>
-
-        <p className="mt-4 text-sm font-medium text-slate-800">
-          {portalPrepLoading
-            ? "Loading file sizes from Google Drive…"
-            : portalPrep
-              ? `${portalPrep.summary.ready} of ${portalPrep.summary.total} documents ready for govt portal upload`
-              : "—"}
-        </p>
 
         {portalPrep && !portalPrepLoading ? (
           <ul className="mt-4 space-y-3">
@@ -1508,7 +1742,8 @@ export function ApplicationDetailClient({
             })}
           </ul>
         ) : null}
-      </section>
+        </div>
+      </details>
     );
   }
 
@@ -1530,16 +1765,35 @@ export function ApplicationDetailClient({
           !photoValLoading &&
           !sigValLoading;
 
+    const hubTitle = isPassportTest
+      ? "DS-82 test pipeline readiness"
+      : isPassportRenewalHub
+        ? "VFS Global — passport renewal readiness"
+        : "Govt portal readiness";
+    const hubChecking =
+      portalPrepLoading || photoValLoading || sigValLoading;
+    const readinessSummaryLine = hubChecking
+      ? "Checking requirements…"
+      : !allRequiredUploaded
+        ? `${requiredUploaded} of ${activeRequiredCount} required documents uploaded`
+        : !portalPdfClientReady
+          ? "PDFs need compression or are over portal limits"
+          : !imagesLineOk
+            ? "Photo or signature needs validation fixes"
+            : "All checks passed — expand for upload order and prep tools";
+    const hubNeedsAttention =
+      hubChecking ||
+      !allRequiredUploaded ||
+      !portalPdfClientReady ||
+      !imagesLineOk;
+
     return (
-      <section className="rounded-xl border border-slate-200 border-t-4 border-t-[#1e3a5f] bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
-          {isPassportTest
-            ? "DS-82 test pipeline readiness"
-            : isPassportRenewalHub
-              ? "VFS Global — passport renewal readiness"
-              : "Govt portal readiness"}
-        </h2>
-        <p className="mt-2 text-sm font-medium leading-relaxed text-slate-700">
+      <CollapsibleReadinessHub
+        hubNeedsAttention={hubNeedsAttention}
+        hubTitle={hubTitle}
+        readinessSummaryLine={readinessSummaryLine}
+      >
+        <p className="text-sm font-medium leading-relaxed text-slate-700">
           {isPassportTest ? (
             <>
               Upload current passport (PDF) and passport photo (JPEG). Use{" "}
@@ -1665,7 +1919,7 @@ export function ApplicationDetailClient({
           </div>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 scroll-mt-24" id="suggested-upload-order">
           <h3 className="text-sm font-semibold text-[#1e3a5f]">
             {isPassportTest
               ? "Document checklist (this application)"
@@ -1721,19 +1975,7 @@ export function ApplicationDetailClient({
                   ) : (
                     <span className="text-amber-800">not uploaded</span>
                   )}
-                  {doc?.drive_view_url ? (
-                    <>
-                      {" · "}
-                      <a
-                        href={doc.drive_view_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-[#2563eb] hover:underline"
-                      >
-                        View in Drive
-                      </a>
-                    </>
-                  ) : null}
+
                 </li>
               );
             })}
@@ -1743,7 +1985,11 @@ export function ApplicationDetailClient({
                   {PARENT_PASSPORT_BANNER}
                 </li>
                 {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) => {
-                  const doc = docByType.get(item.doc_type);
+                  const doc =
+                    item.doc_type === "parent_passport_father" ||
+                    item.doc_type === "parent_passport_mother"
+                      ? findDocumentForMinorParentSlot(item.doc_type, docByType)
+                      : docByType.get(item.doc_type);
                   const uploaded = Boolean(doc);
                   const kind = isPortalPdfChecklistItem(item)
                     ? `PDF · ≤${PORTAL_PDF_MAX_KB}KB`
@@ -1768,19 +2014,7 @@ export function ApplicationDetailClient({
                       ) : (
                         <span className="text-amber-800">not uploaded</span>
                       )}
-                      {doc?.drive_view_url ? (
-                        <>
-                          {" · "}
-                          <a
-                            href={doc.drive_view_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium text-[#2563eb] hover:underline"
-                          >
-                            View in Drive
-                          </a>
-                        </>
-                      ) : null}
+
                     </li>
                   );
                 })}
@@ -1793,7 +2027,77 @@ export function ApplicationDetailClient({
           {renderGovtPortalPrepCard()}
           {renderPhotoSignatureCheckCard()}
         </div>
-      </section>
+      </CollapsibleReadinessHub>
+    );
+  }
+
+  function renderChecklistCardItem(item: ChecklistItem) {
+    const isFatherSlot = item.doc_type === "parent_passport_father";
+    const isMotherSlot = item.doc_type === "parent_passport_mother";
+    const isMinorParentIdentitySlot = isFatherSlot || isMotherSlot;
+    const slotDoc = isMinorParentIdentitySlot
+      ? findDocumentForMinorParentSlot(item.doc_type, docByType)
+      : docByType.get(item.doc_type);
+    const effectiveUploadDocType = isFatherSlot
+      ? minorParentUploadKind.father === "oci"
+        ? "parent_oci_father"
+        : "parent_passport_father"
+      : isMotherSlot
+        ? minorParentUploadKind.mother === "oci"
+          ? "parent_oci_mother"
+          : "parent_passport_mother"
+        : item.doc_type;
+
+    const parentKindSelector = isMinorParentIdentitySlot
+      ? {
+          selectedKind: slotDoc
+            ? slotDoc.doc_type === "parent_oci_father" ||
+                slotDoc.doc_type === "parent_oci_mother"
+              ? ("oci" as const)
+              : ("passport" as const)
+            : isFatherSlot
+              ? minorParentUploadKind.father
+              : minorParentUploadKind.mother,
+          onSelect: (kind: "passport" | "oci") => {
+            if (slotDoc) {
+              void patchMinorParentDocKind(slotDoc, item.doc_type, kind);
+            } else if (isFatherSlot) {
+              setMinorParentUploadKind((p) => ({ ...p, father: kind }));
+            } else {
+              setMinorParentUploadKind((p) => ({ ...p, mother: kind }));
+            }
+          },
+          disabled: isUploadingForChecklistItem(
+            item.doc_type,
+            uploadingDocType
+          ),
+          saving: slotDoc
+            ? parentDocKindSavingId === slotDoc.id
+            : false,
+        }
+      : undefined;
+
+    return (
+      <DocumentChecklistCard
+        key={item.doc_type}
+        item={item}
+        document={slotDoc}
+        uploading={isUploadingForChecklistItem(
+          item.doc_type,
+          uploadingDocType
+        )}
+        progress={uploadProgressForChecklistItem(
+          item.doc_type,
+          uploadProgress
+        )}
+        removingId={removingId}
+        extractingDocId={extractingDocId}
+        onUpload={(file) => uploadFile(effectiveUploadDocType, file)}
+        onRemove={removeDocument}
+        onRetryExtract={(d) => void retryExtractionForDoc(d)}
+        onEditPhoto={(d) => setPhotoEditorDoc(d)}
+        parentKindSelector={parentKindSelector}
+      />
     );
   }
 
@@ -1836,7 +2140,10 @@ export function ApplicationDetailClient({
               </span>
             ) : null}
           </div>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm leading-relaxed text-slate-600">
+          <p className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Contact
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-sm leading-relaxed text-slate-600">
             {application.customer_email ? (
               <span>{application.customer_email}</span>
             ) : (
@@ -1873,6 +2180,7 @@ export function ApplicationDetailClient({
                 Open Google Drive Folder
               </a>
             ) : null}
+            <ApplicationPdfDownloadsForApplication application={application} />
             {application.service_type === "passport_us_renewal_test" ? (
               <button
                 type="button"
@@ -1896,7 +2204,7 @@ export function ApplicationDetailClient({
           </div>
 
           <div className="relative z-0 w-full shrink-0 rounded-xl border border-slate-200 bg-slate-50/50 p-4 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
               Status &amp; flags
             </p>
             <div className="mt-3 space-y-4">
@@ -1922,12 +2230,11 @@ export function ApplicationDetailClient({
                     <option value="submitted">Submitted</option>
                     <option value="on_hold">On Hold</option>
                   </select>
-                  <span
-                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"
+                  <ChevronDown
+                    className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1e3a5f] opacity-80"
                     aria-hidden
-                  >
-                    ▾
-                  </span>
+                    strokeWidth={2.5}
+                  />
                 </div>
               </div>
               <div>
@@ -2044,35 +2351,13 @@ export function ApplicationDetailClient({
             </p>
           </div>
         ) : null}
-        {showReadyToSubmitPortalWarning ? (
-          <div
-            className="flex gap-3 rounded-xl border border-amber-200/90 bg-gradient-to-r from-amber-50 via-amber-50/90 to-amber-50/40 px-4 py-3.5 text-sm text-amber-950 shadow-sm"
-            role="status"
-          >
-            <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-800"
-              aria-hidden
-            >
-              !
-            </div>
-            <div className="min-w-0 pt-0.5">
-              <p className="font-semibold text-amber-950">
-                Govt portal checks incomplete
-              </p>
-              <p className="mt-1 leading-relaxed text-amber-900/90">
-                Status is <strong>Ready to Submit</strong>, but PDF sizes,
-                applicant photo, or signature may still need work. Review{" "}
-                <strong>Govt portal readiness</strong> below before uploading on
-                the official portal.
-              </p>
-            </div>
-          </div>
-        ) : null}
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm ring-1 ring-slate-200/60 transition-shadow duration-150 hover:shadow-md">
-        <h2 className="text-sm font-semibold text-slate-500">Notes</h2>
-        <p className="mt-1 text-xs text-slate-500">Saves when you click away.</p>
+        <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">Notes</h2>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+          Saves when you click away.
+        </p>
         <textarea
           value={notesDraft}
           onChange={(e) => setNotesDraft(e.target.value)}
@@ -2090,7 +2375,10 @@ export function ApplicationDetailClient({
       ) : null}
 
       {showDocumentChecklist ? (
-        <section className="space-y-6">
+        <section
+          id="document-checklist"
+          className="scroll-mt-24 space-y-6"
+        >
           <div className="mb-2">
             <h2 className="text-lg font-bold tracking-tight text-[#1e3a5f]">
               {application.service_type === "oci_new"
@@ -2110,22 +2398,81 @@ export function ApplicationDetailClient({
             </p>
           </div>
 
-          <div className="space-y-5">
-            {baseChecklist.map((item) => (
-              <DocumentChecklistCard
-                key={item.doc_type}
-                item={item}
-                document={docByType.get(item.doc_type)}
-                uploading={uploadingDocType === item.doc_type}
-                progress={uploadProgress[item.doc_type] ?? null}
-                removingId={removingId}
-                extractingDocId={extractingDocId}
-                onUpload={(file) => uploadFile(item.doc_type, file)}
-                onRemove={removeDocument}
-                onRetryExtract={(d) => void retryExtractionForDoc(d)}
-                onEditPhoto={(d) => setPhotoEditorDoc(d)}
-              />
-            ))}
+          {documents.length > 0 ? (
+            <nav
+              aria-label="Jump to checklist sections"
+              className="-mx-1 flex flex-wrap items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-50/80 px-2 py-2 text-xs shadow-sm backdrop-blur-sm sm:gap-2 sm:px-3"
+            >
+              <span className="hidden px-1 font-semibold text-slate-500 sm:inline">
+                Jump:
+              </span>
+              <a
+                href="#checklist-uploads"
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                Uploads
+              </a>
+              <span className="text-slate-300" aria-hidden>
+                ·
+              </span>
+              <a
+                href="#govt-portal-readiness"
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                Readiness
+              </a>
+              <span className="text-slate-300" aria-hidden>
+                ·
+              </span>
+              <a
+                href="#ai-document-extraction"
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                AI extract
+              </a>
+              <span className="text-slate-300" aria-hidden>
+                ·
+              </span>
+              <a
+                href="#suggested-upload-order"
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                Order
+              </a>
+              <span className="text-slate-300" aria-hidden>
+                ·
+              </span>
+              <a
+                href="#portal-pdf-prep"
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                PDF prep
+              </a>
+              <span className="text-slate-300" aria-hidden>
+                ·
+              </span>
+              <a
+                href="#photo-signature-check"
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                Photo / sig
+              </a>
+            </nav>
+          ) : null}
+
+          <div
+            id="checklist-uploads"
+            className="scroll-mt-24 space-y-4"
+            aria-labelledby="checklist-uploads-heading"
+          >
+            <h3
+              id="checklist-uploads-heading"
+              className="text-xs font-semibold uppercase tracking-[0.06em] text-slate-500"
+            >
+              Document uploads
+            </h3>
+            <div className="space-y-5">
+            {baseChecklist.map((item) => renderChecklistCardItem(item))}
             {application.is_minor ? (
               <>
                 <div
@@ -2134,23 +2481,12 @@ export function ApplicationDetailClient({
                 >
                   {PARENT_PASSPORT_BANNER}
                 </div>
-                {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) => (
-                  <DocumentChecklistCard
-                    key={item.doc_type}
-                    item={item}
-                    document={docByType.get(item.doc_type)}
-                    uploading={uploadingDocType === item.doc_type}
-                    progress={uploadProgress[item.doc_type] ?? null}
-                    removingId={removingId}
-                    extractingDocId={extractingDocId}
-                    onUpload={(file) => uploadFile(item.doc_type, file)}
-                    onRemove={removeDocument}
-                    onRetryExtract={(d) => void retryExtractionForDoc(d)}
-                    onEditPhoto={(d) => setPhotoEditorDoc(d)}
-                  />
-                ))}
+                {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) =>
+                  renderChecklistCardItem(item)
+                )}
               </>
             ) : null}
+            </div>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow duration-150 hover:shadow-md">
@@ -2182,7 +2518,10 @@ export function ApplicationDetailClient({
           {renderGovtPortalReadinessHub()}
 
           {documents.length > 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <CollapsibleAiExtractionSection
+              attention={extractionAttention}
+              summaryLine={extractionSummaryLine}
+            >
               {showDocumentChecklist &&
               documents.length > 0 &&
               !allRequiredUploaded ? (
@@ -2296,7 +2635,7 @@ export function ApplicationDetailClient({
                   ))}
                 </ul>
               ) : null}
-            </div>
+            </CollapsibleAiExtractionSection>
           ) : null}
         </section>
       ) : (
@@ -2358,6 +2697,7 @@ function DocumentChecklistCard({
   onRemove,
   onRetryExtract,
   onEditPhoto,
+  parentKindSelector,
 }: {
   item: ChecklistItem;
   document: Document | undefined;
@@ -2369,6 +2709,12 @@ function DocumentChecklistCard({
   onRemove: (id: string) => void;
   onRetryExtract: (doc: Document) => void;
   onEditPhoto?: (doc: Document) => void;
+  parentKindSelector?: {
+    selectedKind: "passport" | "oci";
+    onSelect: (kind: "passport" | "oci") => void;
+    disabled: boolean;
+    saving: boolean;
+  };
 }) {
   const onDrop = useCallback(
     (accepted: File[]) => {
@@ -2411,6 +2757,58 @@ function DocumentChecklistCard({
           </div>
           {item.optionalNote ? (
             <p className="mt-1 text-xs text-black/50">{item.optionalNote}</p>
+          ) : null}
+          {parentKindSelector ? (
+            <div className="mt-3">
+              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Document type
+              </span>
+              <div
+                className="flex w-full max-w-sm overflow-hidden rounded-lg border border-slate-200 bg-slate-100 p-0.5"
+                role="group"
+                aria-label="Parent document type"
+              >
+                <button
+                  type="button"
+                  disabled={parentKindSelector.disabled}
+                  aria-pressed={parentKindSelector.selectedKind === "passport"}
+                  onClick={() => parentKindSelector.onSelect("passport")}
+                  className={clsx(
+                    "min-h-9 min-w-0 flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors duration-150 outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/30 focus-visible:ring-offset-1 disabled:opacity-50",
+                    parentKindSelector.selectedKind === "passport"
+                      ? "border border-slate-200 bg-white text-slate-900 shadow-sm"
+                      : "border border-transparent bg-transparent text-slate-600 hover:bg-white/70 hover:text-slate-800"
+                  )}
+                >
+                  Indian Passport
+                </button>
+                <button
+                  type="button"
+                  disabled={parentKindSelector.disabled}
+                  aria-pressed={parentKindSelector.selectedKind === "oci"}
+                  onClick={() => parentKindSelector.onSelect("oci")}
+                  className={clsx(
+                    "min-h-9 min-w-0 flex-1 rounded-md px-2 py-2 text-xs font-medium transition-colors duration-150 outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/30 focus-visible:ring-offset-1 disabled:opacity-50",
+                    parentKindSelector.selectedKind === "oci"
+                      ? "border border-slate-200 bg-white text-slate-900 shadow-sm"
+                      : "border border-transparent bg-transparent text-slate-600 hover:bg-white/70 hover:text-slate-800"
+                  )}
+                >
+                  OCI Card
+                </button>
+              </div>
+              {parentKindSelector.saving ? (
+                <p className="mt-1 text-[11px] text-slate-400">Updating…</p>
+              ) : null}
+              {uploaded &&
+              document &&
+              document.extraction_status === "pending" ? (
+                <p className="mt-2 text-[11px] leading-snug text-amber-800/90">
+                  Re-run <strong>Process Uploaded Documents with AI</strong> or
+                  ↺ Retry on this card to extract with the selected profile.
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <div className="mt-2">
             {uploaded ? (

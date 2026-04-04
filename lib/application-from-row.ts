@@ -40,6 +40,11 @@ export function applicationFromDbRow(row: Record<string, unknown>): Application 
       row.govt_tracking_number == null || String(row.govt_tracking_number) === ""
         ? null
         : String(row.govt_tracking_number),
+    oci_file_reference_number:
+      row.oci_file_reference_number == null ||
+      String(row.oci_file_reference_number) === ""
+        ? null
+        : String(row.oci_file_reference_number),
     customer_price:
       row.customer_price == null || row.customer_price === ""
         ? null

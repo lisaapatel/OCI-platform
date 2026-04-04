@@ -22,6 +22,7 @@ import {
   isPortalPdfChecklistItem,
   type PortalReadinessSnapshot,
 } from "@/lib/portal-readiness";
+import { ApplicationPdfDownloadsForFill } from "../application-pdf-downloads";
 import { applicantIsMinorFromFields } from "@/lib/applicant-minor";
 import {
   buildOciFormFillPlan,
@@ -100,6 +101,43 @@ function isMarriedForSpouseSection(raw: string): boolean {
   if (!t) return false;
   if (/\bunmarried\b/i.test(t) || /\bsingle\b/i.test(t)) return false;
   return /\bmarried\b/i.test(t);
+}
+
+function FillHeaderPrintAndDownloads({
+  applicationId,
+  appNumber,
+  serviceType,
+  ociFileReferenceNumber,
+}: {
+  applicationId: string;
+  appNumber: string;
+  serviceType: Application["service_type"];
+  ociFileReferenceNumber?: string | null;
+}) {
+  const handlePrintClick = () => {
+    window.print();
+  };
+
+  return (
+    <div className="no-print flex w-full flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-end">
+        <ApplicationPdfDownloadsForFill
+          applicationId={applicationId}
+          appNumber={appNumber}
+          serviceType={serviceType}
+          ociFileReferenceNumber={ociFileReferenceNumber}
+          className="no-print w-full min-w-0 sm:max-w-xs"
+        />
+        <button
+          type="button"
+          onClick={handlePrintClick}
+          className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
+        >
+          Print this page
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function GovtPlaceholder({ label }: { label: string }) {
@@ -301,6 +339,7 @@ export function FormFillPageClient({
   lastReviewedLabel,
   initialFields,
   portalReadiness,
+  ociFileReferenceNumber = null,
 }: {
   applicationId: string;
   appNumber: string;
@@ -313,6 +352,8 @@ export function FormFillPageClient({
   lastReviewedLabel: string;
   initialFields: ExtractedField[];
   portalReadiness: PortalReadinessSnapshot;
+  /** Saved portal ref; required server-side to generate undertaking PDF. */
+  ociFileReferenceNumber?: string | null;
 }) {
   const [fields, setFields] = useState<ExtractedField[]>(initialFields);
   useEffect(() => {
@@ -551,13 +592,12 @@ export function FormFillPageClient({
                 reconciliation).
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
-            >
-              Print this page
-            </button>
+            <FillHeaderPrintAndDownloads
+              applicationId={applicationId}
+              appNumber={appNumber}
+              serviceType={serviceType}
+              ociFileReferenceNumber={ociFileReferenceNumber}
+            />
           </div>
         </header>
 
@@ -699,13 +739,12 @@ export function FormFillPageClient({
               <span>{customerName}</span>
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="no-print inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
-          >
-            Print this page
-          </button>
+          <FillHeaderPrintAndDownloads
+            applicationId={applicationId}
+            appNumber={appNumber}
+            serviceType={serviceType}
+            ociFileReferenceNumber={ociFileReferenceNumber}
+          />
         </div>
       </header>
 

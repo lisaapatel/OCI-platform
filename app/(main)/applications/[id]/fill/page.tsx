@@ -33,7 +33,7 @@ export default async function FormFillPage({
   const { data: app, error: appErr } = await supabaseAdmin
     .from("applications")
     .select(
-      "id, app_number, customer_name, customer_email, customer_phone, service_type, is_minor, oci_intake_variant"
+      "id, app_number, customer_name, customer_email, customer_phone, service_type, is_minor, oci_intake_variant, oci_file_reference_number"
     )
     .eq("id", id)
     .single();
@@ -116,6 +116,12 @@ export default async function FormFillPage({
         lastReviewedLabel={formatReviewedAt(lastReviewedIso)}
         initialFields={extracted}
         portalReadiness={portalReadiness}
+        ociFileReferenceNumber={
+          app.oci_file_reference_number == null ||
+          String(app.oci_file_reference_number) === ""
+            ? null
+            : String(app.oci_file_reference_number)
+        }
       />
     </>
   );

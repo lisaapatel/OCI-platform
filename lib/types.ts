@@ -35,6 +35,8 @@ export interface Application {
   archived_at?: string | null;
   vfs_tracking_number?: string | null;
   govt_tracking_number?: string | null;
+  /** Government OCI portal file reference after online form (e.g. OCIUSA2024XXXXXXXX). */
+  oci_file_reference_number?: string | null;
   customer_price?: number | null;
   our_cost?: number | null;
   /** Omitted on legacy rows; null if unknown */
