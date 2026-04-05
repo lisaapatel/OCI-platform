@@ -1,8 +1,15 @@
 "use client";
 
 import clsx from "clsx";
+import { ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import {
   getChecklistForApplication,
@@ -27,6 +34,7 @@ import { applicantIsMinorFromFields } from "@/lib/applicant-minor";
 import {
   buildOciFormFillPlan,
   flattenOciFormFillRows,
+  permanentAddressRowsAllEmpty,
   type GovtFillRowConfig,
 } from "@/lib/oci-form-fill-build";
 import type { Application, ExtractedField } from "@/lib/types";
@@ -34,6 +42,61 @@ import type { Application, ExtractedField } from "@/lib/types";
 const COPY_FLASH_MS = 1500;
 
 const OCCUPATION_OPTIONS = ["BUSINESS", "SERVICE", "STUDENT", "OTHER"] as const;
+
+const FILL_JUMP_SECTIONS_OCI: { id: string; label: string }[] = [
+  { id: "fill-section-1-submission", label: "Submission" },
+  { id: "fill-section-2-personal", label: "Personal" },
+  { id: "fill-section-3-foreign_passport", label: "Passport" },
+  { id: "fill-section-4-former_indian", label: "Former IN" },
+  { id: "fill-section-5-present_address", label: "Present" },
+  { id: "fill-section-6-permanent_address", label: "Permanent" },
+  { id: "fill-section-7-family", label: "Family" },
+];
+
+function FillPortalPrerequisitesCollapsible({
+  allPortalGreen,
+  summaryLine,
+  children,
+}: {
+  allPortalGreen: boolean;
+  summaryLine: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(!allPortalGreen);
+  useEffect(() => {
+    if (!allPortalGreen) setOpen(true);
+  }, [allPortalGreen]);
+
+  return (
+    <details
+      id="fill-prerequisites"
+      className="group no-print scroll-mt-24 rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-150 hover:shadow-md [&_summary::-webkit-details-marker]:hidden"
+      data-testid="form-fill-portal-prerequisites"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      suppressHydrationWarning
+    >
+      <summary className="cursor-pointer list-none rounded-xl px-4 py-3 outline-none transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#1e3a5f]/20 sm:px-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <span className="text-sm font-semibold text-slate-900">
+              Govt portal prerequisites (live status)
+            </span>
+            <p className="mt-0.5 text-xs text-slate-600">{summaryLine}</p>
+          </div>
+          <ChevronDown
+            className="mt-0.5 h-5 w-5 shrink-0 text-[#1e3a5f] opacity-90 transition-transform duration-200 group-open:rotate-180 sm:mt-0"
+            aria-hidden
+            strokeWidth={2.5}
+          />
+        </div>
+      </summary>
+      <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-700 sm:px-5">
+        {children}
+      </div>
+    </details>
+  );
+}
 
 function pickFieldByKeys(
   fields: ExtractedField[],
@@ -142,11 +205,11 @@ function FillHeaderPrintAndDownloads({
 
 function GovtPlaceholder({ label }: { label: string }) {
   return (
-    <div className="flex h-full min-h-[72px] flex-col justify-center rounded-lg border border-slate-300/80 bg-slate-200/70 p-3 print:border-slate-400 print:bg-slate-100">
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 print:text-slate-600">
+    <div className="flex h-full min-h-[56px] flex-col justify-center rounded-lg border border-slate-200 bg-slate-50/90 p-2 shadow-sm sm:min-h-[68px] sm:p-3 print:min-h-[72px] print:border-slate-400 print:bg-slate-100 print:p-3 print:shadow-none">
+      <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-[10px]">
         Portal reference
       </span>
-      <span className="mt-1 text-sm font-medium leading-snug text-slate-700 print:text-black">
+      <span className="mt-1 text-xs font-medium leading-snug text-slate-800 sm:mt-1.5 sm:text-sm print:text-base print:text-black">
         {label}
       </span>
     </div>
@@ -217,17 +280,43 @@ function GovtFillRow({
     if (trimmedCopy) void onCopy(trimmedCopy, stableId);
   };
 
+  const hasScreenMeta = Boolean(sourceTag) || showNoAutoDataHint;
+
   return (
     <div
-      className="fill-govt-row grid grid-cols-1 gap-3 border-b border-slate-200/90 py-4 sm:grid-cols-[40%_60%] sm:gap-4 print:grid-cols-[40%_60%]"
+      className="fill-govt-row grid grid-cols-[minmax(6.5rem,34%)_minmax(0,1fr)] items-start gap-2.5 border-b border-slate-100 py-3 sm:gap-5 sm:py-3.5 print:grid-cols-[38%_1fr] print:gap-4 print:border-slate-200/90 print:py-4 even:no-print:bg-slate-50/40"
       data-field-id={stableId}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 pt-0.5">
         <GovtPlaceholder label={govtLabel} />
       </div>
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 print:text-black">
+        {hasScreenMeta ? (
+          <div className="no-print flex flex-wrap items-center gap-x-2 gap-y-1">
+            {sourceTag ? (
+              <span
+                className={clsx(
+                  "inline-flex shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  sourceTag.variant === "blue" && "bg-blue-100 text-blue-900",
+                  sourceTag.variant === "grey" &&
+                    "bg-slate-200/90 text-slate-700",
+                  sourceTag.variant === "orange" &&
+                    "bg-orange-100 text-orange-950"
+                )}
+              >
+                {sourceTag.label}
+              </span>
+            ) : null}
+            {showNoAutoDataHint ? (
+              <span className="text-[11px] font-medium leading-snug text-amber-900/90">
+                No auto data — enter manually
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="hidden flex-wrap items-center gap-2 print:flex">
+          <span className="text-xs font-semibold uppercase tracking-wide text-black">
             {govtLabel}
           </span>
           {sourceTag ? (
@@ -248,10 +337,10 @@ function GovtFillRow({
         </div>
 
         {mode === "input" ? (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
             <input
               type="text"
-              className="min-w-[200px] flex-1 max-w-lg rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-medium text-slate-900 print:border-slate-400 read-only:bg-slate-50 read-only:text-slate-600"
+              className="min-w-0 w-full max-w-lg flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm sm:px-3 sm:py-2.5 sm:text-base print:border-slate-400 print:py-2 print:text-lg read-only:bg-slate-50 read-only:text-slate-600"
               value={inputValue ?? ""}
               readOnly={readOnly}
               onChange={(e) => onInputChange?.(e.target.value)}
@@ -273,9 +362,9 @@ function GovtFillRow({
         ) : null}
 
         {mode === "select" ? (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
             <select
-              className="no-print min-w-[200px] max-w-md flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg font-medium text-slate-900 print:hidden"
+              className="no-print min-w-0 w-full max-w-md flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm sm:px-3 sm:py-2.5 sm:text-base print:hidden"
               value={selectValue ?? ""}
               onChange={(e) => onSelectChange?.(e.target.value)}
               onBlur={(e) => void onBlurPersist?.(e.target.value)}
@@ -306,7 +395,7 @@ function GovtFillRow({
         ) : null}
 
         {showNoAutoDataHint ? (
-          <p className="text-xs text-slate-500 print:text-slate-600">
+          <p className="hidden text-xs text-slate-600 print:block">
             No auto data — enter manually
           </p>
         ) : null}
@@ -421,6 +510,14 @@ export function FormFillPageClient({
     return { foreignCountry, formerLabel, parentLabel };
   }, [fields, uploadedDocSet, hasFormerIndianExtracted]);
 
+  const portalPrerequisitesSummaryLine = useMemo(
+    () =>
+      portalReadiness.all_portal_green
+        ? "All checks passed — expand for upload order and application link"
+        : "Some portal checks need attention — expand for details",
+    [portalReadiness.all_portal_green]
+  );
+
   const [localEmail, setLocalEmail] = useState(() =>
     (customerEmail ?? "").trim()
   );
@@ -428,7 +525,12 @@ export function FormFillPageClient({
     (customerPhone ?? "").trim()
   );
   const [formerIndianOpen, setFormerIndianOpen] = useState(false);
-  const [permanentSameAsPresent, setPermanentSameAsPresent] = useState(false);
+  const [permanentSameAsPresent, setPermanentSameAsPresent] = useState(() =>
+    permanentAddressRowsAllEmpty(
+      initialFields,
+      applicantIsMinorFromFields(initialFields, new Date())
+    )
+  );
 
   useEffect(() => {
     setLocalEmail((customerEmail ?? "").trim());
@@ -436,7 +538,6 @@ export function FormFillPageClient({
   }, [customerEmail, customerPhone]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [portalPrepOpen, setPortalPrepOpen] = useState(false);
 
   useEffect(() => {
     if (!copiedId) return;
@@ -601,18 +702,65 @@ export function FormFillPageClient({
           </div>
         </header>
 
-        <div className="no-print rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <nav
+          aria-label="Jump to form sections"
+          className="no-print sticky top-2 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-50/95 px-2 py-2 text-xs shadow-sm backdrop-blur-sm sm:gap-2 sm:px-3"
+        >
+          <span className="hidden px-1 font-semibold text-slate-500 sm:inline">
+            Jump:
+          </span>
+          <a
+            href="#fill-renewal-about"
+            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+          >
+            About
+          </a>
+          <span className="text-slate-300" aria-hidden>
+            ·
+          </span>
+          <a
+            href="#fill-renewal-s1-applicant"
+            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+          >
+            Applicant
+          </a>
+          <span className="text-slate-300" aria-hidden>
+            ·
+          </span>
+          <a
+            href="#fill-renewal-s2-passport"
+            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+          >
+            Passport
+          </a>
+          <span className="text-slate-300" aria-hidden>
+            ·
+          </span>
+          <a
+            href="#fill-renewal-s3-address"
+            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+          >
+            Address
+          </a>
+        </nav>
+
+        <div
+          id="fill-renewal-about"
+          className="no-print scroll-mt-24 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+        >
           Fields below come from AI extraction. Source tags show which uploaded
           document each value came from.
+          {lastReviewedLabel !== "—" ? (
+            <span className="mt-2 block text-slate-600">
+              Last reviewed: {lastReviewedLabel}
+            </span>
+          ) : null}
         </div>
 
-        {lastReviewedLabel !== "—" ? (
-          <p className="text-sm text-slate-600">
-            Last reviewed: {lastReviewedLabel}
-          </p>
-        ) : null}
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <section
+          id="fill-renewal-s1-applicant"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+        >
           <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             Section 1 — Applicant details
           </h2>
@@ -654,7 +802,10 @@ export function FormFillPageClient({
           />
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <section
+          id="fill-renewal-s2-passport"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+        >
           <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             Section 2 — Current passport
           </h2>
@@ -695,7 +846,10 @@ export function FormFillPageClient({
           />
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <section
+          id="fill-renewal-s3-address"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+        >
           <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             Section 3 — Address
           </h2>
@@ -738,6 +892,21 @@ export function FormFillPageClient({
               <span className="mx-2 font-normal text-slate-500">·</span>
               <span>{customerName}</span>
             </h1>
+            <p
+              className="mt-2 text-sm leading-relaxed text-slate-600"
+              data-testid="form-fill-detection-banner"
+            >
+              <span className="font-medium text-slate-800">Detected profile:</span>{" "}
+              {detectionBanner.foreignCountry}. Former Indian passport:{" "}
+              <span className="font-medium text-slate-800">
+                {detectionBanner.formerLabel}
+              </span>
+              . Parent document:{" "}
+              <span className="font-medium text-slate-800">
+                {detectionBanner.parentLabel}
+              </span>
+              .
+            </p>
           </div>
           <FillHeaderPrintAndDownloads
             applicationId={applicationId}
@@ -748,36 +917,47 @@ export function FormFillPageClient({
         </div>
       </header>
 
-      <div
-        className="no-print rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 shadow-sm"
-        data-testid="form-fill-detection-banner"
+      <nav
+        aria-label="Jump to form sections"
+        className="no-print sticky top-2 z-10 flex flex-wrap items-center gap-1 rounded-xl border border-slate-200/90 bg-slate-50/95 px-2 py-2 text-xs shadow-sm backdrop-blur-sm sm:gap-2 sm:px-3"
       >
-        <p>
-          <span className="font-semibold">📋 Detected profile:</span>{" "}
-          {detectionBanner.foreignCountry}. Former Indian passport:{" "}
-          <span className="font-medium">{detectionBanner.formerLabel}</span>.
-          Parent document:{" "}
-          <span className="font-medium">{detectionBanner.parentLabel}</span>.
-        </p>
-      </div>
-
-      <div
-        className="no-print rounded-xl border border-slate-200 bg-white shadow-sm"
-        data-testid="form-fill-portal-prerequisites"
-      >
-        <button
-          type="button"
-          onClick={() => setPortalPrepOpen((o) => !o)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50"
-          aria-expanded={portalPrepOpen}
+        <span className="hidden px-1 font-semibold text-slate-500 sm:inline">
+          Jump:
+        </span>
+        <a
+          href="#fill-prerequisites"
+          className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
         >
-          <span>Govt portal prerequisites (live status)</span>
-          <span className="text-slate-500" aria-hidden>
-            {portalPrepOpen ? "▼" : "▶"}
+          Portal prep
+        </a>
+        <span className="text-slate-300" aria-hidden>
+          ·
+        </span>
+        <a
+          href="#fill-progress"
+          className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+        >
+          Status
+        </a>
+        {FILL_JUMP_SECTIONS_OCI.map((s) => (
+          <span key={s.id} className="contents">
+            <span className="text-slate-300" aria-hidden>
+              ·
+            </span>
+            <a
+              href={`#${s.id}`}
+              className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+            >
+              {s.label}
+            </a>
           </span>
-        </button>
-        {portalPrepOpen ? (
-          <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-700">
+        ))}
+      </nav>
+
+      <FillPortalPrerequisitesCollapsible
+        allPortalGreen={portalReadiness.all_portal_green}
+        summaryLine={portalPrerequisitesSummaryLine}
+      >
             <p className="text-xs text-slate-600">
               Have applicant photo &amp; signature JPEGs ready (max{" "}
               {PORTAL_IMAGE_MAX_KB}
@@ -876,12 +1056,11 @@ export function FormFillPageClient({
             >
               Open application → Govt portal readiness
             </Link>
-          </div>
-        ) : null}
-      </div>
+      </FillPortalPrerequisitesCollapsible>
 
       <div
-        className="no-print rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm"
+        id="fill-progress"
+        className="no-print scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm"
         data-testid="form-fill-summary"
       >
         <p
@@ -895,16 +1074,15 @@ export function FormFillPageClient({
             Last reviewed: {lastReviewedLabel}
           </p>
         ) : null}
+        {manual > 0 ? (
+          <p
+            className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950"
+            data-testid="form-fill-manual-banner"
+          >
+            {manual} field{manual === 1 ? "" : "s"} need manual entry
+          </p>
+        ) : null}
       </div>
-
-      {manual > 0 ? (
-        <div
-          className="no-print rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
-          data-testid="form-fill-manual-banner"
-        >
-          {manual} field{manual === 1 ? "" : "s"} need manual entry
-        </div>
-      ) : null}
 
       <div className="hidden print:block print:mb-4 print:border-b print:border-black/20 print:pb-3">
         <p className="text-[11pt] font-semibold text-black">
@@ -919,7 +1097,10 @@ export function FormFillPageClient({
       </div>
 
       <div className="flex flex-col gap-8">
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 print:shadow-none">
+        <section
+          id="fill-section-1-submission"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 print:shadow-none"
+        >
           <h2 className="fill-print-section-title mb-4 border-b border-blue-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             SECTION 1 — Place of Submission
           </h2>
@@ -945,7 +1126,8 @@ export function FormFillPageClient({
           return (
             <section
               key={sec.blockId}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 print:shadow-none"
+              id={`fill-section-${sectionNum}-${sec.blockId}`}
+              className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 print:shadow-none"
             >
               <div className="mb-4 border-b border-blue-200 pb-2">
                 {sec.collapsible ? (
@@ -954,9 +1136,14 @@ export function FormFillPageClient({
                     onClick={sec.onFormerToggle}
                     className="fill-print-section-title flex w-full items-center gap-2 text-left text-lg font-bold text-[#1e3a5f]"
                   >
-                    <span className="text-slate-500" aria-hidden>
-                      {sec.formerOpen ? "▼" : "▶"}
-                    </span>
+                    <ChevronDown
+                      className={clsx(
+                        "h-5 w-5 shrink-0 text-[#1e3a5f] transition-transform duration-200",
+                        sec.formerOpen && "rotate-180"
+                      )}
+                      aria-hidden
+                      strokeWidth={2.5}
+                    />
                     <span>
                       SECTION {sectionNum} — {sec.title}
                     </span>

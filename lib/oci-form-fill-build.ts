@@ -365,6 +365,42 @@ export function buildOciFormFillPlan(args: {
   return plans;
 }
 
+/**
+ * True when every permanent-address row has no extracted or persisted value
+ * (matches the `showNoAutoDataHint` condition for the full permanent block).
+ * Used to default "Same as present address" when there is nothing to edit.
+ */
+export function permanentAddressRowsAllEmpty(
+  fields: ExtractedField[],
+  applicantIsMinor: boolean,
+): boolean {
+  const block = OCI_FORM_FILL_BLOCKS.find((b) => b.id === "permanent_address");
+  if (!block) return true;
+
+  const fillCtx = { blockId: "permanent_address" as const, applicantIsMinor };
+
+  for (const def of block.fields) {
+    if (def.displayOnly || def.referenceOnly) continue;
+
+    const src = resolveFormFillSourceOrder(def, fillCtx);
+    const raw =
+      src.length > 0
+        ? getValueByKeysAndSources(fields, def.keys, src)
+        : "";
+    const row =
+      src.length > 0
+        ? findRowByKeysAndSources(fields, def.keys, src)
+        : undefined;
+    const inputVal = String(row?.field_value ?? raw ?? "");
+
+    if (raw.trim() || inputVal.trim()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function flattenOciFormFillRows(
   plans: OciFormFillSectionPlan[]
 ): GovtFillRowConfig[] {
