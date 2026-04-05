@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { ChevronDown } from "lucide-react";
 
+import { AffidavitPortalPdfButton } from "@/components/affidavit-portal-pdf-dialog";
 import { isOciServiceType } from "@/lib/oci-intake-variant";
 import type { Application } from "@/lib/types";
 
@@ -46,28 +47,43 @@ export function buildPortalPdfRows(app: AppLike): PortalPdfRow[] {
         "Save the OCI file reference # in Billing & tracking on this application first.",
     });
     rows.push({
-      id: "placeholder-1",
-      title: "Portal PDF (slot 2)",
-      description: "Reserved — add endpoint when ready.",
-      enabled: false,
-      disabledHint: "Coming soon.",
+      id: "consent-letter",
+      title: "Consent letter",
+      description:
+        "OCI consent letter (reference #, passport name, date; signature if uploaded).",
+      enabled: canUndertaking,
+      href: canUndertaking
+        ? `/api/applications/${encodeURIComponent(app.id)}/pdfs/consent-letter`
+        : undefined,
+      downloadFilename: canUndertaking
+        ? `consent_letter_${app.app_number || app.id}.pdf`
+        : undefined,
+      disabledHint:
+        "Save the OCI file reference # in Billing & tracking on this application first.",
     });
     rows.push({
-      id: "placeholder-2",
-      title: "Portal PDF (slot 3)",
-      description: "Reserved — add endpoint when ready.",
-      enabled: false,
-      disabledHint: "Coming soon.",
+      id: "affidavit-in-lieu",
+      title: "Affidavit in lieu of originals",
+      description:
+        "Confirm packet documents; applicant name and photocopy lines prefilled.",
+      enabled: true,
     });
   }
 
   return rows;
 }
 
+type AffidavitContext = {
+  applicationId: string;
+  appNumber: string;
+};
+
 type SectionProps = {
   rows: PortalPdfRow[];
   variant?: "sidebar" | "compact";
   className?: string;
+  /** Required to render the interactive Affidavit row. */
+  affidavitContext?: AffidavitContext;
 };
 
 /**
@@ -78,6 +94,7 @@ export function ApplicationPdfDownloadsSection({
   rows,
   variant = "sidebar",
   className,
+  affidavitContext,
 }: SectionProps) {
   if (rows.length === 0) return null;
 
@@ -107,7 +124,18 @@ export function ApplicationPdfDownloadsSection({
       <ul className="space-y-3 border-t border-slate-100 px-3 py-3">
         {rows.map((row) => (
           <li key={row.id}>
-            {row.enabled && row.href ? (
+            {row.enabled &&
+            row.id === "affidavit-in-lieu" &&
+            affidavitContext ? (
+              <AffidavitPortalPdfButton
+                applicationId={affidavitContext.applicationId}
+                appNumber={affidavitContext.appNumber}
+                title={row.title}
+                description={row.description}
+                rowTitleClassName={rowTitleCls}
+                descClassName={descCls}
+              />
+            ) : row.enabled && row.href ? (
               <a
                 href={row.href}
                 download={row.downloadFilename}
@@ -155,6 +183,10 @@ export function ApplicationPdfDownloadsForApplication({
       rows={rows}
       variant="sidebar"
       className={className}
+      affidavitContext={{
+        applicationId: application.id,
+        appNumber: application.app_number,
+      }}
     />
   );
 }
@@ -185,6 +217,10 @@ export function ApplicationPdfDownloadsForFill({
       rows={rows}
       variant="compact"
       className={className}
+      affidavitContext={{
+        applicationId: applicationId,
+        appNumber: appNumber,
+      }}
     />
   );
 }

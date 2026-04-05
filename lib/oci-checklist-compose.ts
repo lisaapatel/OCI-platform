@@ -9,6 +9,8 @@ import { PARENT_DOCUMENT_CHECKLIST_ITEMS } from "@/lib/parent-documents";
 const OCI_MINOR_EXCLUDED_BASE_DOC_TYPES = new Set([
   "address_proof",
   "marriage_certificate",
+  "marriage_affidavit",
+  "employment_letter",
   "parent_passport",
   "parent_oci",
 ]);

@@ -28,6 +28,16 @@ const navItems: NavItem[] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  const isReviewPage = /\/applications\/[^/]+\/review/.test(pathname);
+
+  if (isReviewPage) {
+    return (
+      <div className="flex min-h-screen flex-col bg-oci-page text-oci-ink">
+        {children}
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-oci-page text-oci-ink">
       <aside className="flex w-56 shrink-0 flex-col bg-brand text-white shadow-lg">

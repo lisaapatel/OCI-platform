@@ -53,6 +53,27 @@ export const OCI_NEW_CHECKLIST: ChecklistItem[] = [
     required: false,
     optionalNote: "If applicable",
   },
+  {
+    doc_type: "marriage_affidavit",
+    label: "Joint Affidavit of Subsisting Marriage (notarized)",
+    required: false,
+    optionalNote:
+      "Required for spouse of foreign origin. Both spouses must sign (notarized original).",
+  },
+  {
+    doc_type: "employment_letter",
+    label: "Employment / Work Letter",
+    required: false,
+    optionalNote:
+      "Letter from employer, self-employment proof, retirement proof, student admission letter, or written statement if never employed.",
+  },
+  {
+    doc_type: "us_status_proof",
+    label: "Proof of US Legal Status (non-US passport holders)",
+    required: false,
+    optionalNote:
+      "Green Card (front & back), EAD, long-term US visa, or I-797 with expired visa. Required by consulate for non-US passport holders.",
+  },
 ];
 
 export const OCI_NEW_REQUIRED_COUNT = OCI_NEW_CHECKLIST.filter((i) => i.required)
@@ -76,6 +97,13 @@ export function getOciChecklistLabel(docType: string): string {
     return "Parent's Indian Passport or OCI Card (legacy)";
   if (key === "parent_oci_father") return "Father's OCI Card";
   if (key === "parent_oci_mother") return "Mother's OCI Card";
+  if (key === "employment_letter") return "Employment / Work Letter";
+  if (key === "us_status_proof")
+    return "Proof of US Legal Status (non-US passport holders)";
+  if (key === "marriage_affidavit")
+    return "Joint Affidavit of Subsisting Marriage (notarized)";
+  if (key === "parental_authorization")
+    return "Parental Authorization Form (notarized)";
   return docType;
 }
 

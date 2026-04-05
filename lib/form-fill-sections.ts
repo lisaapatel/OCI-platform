@@ -509,21 +509,24 @@ export const SRC_MOTHER_OCI_NUMBER = [
   "parent_oci",
   "parent_oci_father",
 ] as const;
+/**
+ * Parent biodata in the family block (name, DOB, POB, nationality, doc reference):
+ * **only** parent uploads — `parent_passport_*`, generic `parent_passport`,
+ * `parent_indian_doc`, `parent_oci_*`. Birth certificate is not used here.
+ */
 export const SRC_FATHER_NAME = [
-  "birth_certificate",
   "parent_passport_father",
-  "parent_oci_father",
   "parent_passport",
-  "parent_oci",
   "parent_indian_doc",
+  "parent_oci_father",
+  "parent_oci",
 ] as const;
 export const SRC_MOTHER_NAME = [
-  "birth_certificate",
   "parent_passport_mother",
-  "parent_oci_mother",
   "parent_passport",
-  "parent_oci",
   "parent_indian_doc",
+  "parent_oci_mother",
+  "parent_oci",
 ] as const;
 
 /** DB / checklist value; alias `passport_current` in policy docs maps here. */

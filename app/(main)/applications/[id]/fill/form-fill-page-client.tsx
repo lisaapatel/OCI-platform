@@ -166,6 +166,84 @@ function isMarriedForSpouseSection(raw: string): boolean {
   return /\bmarried\b/i.test(t);
 }
 
+function fillRowHasValue(r: GovtFillRowConfig): boolean {
+  if (r.rowKind === "reference_note") return true;
+  if (r.mode === "input") return (r.inputValue ?? "").trim().length > 0;
+  if (r.mode === "select") return (r.selectValue ?? "").trim().length > 0;
+  return r.copyText.trim().length > 0;
+}
+
+function extractedFieldHasValue(field: ExtractedField | undefined): boolean {
+  return (field?.field_value ?? "").trim().length > 0;
+}
+
+function FillHideEmptyToolbar({
+  hideEmptyFields,
+  onShowAll,
+  onHideEmpty,
+  filled,
+  empty,
+}: {
+  hideEmptyFields: boolean;
+  onShowAll: () => void;
+  onHideEmpty: () => void;
+  filled: number;
+  empty: number;
+}) {
+  return (
+    <div
+      className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-end sm:justify-between"
+      data-testid="form-fill-hide-empty-toolbar"
+    >
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Field list
+        </span>
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100/90 p-1">
+          <button
+            type="button"
+            className={clsx(
+              "rounded-md px-3 py-1.5 text-sm font-semibold transition-colors duration-150 sm:px-4 sm:py-2",
+              !hideEmptyFields
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+            onClick={onShowAll}
+          >
+            Show all fields
+          </button>
+          <button
+            type="button"
+            className={clsx(
+              "rounded-md px-3 py-1.5 text-sm font-semibold transition-colors duration-150 sm:px-4 sm:py-2",
+              hideEmptyFields
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+            onClick={onHideEmpty}
+          >
+            Hide empty
+          </button>
+        </div>
+      </div>
+      <p className="text-xs leading-relaxed text-slate-600">
+        <span className="font-medium text-slate-700">{filled}</span> with values
+        {empty > 0 ? (
+          <>
+            {" "}
+            · <span className="font-medium text-slate-700">{empty}</span> empty
+          </>
+        ) : null}
+        {!hideEmptyFields && empty > 0 ? (
+          <span className="mt-1 block text-slate-500 sm:mt-0 sm:inline sm:before:content-['—_']">
+            Use Hide empty to scan faster.
+          </span>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
 function FillHeaderPrintAndDownloads({
   applicationId,
   appNumber,
@@ -205,11 +283,11 @@ function FillHeaderPrintAndDownloads({
 
 function GovtPlaceholder({ label }: { label: string }) {
   return (
-    <div className="flex h-full min-h-[56px] flex-col justify-center rounded-lg border border-slate-200 bg-slate-50/90 p-2 shadow-sm sm:min-h-[68px] sm:p-3 print:min-h-[72px] print:border-slate-400 print:bg-slate-100 print:p-3 print:shadow-none">
-      <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-[10px]">
+    <div className="flex h-full flex-col justify-center py-0.5 print:min-h-[72px] print:rounded-lg print:border print:border-slate-400 print:bg-slate-100 print:p-3 print:shadow-none">
+      <span className="hidden text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500 print:inline sm:print:text-[10px]">
         Portal reference
       </span>
-      <span className="mt-1 text-xs font-medium leading-snug text-slate-800 sm:mt-1.5 sm:text-sm print:text-base print:text-black">
+      <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-500 sm:text-sm print:mt-1 print:text-base print:font-medium print:normal-case print:tracking-normal print:text-black">
         {label}
       </span>
     </div>
@@ -280,41 +358,18 @@ function GovtFillRow({
     if (trimmedCopy) void onCopy(trimmedCopy, stableId);
   };
 
-  const hasScreenMeta = Boolean(sourceTag) || showNoAutoDataHint;
-
   return (
     <div
-      className="fill-govt-row grid grid-cols-[minmax(6.5rem,34%)_minmax(0,1fr)] items-start gap-2.5 border-b border-slate-100 py-3 sm:gap-5 sm:py-3.5 print:grid-cols-[38%_1fr] print:gap-4 print:border-slate-200/90 print:py-4 even:no-print:bg-slate-50/40"
+      className={clsx(
+        "fill-govt-row grid grid-cols-[minmax(5.5rem,26%)_minmax(0,1fr)] items-center gap-2.5 border-b border-slate-100 py-2.5 sm:gap-4 sm:py-3 print:grid-cols-[38%_1fr] print:items-start print:gap-4 print:border-slate-200/90 print:py-4",
+        showNoAutoDataHint && "border-l-2 border-l-amber-300 pl-3 print:border-l-0 print:pl-0"
+      )}
       data-field-id={stableId}
     >
-      <div className="min-w-0 pt-0.5">
+      <div className="min-w-0">
         <GovtPlaceholder label={govtLabel} />
       </div>
-      <div className="flex min-w-0 flex-col gap-2">
-        {hasScreenMeta ? (
-          <div className="no-print flex flex-wrap items-center gap-x-2 gap-y-1">
-            {sourceTag ? (
-              <span
-                className={clsx(
-                  "inline-flex shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                  sourceTag.variant === "blue" && "bg-blue-100 text-blue-900",
-                  sourceTag.variant === "grey" &&
-                    "bg-slate-200/90 text-slate-700",
-                  sourceTag.variant === "orange" &&
-                    "bg-orange-100 text-orange-950"
-                )}
-              >
-                {sourceTag.label}
-              </span>
-            ) : null}
-            {showNoAutoDataHint ? (
-              <span className="text-[11px] font-medium leading-snug text-amber-900/90">
-                No auto data — enter manually
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
+      <div className="flex min-w-0 flex-col gap-1.5">
         <div className="hidden flex-wrap items-center gap-2 print:flex">
           <span className="text-xs font-semibold uppercase tracking-wide text-black">
             {govtLabel}
@@ -337,10 +392,10 @@ function GovtFillRow({
         </div>
 
         {mode === "input" ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-2.5">
             <input
               type="text"
-              className="min-w-0 w-full max-w-lg flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm sm:px-3 sm:py-2.5 sm:text-base print:border-slate-400 print:py-2 print:text-lg read-only:bg-slate-50 read-only:text-slate-600"
+              className="min-w-0 w-full max-w-lg flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-900 shadow-sm sm:px-3 sm:py-2 sm:text-base print:border-slate-400 print:py-2 print:text-lg read-only:bg-slate-50 read-only:text-slate-600"
               value={inputValue ?? ""}
               readOnly={readOnly}
               onChange={(e) => onInputChange?.(e.target.value)}
@@ -349,6 +404,20 @@ function GovtFillRow({
               aria-label={govtLabel}
               data-empty={showNoAutoDataHint ? "true" : "false"}
             />
+            {sourceTag ? (
+              <span
+                className={clsx(
+                  "no-print inline-flex shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  sourceTag.variant === "blue" && "bg-blue-50 text-blue-800",
+                  sourceTag.variant === "grey" &&
+                    "bg-slate-100 text-slate-600",
+                  sourceTag.variant === "orange" &&
+                    "bg-orange-50 text-orange-900"
+                )}
+              >
+                {sourceTag.label}
+              </span>
+            ) : null}
             {showCopy ? (
               <button
                 type="button"
@@ -362,9 +431,9 @@ function GovtFillRow({
         ) : null}
 
         {mode === "select" ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-2.5">
             <select
-              className="no-print min-w-0 w-full max-w-md flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-medium text-slate-900 shadow-sm sm:px-3 sm:py-2.5 sm:text-base print:hidden"
+              className="no-print min-w-0 w-full max-w-md flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-900 shadow-sm sm:px-3 sm:py-2 sm:text-base print:hidden"
               value={selectValue ?? ""}
               onChange={(e) => onSelectChange?.(e.target.value)}
               onBlur={(e) => void onBlurPersist?.(e.target.value)}
@@ -382,6 +451,20 @@ function GovtFillRow({
                 {selectValue}
               </p>
             ) : null}
+            {sourceTag ? (
+              <span
+                className={clsx(
+                  "no-print inline-flex shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                  sourceTag.variant === "blue" && "bg-blue-50 text-blue-800",
+                  sourceTag.variant === "grey" &&
+                    "bg-slate-100 text-slate-600",
+                  sourceTag.variant === "orange" &&
+                    "bg-orange-50 text-orange-900"
+                )}
+              >
+                {sourceTag.label}
+              </span>
+            ) : null}
             {showCopy ? (
               <button
                 type="button"
@@ -395,6 +478,11 @@ function GovtFillRow({
         ) : null}
 
         {showNoAutoDataHint ? (
+          <p className="no-print text-[11px] font-medium leading-snug text-amber-900/90">
+            No auto data — enter manually
+          </p>
+        ) : null}
+        {showNoAutoDataHint ? (
           <p className="hidden text-xs text-slate-600 print:block">
             No auto data — enter manually
           </p>
@@ -402,7 +490,7 @@ function GovtFillRow({
 
         {flagMeta.flagged ? (
           <div
-            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 print:border-amber-600"
+            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-950 print:border-amber-600"
             role="alert"
           >
             <span className="font-semibold">Flagged (review):</span>{" "}
@@ -448,6 +536,20 @@ export function FormFillPageClient({
   useEffect(() => {
     setFields(initialFields);
   }, [initialFields]);
+
+  const [hideEmptyFields, setHideEmptyFields] = useState(false);
+  const [printMode, setPrintMode] = useState(false);
+  useEffect(() => {
+    const onBefore = () => setPrintMode(true);
+    const onAfter = () => setPrintMode(false);
+    window.addEventListener("beforeprint", onBefore);
+    window.addEventListener("afterprint", onAfter);
+    return () => {
+      window.removeEventListener("beforeprint", onBefore);
+      window.removeEventListener("afterprint", onAfter);
+    };
+  }, []);
+  const effectiveHideEmpty = printMode ? false : hideEmptyFields;
 
   const uploadedDocSet = useMemo(
     () => new Set(portalReadiness.uploaded_doc_types ?? []),
@@ -582,12 +684,14 @@ export function FormFillPageClient({
     [applicationId]
   );
 
-  const married = isMarriedForSpouseSection(maritalStatusFromFields(fields));
-
   const applicantIsMinor = useMemo(
-    () => applicantIsMinorFromFields(fields, new Date()),
-    [fields]
+    () => isMinor || applicantIsMinorFromFields(fields, new Date()),
+    [fields, isMinor]
   );
+
+  const married = applicantIsMinor
+    ? false
+    : isMarriedForSpouseSection(maritalStatusFromFields(fields));
 
   const sectionPlan = useMemo(
     () =>
@@ -671,6 +775,98 @@ export function FormFillPageClient({
         f.source_doc_type === "us_address_proof" ||
         f.source_doc_type === "indian_address_proof"
     );
+
+    const renewalApplicantSpecs = [
+      {
+        label: "First name",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["first_name", "given_name", "firstname"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Last name",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["last_name", "surname", "family_name"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Date of birth",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["date_of_birth", "dob", "birth_date"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Place of birth",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["place_of_birth", "birth_place", "pob"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Gender",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["gender", "sex"],
+          "current_passport"
+        ),
+      },
+    ];
+    const renewalPassportSpecs = [
+      {
+        label: "Passport number",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["passport_number", "passport_no", "passport_num"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Issue date",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["issue_date", "date_of_issue", "passport_issue_date"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Expiry date",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["expiry_date", "date_of_expiry", "passport_expiry_date"],
+          "current_passport"
+        ),
+      },
+      {
+        label: "Issue place",
+        field: pickFromPassportOrFallback(
+          fields,
+          ["issue_place", "place_of_issue", "issuing_office"],
+          "current_passport"
+        ),
+      },
+    ];
+    const renewalAddressSpecs = addressFields.map((f) => ({
+      label: normalizeStoredFieldKey(f.field_name),
+      field: f,
+    }));
+    const renewalAllSpecs = [
+      ...renewalApplicantSpecs,
+      ...renewalPassportSpecs,
+      ...renewalAddressSpecs,
+    ];
+    let renewalFilled = 0;
+    for (const row of renewalAllSpecs) {
+      if (extractedFieldHasValue(row.field)) renewalFilled += 1;
+    }
+    const renewalTotal = renewalAllSpecs.length;
+    const renewalEmpty = renewalTotal - renewalFilled;
 
     return (
       <div className="fill-print-root mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-[#f8fafc] px-4 py-6 sm:px-6 lg:px-8">
@@ -757,54 +953,63 @@ export function FormFillPageClient({
           ) : null}
         </div>
 
+        <div
+          className="no-print scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 text-sm"
+          data-testid="form-fill-renewal-summary"
+        >
+          <p
+            className="text-base font-semibold text-slate-900"
+            data-testid="form-fill-renewal-progress"
+          >
+            {renewalFilled} of {renewalTotal} fields have values
+          </p>
+          <FillHideEmptyToolbar
+            hideEmptyFields={hideEmptyFields}
+            onShowAll={() => setHideEmptyFields(false)}
+            onHideEmpty={() => setHideEmptyFields(true)}
+            filled={renewalFilled}
+            empty={renewalEmpty}
+          />
+        </div>
+
         <section
           id="fill-renewal-s1-applicant"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
         >
           <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             Section 1 — Applicant details
           </h2>
-          <PassportFieldRow
-            label="First name"
-            field={pickFromPassportOrFallback(fields, [
-              "first_name",
-              "given_name",
-              "firstname",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Last name"
-            field={pickFromPassportOrFallback(fields, [
-              "last_name",
-              "surname",
-              "family_name",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Date of birth"
-            field={pickFromPassportOrFallback(fields, [
-              "date_of_birth",
-              "dob",
-              "birth_date",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Place of birth"
-            field={pickFromPassportOrFallback(fields, [
-              "place_of_birth",
-              "birth_place",
-              "pob",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Gender"
-            field={pickFromPassportOrFallback(fields, ["gender", "sex"], "current_passport")}
-          />
+          {effectiveHideEmpty &&
+          renewalApplicantSpecs.every((s) => !extractedFieldHasValue(s.field)) ? (
+            <p className="text-sm text-slate-600">
+              All fields empty in this section.{" "}
+              <button
+                type="button"
+                className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                onClick={() => setHideEmptyFields(false)}
+              >
+                Show all fields
+              </button>
+            </p>
+          ) : (
+            renewalApplicantSpecs
+              .filter(
+                (s) =>
+                  !effectiveHideEmpty || extractedFieldHasValue(s.field)
+              )
+              .map((s) => (
+                <PassportFieldRow
+                  key={s.label}
+                  label={s.label}
+                  field={s.field}
+                />
+              ))
+          )}
         </section>
 
         <section
           id="fill-renewal-s2-passport"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
         >
           <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             Section 2 — Current passport
@@ -812,43 +1017,37 @@ export function FormFillPageClient({
           <p className="mb-3 text-xs text-slate-500">
             Typically extracted from the current Indian passport upload.
           </p>
-          <PassportFieldRow
-            label="Passport number"
-            field={pickFromPassportOrFallback(fields, [
-              "passport_number",
-              "passport_no",
-              "passport_num",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Issue date"
-            field={pickFromPassportOrFallback(fields, [
-              "issue_date",
-              "date_of_issue",
-              "passport_issue_date",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Expiry date"
-            field={pickFromPassportOrFallback(fields, [
-              "expiry_date",
-              "date_of_expiry",
-              "passport_expiry_date",
-            ], "current_passport")}
-          />
-          <PassportFieldRow
-            label="Issue place"
-            field={pickFromPassportOrFallback(fields, [
-              "issue_place",
-              "place_of_issue",
-              "issuing_office",
-            ], "current_passport")}
-          />
+          {effectiveHideEmpty &&
+          renewalPassportSpecs.every((s) => !extractedFieldHasValue(s.field)) ? (
+            <p className="text-sm text-slate-600">
+              All fields empty in this section.{" "}
+              <button
+                type="button"
+                className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                onClick={() => setHideEmptyFields(false)}
+              >
+                Show all fields
+              </button>
+            </p>
+          ) : (
+            renewalPassportSpecs
+              .filter(
+                (s) =>
+                  !effectiveHideEmpty || extractedFieldHasValue(s.field)
+              )
+              .map((s) => (
+                <PassportFieldRow
+                  key={s.label}
+                  label={s.label}
+                  field={s.field}
+                />
+              ))
+          )}
         </section>
 
         <section
           id="fill-renewal-s3-address"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
         >
           <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             Section 3 — Address
@@ -860,15 +1059,33 @@ export function FormFillPageClient({
             <p className="text-sm text-slate-600">
               No address fields extracted yet from address proof documents.
             </p>
+          ) : effectiveHideEmpty &&
+            renewalAddressSpecs.every((s) => !extractedFieldHasValue(s.field)) ? (
+            <p className="text-sm text-slate-600">
+              All fields empty in this section.{" "}
+              <button
+                type="button"
+                className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                onClick={() => setHideEmptyFields(false)}
+              >
+                Show all fields
+              </button>
+            </p>
           ) : (
             <div>
-              {addressFields.map((f) => (
-                <PassportFieldRow
-                  key={f.id}
-                  label={normalizeStoredFieldKey(f.field_name)}
-                  field={f}
-                />
-              ))}
+              {renewalAddressSpecs
+                .filter(
+                  (s) =>
+                    !effectiveHideEmpty ||
+                    extractedFieldHasValue(s.field)
+                )
+                .map((s) => (
+                  <PassportFieldRow
+                    key={s.field.id}
+                    label={s.label}
+                    field={s.field}
+                  />
+                ))}
             </div>
           )}
         </section>
@@ -1060,7 +1277,7 @@ export function FormFillPageClient({
 
       <div
         id="fill-progress"
-        className="no-print scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm"
+        className="no-print scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 text-sm"
         data-testid="form-fill-summary"
       >
         <p
@@ -1082,6 +1299,13 @@ export function FormFillPageClient({
             {manual} field{manual === 1 ? "" : "s"} need manual entry
           </p>
         ) : null}
+        <FillHideEmptyToolbar
+          hideEmptyFields={hideEmptyFields}
+          onShowAll={() => setHideEmptyFields(false)}
+          onHideEmpty={() => setHideEmptyFields(true)}
+          filled={filled}
+          empty={manual}
+        />
       </div>
 
       <div className="hidden print:block print:mb-4 print:border-b print:border-black/20 print:pb-3">
@@ -1099,7 +1323,7 @@ export function FormFillPageClient({
       <div className="flex flex-col gap-8">
         <section
           id="fill-section-1-submission"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 print:shadow-none"
+          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 sm:p-6 print:shadow-none"
         >
           <h2 className="fill-print-section-title mb-4 border-b border-blue-200 pb-2 text-lg font-bold text-[#1e3a5f]">
             SECTION 1 — Place of Submission
@@ -1123,11 +1347,16 @@ export function FormFillPageClient({
             formerIndianOpen ||
             hasFormerIndianExtracted;
 
+          const rowsToShow = effectiveHideEmpty
+            ? sec.rows.filter((r) => fillRowHasValue(r))
+            : sec.rows;
+          const emptyHiddenCount = sec.rows.length - rowsToShow.length;
+
           return (
             <section
               key={sec.blockId}
               id={`fill-section-${sectionNum}-${sec.blockId}`}
-              className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 print:shadow-none"
+              className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 sm:p-6 print:shadow-none"
             >
               <div className="mb-4 border-b border-blue-200 pb-2">
                 {sec.collapsible ? (
@@ -1189,9 +1418,38 @@ export function FormFillPageClient({
               ) : null}
 
               {showFormerRows ? (
-                <div className="divide-y divide-slate-100">
-                  {sec.rows.map(renderRow)}
-                </div>
+                rowsToShow.length === 0 && sec.rows.length > 0 ? (
+                  <p className="text-sm text-slate-600">
+                    All fields empty in this section.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                      onClick={() => setHideEmptyFields(false)}
+                    >
+                      Show all fields
+                    </button>
+                  </p>
+                ) : (
+                  <>
+                    {effectiveHideEmpty &&
+                    emptyHiddenCount > 0 &&
+                    rowsToShow.length > 0 ? (
+                      <p className="mb-2 text-xs text-slate-500">
+                        {emptyHiddenCount} empty hidden —{" "}
+                        <button
+                          type="button"
+                          className="font-medium text-blue-700 hover:underline"
+                          onClick={() => setHideEmptyFields(false)}
+                        >
+                          Show all fields
+                        </button>
+                      </p>
+                    ) : null}
+                    <div className="divide-y divide-slate-100">
+                      {rowsToShow.map(renderRow)}
+                    </div>
+                  </>
+                )
               ) : null}
             </section>
           );

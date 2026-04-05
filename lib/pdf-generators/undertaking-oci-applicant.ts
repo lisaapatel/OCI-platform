@@ -1,9 +1,17 @@
 import "server-only";
 
 import fs from "node:fs";
-import path from "node:path";
 
-import { PDFDocument, rgb, StandardFonts, type PDFFont } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+
+import {
+  FORM_FILLING_TEMPLATE_FILES,
+  formFillingTemplatePath,
+} from "@/lib/form-filling-templates";
+import {
+  addPortalFillableTextFields,
+  PORTAL_FIELD_PREFIX,
+} from "@/lib/pdf-generators/portal-pdf-fillable-fields";
 
 export interface UndertakingPdfInput {
   ociFileReferenceNumber: string;
@@ -13,108 +21,79 @@ export interface UndertakingPdfInput {
 }
 
 /**
- * PDF user space: y = 0 at bottom. Name/Date y match pdf.js baselines on the template.
+ * PDF user space: y = 0 at bottom. Values go into **AcroForm text fields** (editable
+ * in Acrobat/Preview) — not flattened — so agents can correct prefilled text.
  *
- * OCI file ref: spec y=660.2, x=416.5. Runtime check: 12pt Helvetica width from template
- * line start (x≈108) through “…file reference number ” ends ≈423; 416.5 overlaps that
- * prefix — start value at **x=425** (~2pt after prefix). maxWidth ≈539.7−425.
+ * OCI ref: x=425; add `OCI_REF_ABOVE_DASH_PT` so the field clears the dotted leader.
  */
+const OCI_REF_ABOVE_DASH_PT = 6;
+
 const FIELDS = {
   ociFileReferenceNumber: {
     x: 425,
-    y: 660.2,
+    y: 660.2 + OCI_REF_ABOVE_DASH_PT,
     fontSize: 12,
     maxWidth: 114,
   },
   applicantName: {
     x: 413.0,
-    /** Same baseline as the “Name:” label. */
     y: 315.53,
     fontSize: 10,
-    maxWidth: 127,
+    maxWidth: 185,
   },
   date: {
     x: 410.0,
-    /** Same baseline as the “Date:” label. */
     y: 287.93,
     fontSize: 10,
     maxWidth: 130,
   },
+  /** Keep name baselines above the date row (date baseline + clearance). */
+  nameMinLowestBaselineY: 299,
 } as const;
-
-function fitTextToWidth(
-  text: string,
-  font: PDFFont,
-  fontSize: number,
-  maxWidth: number,
-): string {
-  const t = text.trim();
-  if (t === "") return t;
-  if (font.widthOfTextAtSize(t, fontSize) <= maxWidth) return t;
-  const ellipsis = "…";
-  for (let n = t.length; n >= 1; n--) {
-    const candidate = t.slice(0, n) + ellipsis;
-    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
-      return candidate;
-    }
-  }
-  return ellipsis;
-}
 
 export async function generateUndertakingPdf(
   input: UndertakingPdfInput,
 ): Promise<Uint8Array> {
-  const templatePath = path.join(
-    process.cwd(),
-    "public/templates/undertaking-oci-applicant-blank.pdf",
-  );
+  const templatePath = formFillingTemplatePath("undertakingOciApplicantBlank");
   if (!fs.existsSync(templatePath)) {
-    throw new Error(`Missing PDF template at ${templatePath}`);
+    throw new Error(
+      `Missing PDF template at ${templatePath} (${FORM_FILLING_TEMPLATE_FILES.undertakingOciApplicantBlank})`,
+    );
   }
   const templateBytes = fs.readFileSync(templatePath);
   const pdfDoc = await PDFDocument.load(templateBytes);
   const page = pdfDoc.getPages()[0];
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  const oci = fitTextToWidth(
-    input.ociFileReferenceNumber,
+  addPortalFillableTextFields({
+    pdfDoc,
+    page,
     font,
-    FIELDS.ociFileReferenceNumber.fontSize,
-    FIELDS.ociFileReferenceNumber.maxWidth,
-  );
-  const name = fitTextToWidth(
-    input.applicantFullName,
-    font,
-    FIELDS.applicantName.fontSize,
-    FIELDS.applicantName.maxWidth,
-  );
-  const dateStr = fitTextToWidth(
-    input.date,
-    font,
-    FIELDS.date.fontSize,
-    FIELDS.date.maxWidth,
-  );
-
-  page.drawText(oci, {
-    x: FIELDS.ociFileReferenceNumber.x,
-    y: FIELDS.ociFileReferenceNumber.y,
-    size: FIELDS.ociFileReferenceNumber.fontSize,
-    font,
-    color: rgb(0, 0, 0),
-  });
-  page.drawText(name, {
-    x: FIELDS.applicantName.x,
-    y: FIELDS.applicantName.y,
-    size: FIELDS.applicantName.fontSize,
-    font,
-    color: rgb(0, 0, 0),
-  });
-  page.drawText(dateStr, {
-    x: FIELDS.date.x,
-    y: FIELDS.date.y,
-    size: FIELDS.date.fontSize,
-    font,
-    color: rgb(0, 0, 0),
+    fieldKeyPrefix: PORTAL_FIELD_PREFIX.undertaking,
+    oci: {
+      x: FIELDS.ociFileReferenceNumber.x,
+      baselineY: FIELDS.ociFileReferenceNumber.y,
+      fontSize: FIELDS.ociFileReferenceNumber.fontSize,
+      width: FIELDS.ociFileReferenceNumber.maxWidth,
+    },
+    name: {
+      x: FIELDS.applicantName.x,
+      topBaselineY: FIELDS.applicantName.y,
+      minLowestBaselineY: FIELDS.nameMinLowestBaselineY,
+      fontSize: FIELDS.applicantName.fontSize,
+      width: FIELDS.applicantName.maxWidth,
+    },
+    date: {
+      x: FIELDS.date.x,
+      baselineY: FIELDS.date.y,
+      fontSize: FIELDS.date.fontSize,
+      width: FIELDS.date.maxWidth,
+    },
+    values: {
+      ociFileReferenceNumber: input.ociFileReferenceNumber.trim(),
+      applicantFullName: input.applicantFullName.trim(),
+      date: input.date.trim(),
+    },
   });
 
   return pdfDoc.save();

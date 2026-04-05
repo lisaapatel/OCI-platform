@@ -119,15 +119,18 @@ If the needle is missing, the append is concatenated at the end (fallback). **OC
 ### PDFs
 
 - Checklist PDFs are validated against **1000KB** portal limit (compress APIs / portal-prep). Photo slots are JPEG, not this cap.
+- **Portal letter blanks** (undertaking, consent letter, **affidavit in lieu of originals**): versioned under repo root `form-filling-templates/`; paths via `lib/form-filling-templates.ts`. Generators live in `lib/pdf-generators/` (fillable AcroForm text for OCI ref / name / date; consent may embed signature JPEG). Affidavit: applicant name + up to seven “Photocopy of …” lines from a checklist modal (`POST /api/applications/[id]/pdfs/affidavit-in-lieu`); no OCI ref required for that PDF.
 
 ---
 
 ## AI extraction nuances
 
-- **Skipped doc types** (no Claude JSON extraction): `applicant_photo`, `applicant_signature`, `photo` — `shouldSkipAiExtraction()` in `lib/oci-new-checklist.ts`.
+- **Skipped doc types** (no Claude JSON extraction): `applicant_photo`, `applicant_signature`, `photo`, `employment_letter`, `us_status_proof`, `parental_authorization`, `marriage_affidavit` — `shouldSkipAiExtraction()` in `lib/oci-new-checklist.ts` (backed by profile routing in `lib/extraction-profiles.ts`).
 - **Passport MRZ path** (`lib/claude.ts` + `lib/extraction-profiles.ts`): same doc types as before — `indian_passport_core` vs `foreign_passport_core` (routing from `doc_type` plus application `service_type` / `oci_intake_variant` where needed); verbatim transcription → `extractMRZ()` → vision JSON; MRZ wins on overlapping identity fields.
 - **Passport MRZ merge** (`lib/passport-mrz-merge.ts`): MRZ overlays vision for identity fields; when MRZ has both `first_name` and `last_name`, vision applicant-name fields are cleared before merge (avoids Indian passport family-page names in applicant slots); `date_of_birth` more than one calendar year in the future is nulled as likely expiry confusion.
 - **Form fill address sources:** present and permanent address blocks use `SRC_ADDRESS_PROOF_ORDER`: `address_proof`, `us_address_proof`, `indian_address_proof` — not `current_passport`.
+- **Form fill parent / family block:** father and mother name, DOB, place of birth, nationality, and document-type reference rows resolve only from **`SRC_FATHER_NAME` / `SRC_MOTHER_NAME`** (`parent_passport_*`, `parent_passport`, `parent_indian_doc`, `parent_oci_*`) — **not** `birth_certificate`.
+- **Form fill mapping table:** `docs/fill-page-portal-extraction-map.md` — portal label, value behavior, winning document, extraction keys, and source fallback order per row.
 - **Field naming:** snake_case; canonical hints in `CLAUDE_EXTRACTION_KEY_INSTRUCTIONS` (`lib/form-fill-sections.ts`). Form fill / review map synonyms there.
 - **Reconciliation API:** This codebase does not ship `POST /api/reconcile/rerun-all`. To bulk-clear stale review flags after deploy, use the review UI or a one-off script/Supabase update unless a future route is added.
 
@@ -207,12 +210,21 @@ Anything that needs secrets should run **server-side** with the service role or 
 
 ### New `doc_type` values
 
-**Phase 1 — add**
+**Phase 1 — intake variant add-ons**
 
 | `doc_type` | Variant(s) | Notes |
 |------------|------------|--------|
 | `indian_citizenship_relinquishment` | `new_prev_indian` | One required slot for **renunciation and/or surrender certificate** (whichever applies). Label text should state both are acceptable unless you split types later. |
 | `applicant_oci_card` | `misc_reissue` | Applicant’s **existing OCI card** (front/back per ops). Distinct from `parent_oci`. |
+
+**Phase 1 — supporting docs now in base/minor checklists (all optional, non-blocking)**
+
+| `doc_type` | Where shown | Notes |
+|------------|-------------|-------|
+| `marriage_affidavit` | OCI base checklist (non-minor) | Joint affidavit of subsisting marriage (notarized); supporting document only (non-blocking, extraction skipped). |
+| `employment_letter` | OCI base checklist (non-minor) | Employment / work proof slot; supporting document only (non-blocking, extraction skipped). |
+| `us_status_proof` | OCI base checklist (minor + non-minor) | US legal status proof for non-US passport holders; supporting document only (non-blocking, extraction skipped). |
+| `parental_authorization` | Minor parent appendix | Minor-only parental authorization form (notarized); supporting document only (non-blocking, extraction skipped). |
 
 **`new_foreign_birth`:** no new `doc_type` in phase 1 — base `OCI_NEW_CHECKLIST` + **`is_minor`** + parent checklist already cover the usual case. For this variant the optional `former_indian_passport` row keeps the **same `doc_type`** but uses **neutral checklist copy** (no India-only label; a former passport from another country may still apply — see `lib/oci-checklist-compose.ts`).
 
@@ -227,7 +239,7 @@ Anything that needs secrets should run **server-side** with the service role or 
 | Drive prefixes | `lib/drive-file-naming.ts` — `DOC_TYPE_DRIVE_PREFIX`. |
 | Intake UX | `app/(main)/applications/new/page.tsx` + `lib/oci-intake-ui.ts`. |
 | Extraction | `lib/claude.ts` — add to `PASSPORT_MRZ_DOC_TYPES` **only** if the upload is passport biodata + MRZ; OCI card / renunciation PDFs use the generic vision path. |
-| Skip AI | `lib/oci-new-checklist.ts` — `shouldSkipAiExtraction` only if the slot is image-only like photo/signature (usually not for these). |
+| Skip AI | `lib/oci-new-checklist.ts` + `lib/extraction-profiles.ts` — image-only slots and selected supporting docs can skip AI extraction when they do not feed form-fill fields. |
 | Readiness | `lib/portal-readiness-server.ts` uses composed checklist; variant-specific docs remain non-blocking in phase 1. |
 
 ### Editing `oci_intake_variant` after creation

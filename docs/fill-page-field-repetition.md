@@ -2,6 +2,8 @@
 
 This note supports deciding whether any rows on `/applications/[id]/fill` can be hidden or consolidated later. **No fields were removed** as part of the UI remap; this is analysis only.
 
+**Full field-by-field table:** [fill-page-fields-table.md](./fill-page-fields-table.md) (every portal label, section, and whether it’s a portal pair, key-overlap risk, or reference-only).
+
 ## Intentional duplication (portal-driven)
 
 ### Present vs permanent address

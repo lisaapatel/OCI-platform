@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { resolveApplicantFullNameForPortalPdfs } from "@/lib/applicant-passport-full-name-server";
-import { generateUndertakingPdf } from "@/lib/pdf-generators/undertaking-oci-applicant";
+import { getFileAsBase64 } from "@/lib/google-drive";
+import { generateConsentLetterPdf } from "@/lib/pdf-generators/consent-letter";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -69,14 +70,37 @@ export async function GET(
     const today = new Date();
     const date = `${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}/${today.getFullYear()}`;
 
-    const pdfBytes = await generateUndertakingPdf({
+    let signatureJpegBytes: Uint8Array | null = null;
+    const { data: sigRows } = await supabaseAdmin
+      .from("documents")
+      .select("drive_file_id")
+      .eq("application_id", id)
+      .eq("doc_type", "applicant_signature")
+      .order("uploaded_at", { ascending: false })
+      .limit(1);
+    const sigDoc = sigRows?.[0];
+
+    const driveId = sigDoc?.drive_file_id
+      ? String(sigDoc.drive_file_id).trim()
+      : "";
+    if (driveId) {
+      try {
+        const b64 = await getFileAsBase64(driveId);
+        signatureJpegBytes = Buffer.from(b64, "base64");
+      } catch {
+        signatureJpegBytes = null;
+      }
+    }
+
+    const pdfBytes = await generateConsentLetterPdf({
       ociFileReferenceNumber: ociRef,
       applicantFullName,
       date,
+      signatureJpegBytes,
     });
 
     const appNumber = String(app.app_number ?? "").trim();
-    const filename = `undertaking_oci_applicant_${appNumber || id}.pdf`;
+    const filename = `consent_letter_${appNumber || id}.pdf`;
 
     return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,

@@ -35,6 +35,18 @@ jest.mock("next/link", () => {
   };
 });
 
+jest.mock("react-resizable-panels", () => {
+  const React = require("react");
+  return {
+    Group: ({ children, orientation, ...rest }: any) =>
+      React.createElement("div", { "data-testid": "panel-group", ...rest }, children),
+    Panel: ({ children, defaultSize, minSize, ...rest }: any) =>
+      React.createElement("div", { "data-testid": "panel", ...rest }, children),
+    Separator: ({ disableDoubleClick, ...rest }: any) =>
+      React.createElement("div", { "data-testid": "panel-separator", ...rest }),
+  };
+});
+
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

@@ -22,7 +22,7 @@ export default async function ReviewPage({
 
   const { data: app, error: appErr } = await supabaseAdmin
     .from("applications")
-    .select("id")
+    .select("id, is_minor")
     .eq("id", id)
     .single();
 
@@ -143,6 +143,7 @@ export default async function ReviewPage({
         applicationId={id}
         documents={documents}
         initialFields={extracted}
+        isMinor={(app as Record<string, unknown>).is_minor === true}
       />
     </>
   );

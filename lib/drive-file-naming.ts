@@ -21,6 +21,10 @@ export const DOC_TYPE_DRIVE_PREFIX: Record<string, string> = {
   parent_oci_mother: "parent_oci_mother",
   parent_address_proof: "parent_proof_address",
   marriage_certificate: "certificate_marriage",
+  marriage_affidavit: "affidavit_marriage",
+  employment_letter: "letter_employment",
+  us_status_proof: "proof_us_status",
+  parental_authorization: "form_parental_auth",
   indian_citizenship_relinquishment: "citizenship_relinquishment_india",
   applicant_oci_card: "oci_applicant_card",
 };

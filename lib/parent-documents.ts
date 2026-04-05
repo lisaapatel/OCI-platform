@@ -23,6 +23,13 @@ export const PARENT_DOCUMENTS = [
     shouldSkipAiExtraction: false,
     required: true,
   },
+  {
+    doc_type: "parental_authorization",
+    label: "Parental Authorization Form (notarized)",
+    note: "Both parents must sign (notarized original). Single-parent: custody order, death certificate, or adoption document.",
+    shouldSkipAiExtraction: true,
+    required: false,
+  },
 ] as const;
 
 /** Shown above parent document slots on the application detail checklist. */
@@ -51,6 +58,12 @@ export const PARENT_DOCUMENT_CHECKLIST_ITEMS: ChecklistItem[] = [
     label: PARENT_DOCUMENTS[2].label,
     required: true,
     optionalNote: PARENT_DOCUMENTS[2].note,
+  },
+  {
+    doc_type: "parental_authorization",
+    label: PARENT_DOCUMENTS[3].label,
+    required: false,
+    optionalNote: PARENT_DOCUMENTS[3].note,
   },
 ];
 

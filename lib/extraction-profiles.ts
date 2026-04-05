@@ -219,7 +219,7 @@ export function resolvePassportProfileId(
   return "foreign_passport_core";
 }
 
-/** Aligned with family block + birth cert hints in `CLAUDE_EXTRACTION_KEY_INSTRUCTIONS` / SRC_FATHER_NAME, SRC_MOTHER_NAME. */
+/** Aligned with family block keys in `CLAUDE_EXTRACTION_KEY_INSTRUCTIONS`; form fill parent rows use only parent passport/OCI/doc sources (not birth cert). */
 const BIRTH_CERT_FIELDS = [
   "first_name",
   "middle_name",
@@ -374,6 +374,10 @@ export const DOC_TYPE_TO_EXTRACTION_PROFILE: Record<
   parent_oci: "oci_card_core",
   parent_oci_father: "oci_card_core",
   parent_oci_mother: "oci_card_core",
+  employment_letter: "photo_signature_skip",
+  us_status_proof: "photo_signature_skip",
+  parental_authorization: "photo_signature_skip",
+  marriage_affidavit: "photo_signature_skip",
   applicant_photo: "photo_signature_skip",
   applicant_signature: "photo_signature_skip",
   photo: "photo_signature_skip",

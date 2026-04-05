@@ -112,6 +112,11 @@ export function buildOciFormFillPlan(args: {
     def: FormFillFieldDef
   ): GovtFillRowConfig | null => {
     if (def.displayOnly || def.referenceOnly) return null;
+    if (applicantIsMinor && def.keys.some((k) =>
+      k === "marital_status" || k === "marital" || k.startsWith("spouse_")
+    )) {
+      return null;
+    }
     if (!married && def.keys.some((k) => k.startsWith("spouse_"))) {
       return null;
     }

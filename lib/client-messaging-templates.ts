@@ -72,6 +72,10 @@ REQUIRED DOCUMENTS:
 ✅ Applicant signature on white paper (scanned or photographed)
 ✅ Parent's Indian passport or OCI card (first and last page)
 
+OPTIONAL (if applicable):
+📎 Employment / work letter (employer letter, self-employment proof, or student admission letter)
+📎 Proof of US legal status (Green Card, EAD, or long-term US visa) — if holding non-US passport
+
 Please send all documents as clear scans or photos - avoid shadows and ensure all text is readable.
 
 Once we receive everything, we will review and begin your application within 1–2 business days.
@@ -94,6 +98,10 @@ REQUIRED DOCUMENTS:
 ✅ Address proof
 ✅ Applicant photo (white/light background, square)
 ✅ Applicant signature on white paper
+
+OPTIONAL (if applicable):
+📎 Employment / work letter (employer letter, self-employment proof, or student admission letter)
+📎 Proof of US legal status (Green Card, EAD, or long-term US visa) — if holding non-US passport
 
 Once we receive your documents, we will begin processing within 1–2 business days.
 
