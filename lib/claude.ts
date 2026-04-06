@@ -226,7 +226,11 @@ export async function extractFieldsFromDocument(input: {
   docType: string;
   passportRouting?: PassportRoutingContext;
 }): Promise<Record<string, string | null>> {
-  if (shouldSkipAiExtraction(input.docType)) {
+  if (
+    shouldSkipAiExtraction(input.docType, {
+      serviceType: input.passportRouting?.serviceType ?? null,
+    })
+  ) {
     return {};
   }
 

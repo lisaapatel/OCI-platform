@@ -597,6 +597,13 @@ export function resolveFormFillSourceOrder(
     return [...SRC_ADDRESS_PROOF_ORDER];
   }
 
+  if (ctx.blockId === "renewal_present_address") {
+    return [...SRC_RENEWAL_PRESENT_ADDRESS];
+  }
+  if (ctx.blockId === "renewal_indian_address") {
+    return [...SRC_RENEWAL_INDIAN_ADDRESS];
+  }
+
   const canon = canonicalSynonymKey(def.keys[0] ?? "");
   const locked = LOCKED_SOURCE_FIELDS[canon];
   if (locked) return [mapPolicyDocType(locked)];
@@ -890,6 +897,144 @@ export const OCI_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
       ),
       f("Spouse nationality", ["spouse_nationality"], [...SRC_PASSPORT_THEN_BIRTH]),
       f("Spouse date of birth", ["spouse_date_of_birth", "spouse_dob"], [...SRC_PASSPORT_THEN_BIRTH]),
+    ],
+  },
+];
+
+/** Indian passport renewal (VFS) — portal-aligned sections; sources mostly `current_passport`, address from US/Indian proof. */
+export const SRC_RENEWAL_PRESENT_ADDRESS = [
+  "us_address_proof",
+  "indian_address_proof",
+] as const;
+export const SRC_RENEWAL_INDIAN_ADDRESS = ["indian_address_proof"] as const;
+
+export const PASSPORT_RENEWAL_FORM_FILL_BLOCKS: FormFillSectionBlock[] = [
+  {
+    id: "renewal_personal",
+    title: "Personal Details",
+    subtitle: "As on passport / application (VFS portal)",
+    fields: [
+      f("First name", ["first_name", "given_name", "forename"], [...SRC_CURRENT_PASSPORT]),
+      f("Middle name", ["middle_name", "middle_names", "middle"], [...SRC_CURRENT_PASSPORT]),
+      f("Last name", ["last_name", "surname", "family_name"], [...SRC_CURRENT_PASSPORT]),
+      f("Full name", ["full_name", "complete_name", "name_in_full", "name"], [...SRC_CURRENT_PASSPORT]),
+      f("Date of birth", ["date_of_birth", "dob", "birth_date"], [...SRC_PASSPORT_THEN_BIRTH]),
+      f(
+        "Place of birth",
+        [
+          "place_of_birth",
+          "birth_place",
+          "pob",
+          "birthplace",
+          "city_of_birth",
+          "birth_city",
+        ],
+        [...SRC_CURRENT_PASSPORT]
+      ),
+      f("Country of birth", ["country_of_birth", "birth_country", "place_of_birth_country"], [...SRC_CURRENT_PASSPORT]),
+      f("Gender", ["gender", "sex"], [...SRC_PASSPORT_THEN_BIRTH]),
+      f("Marital status", ["marital_status", "marital"], [...SRC_PASSPORT_THEN_BIRTH]),
+      f("Nationality", ["current_nationality", "nationality", "citizenship"], [...SRC_CURRENT_PASSPORT]),
+      f(
+        "Visible identification mark",
+        ["visible_identification_mark", "visible_mark"],
+        [...SRC_PASSPORT_THEN_BIRTH]
+      ),
+      f(
+        "Educational qualification",
+        ["educational_qualification", "education", "qualification"],
+        [...SRC_PASSPORT_THEN_BIRTH]
+      ),
+      f(
+        "Present occupation",
+        ["present_occupation", "occupation", "profession"],
+        [...SRC_PASSPORT_THEN_BIRTH]
+      ),
+    ],
+  },
+  {
+    id: "renewal_passport",
+    title: "Current Indian Passport",
+    subtitle: "Booklet biodata / validity",
+    fields: [
+      f("Passport number", ["passport_number", "passport_no", "passport_num"], [...SRC_CURRENT_PASSPORT]),
+      f(
+        "Passport issue date",
+        ["passport_issue_date", "issue_date", "date_of_issue", "doi"],
+        [...SRC_CURRENT_PASSPORT]
+      ),
+      f(
+        "Passport expiry date",
+        ["passport_expiry_date", "expiry_date", "date_of_expiry", "doe"],
+        [...SRC_CURRENT_PASSPORT]
+      ),
+      f(
+        "Place of issue",
+        [
+          "passport_issue_place",
+          "place_of_issue",
+          "issuing_authority",
+          "issuing_office",
+          "issue_place",
+        ],
+        [...SRC_CURRENT_PASSPORT]
+      ),
+      f(
+        "Country of issue",
+        ["passport_issue_country", "country_of_issue", "issuing_country"],
+        [...SRC_CURRENT_PASSPORT]
+      ),
+    ],
+  },
+  {
+    id: "renewal_family",
+    title: "Family",
+    subtitle: "Father / mother / spouse (as printed in passport)",
+    fields: [
+      f("Father's full name", ["father_full_name", "father_name", "father"], [...SRC_CURRENT_PASSPORT]),
+      f("Mother's full name", ["mother_full_name", "mother_name", "mother"], [...SRC_CURRENT_PASSPORT]),
+      f(
+        "Spouse name",
+        ["spouse_name", "spouse_full_name", "husband_name", "wife_name"],
+        [...SRC_PASSPORT_THEN_BIRTH]
+      ),
+    ],
+  },
+  {
+    id: "renewal_present_address",
+    title: "Present Address (USA)",
+    subtitle: "From US address proof when uploaded; else Indian proof",
+    fields: [
+      f(
+        "Address line 1",
+        ["address_line_1", "address_line1", "street", "street_address"],
+        [...SRC_RENEWAL_PRESENT_ADDRESS]
+      ),
+      f("Address line 2", ["address_line_2", "address_line2"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+      f("City", ["city", "town"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+      f("State / Province", ["state_province", "state", "province"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+      f("Postal code", ["postal_code", "zip", "pin_code", "pincode"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+      f("Country", ["country", "country_name"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+      f("Phone", ["phone", "mobile", "mobile_no"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+      f("Email", ["email", "e_mail"], [...SRC_RENEWAL_PRESENT_ADDRESS]),
+    ],
+  },
+  {
+    id: "renewal_indian_address",
+    title: "Indian Address",
+    subtitle: "If updating address in India — from Indian address proof",
+    emptyHint: "Optional when applicant updates India address in passport.",
+    fields: [
+      f(
+        "Address line 1",
+        ["address_line_1", "address_line1", "street"],
+        [...SRC_RENEWAL_INDIAN_ADDRESS]
+      ),
+      f("Address line 2", ["address_line_2", "address_line2"], [...SRC_RENEWAL_INDIAN_ADDRESS]),
+      f("City", ["city", "town"], [...SRC_RENEWAL_INDIAN_ADDRESS]),
+      f("State / Province", ["state_province", "state", "province"], [...SRC_RENEWAL_INDIAN_ADDRESS]),
+      f("Postal code", ["postal_code", "pin_code", "pincode"], [...SRC_RENEWAL_INDIAN_ADDRESS]),
+      f("Country", ["country", "country_name"], [...SRC_RENEWAL_INDIAN_ADDRESS]),
     ],
   },
 ];

@@ -1,4 +1,5 @@
 import { getExtractionProfile } from "@/lib/extraction-profiles";
+import type { Application } from "@/lib/types";
 
 export type ChecklistItem = {
   doc_type: string;
@@ -79,9 +80,23 @@ export const OCI_NEW_CHECKLIST: ChecklistItem[] = [
 export const OCI_NEW_REQUIRED_COUNT = OCI_NEW_CHECKLIST.filter((i) => i.required)
   .length;
 
+type SkipExtractionContext = {
+  serviceType?: Application["service_type"] | null;
+};
+
 /** Image-only uploads: no Claude extraction (profile `photo_signature_skip`). */
-export function shouldSkipAiExtraction(docType: unknown): boolean {
-  return getExtractionProfile(String(docType ?? "").trim()).skipAiExtraction;
+export function shouldSkipAiExtraction(
+  docType: unknown,
+  ctx?: SkipExtractionContext
+): boolean {
+  const dt = String(docType ?? "").trim();
+  // Passport renewal treats US status proof as extractable.
+  if (dt === "us_status_proof" && ctx?.serviceType === "passport_renewal") {
+    return false;
+  }
+  return getExtractionProfile(dt, {
+    serviceType: ctx?.serviceType ?? null,
+  }).skipAiExtraction;
 }
 
 export function getOciChecklistLabel(docType: string): string {

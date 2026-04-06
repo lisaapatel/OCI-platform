@@ -11,10 +11,7 @@ import {
   type ReactNode,
 } from "react";
 
-import {
-  getChecklistForApplication,
-  resolveDocTypeChecklistLabel,
-} from "@/lib/application-checklist";
+import { getChecklistForApplication } from "@/lib/application-checklist";
 import {
   getValueByKeysAndSources,
   normalizeStoredFieldKey,
@@ -37,6 +34,7 @@ import {
   permanentAddressRowsAllEmpty,
   type GovtFillRowConfig,
 } from "@/lib/oci-form-fill-build";
+import { buildPassportRenewalFormFillPlan } from "@/lib/passport-renewal-form-fill-build";
 import type { Application, ExtractedField } from "@/lib/types";
 
 const COPY_FLASH_MS = 1500;
@@ -51,6 +49,14 @@ const FILL_JUMP_SECTIONS_OCI: { id: string; label: string }[] = [
   { id: "fill-section-5-present_address", label: "Present" },
   { id: "fill-section-6-permanent_address", label: "Permanent" },
   { id: "fill-section-7-family", label: "Family" },
+];
+
+const FILL_JUMP_SECTIONS_RENEWAL: { id: string; label: string }[] = [
+  { id: "fill-renewal-section-1-renewal_personal", label: "Personal" },
+  { id: "fill-renewal-section-2-renewal_passport", label: "Passport" },
+  { id: "fill-renewal-section-3-renewal_family", label: "Family" },
+  { id: "fill-renewal-section-4-renewal_present_address", label: "US address" },
+  { id: "fill-renewal-section-5-renewal_indian_address", label: "India address" },
 ];
 
 function FillPortalPrerequisitesCollapsible({
@@ -98,57 +104,6 @@ function FillPortalPrerequisitesCollapsible({
   );
 }
 
-function pickFieldByKeys(
-  fields: ExtractedField[],
-  keys: string[]
-): ExtractedField | undefined {
-  const want = new Set(keys.map((k) => normalizeStoredFieldKey(k)));
-  for (const f of fields) {
-    if (want.has(normalizeStoredFieldKey(f.field_name))) return f;
-  }
-  return undefined;
-}
-
-function pickFromPassportOrFallback(
-  fields: ExtractedField[],
-  keys: string[],
-  sourceDocType: string
-): ExtractedField | undefined {
-  const want = new Set(keys.map((k) => normalizeStoredFieldKey(k)));
-  for (const f of fields) {
-    if (
-      f.source_doc_type === sourceDocType &&
-      want.has(normalizeStoredFieldKey(f.field_name))
-    ) {
-      return f;
-    }
-  }
-  return pickFieldByKeys(fields, keys);
-}
-
-function PassportFieldRow({
-  label,
-  field,
-}: {
-  label: string;
-  field: ExtractedField | undefined;
-}) {
-  const v = (field?.field_value ?? "").trim();
-  return (
-    <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 py-3">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <div className="flex flex-wrap items-center justify-end gap-2 text-right">
-        <span className="text-sm text-slate-900">{v || "—"}</span>
-        {field ? (
-          <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-            {resolveDocTypeChecklistLabel(field.source_doc_type)}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function maritalStatusFromFields(fields: ExtractedField[]): string {
   for (const f of fields) {
     const k = normalizeStoredFieldKey(f.field_name);
@@ -171,10 +126,6 @@ function fillRowHasValue(r: GovtFillRowConfig): boolean {
   if (r.mode === "input") return (r.inputValue ?? "").trim().length > 0;
   if (r.mode === "select") return (r.selectValue ?? "").trim().length > 0;
   return r.copyText.trim().length > 0;
-}
-
-function extractedFieldHasValue(field: ExtractedField | undefined): boolean {
-  return (field?.field_value ?? "").trim().length > 0;
 }
 
 function FillHideEmptyToolbar({
@@ -693,6 +644,66 @@ export function FormFillPageClient({
     ? false
     : isMarriedForSpouseSection(maritalStatusFromFields(fields));
 
+  const renewalSectionPlan = useMemo(
+    () =>
+      serviceType !== "passport_renewal"
+        ? []
+        : buildPassportRenewalFormFillPlan({
+            fields,
+            setFields,
+            persistExtractedField,
+            localPhone,
+            setLocalPhone,
+            localEmail,
+            setLocalEmail,
+            married,
+            applicantIsMinor,
+          }),
+    [
+      serviceType,
+      fields,
+      persistExtractedField,
+      localPhone,
+      localEmail,
+      married,
+      applicantIsMinor,
+    ],
+  );
+
+  const renewalRowPropsList = useMemo(
+    () =>
+      serviceType === "passport_renewal"
+        ? flattenOciFormFillRows(renewalSectionPlan)
+        : [],
+    [serviceType, renewalSectionPlan],
+  );
+
+  const renewalProgressRows = useMemo(
+    () =>
+      renewalRowPropsList.filter((r) => r.rowKind !== "reference_note"),
+    [renewalRowPropsList],
+  );
+
+  const renewalVisibleFieldCount = renewalProgressRows.length;
+
+  const renewalProgress = useMemo(() => {
+    if (serviceType !== "passport_renewal") {
+      return { filled: 0, manual: 0 };
+    }
+    let f = 0;
+    let m = 0;
+    for (const r of renewalProgressRows) {
+      let has = false;
+      if (r.mode === "input") has = (r.inputValue ?? "").trim().length > 0;
+      else if (r.mode === "select")
+        has = (r.selectValue ?? "").trim().length > 0;
+      else has = r.copyText.trim().length > 0;
+      if (has) f += 1;
+      else m += 1;
+    }
+    return { filled: f, manual: m };
+  }, [serviceType, renewalProgressRows]);
+
   const sectionPlan = useMemo(
     () =>
       buildOciFormFillPlan({
@@ -770,103 +781,7 @@ export function FormFillPageClient({
     );
 
   if (serviceType === "passport_renewal") {
-    const addressFields = fields.filter(
-      (f) =>
-        f.source_doc_type === "us_address_proof" ||
-        f.source_doc_type === "indian_address_proof"
-    );
-
-    const renewalApplicantSpecs = [
-      {
-        label: "First name",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["first_name", "given_name", "firstname"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Last name",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["last_name", "surname", "family_name"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Date of birth",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["date_of_birth", "dob", "birth_date"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Place of birth",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["place_of_birth", "birth_place", "pob"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Gender",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["gender", "sex"],
-          "current_passport"
-        ),
-      },
-    ];
-    const renewalPassportSpecs = [
-      {
-        label: "Passport number",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["passport_number", "passport_no", "passport_num"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Issue date",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["issue_date", "date_of_issue", "passport_issue_date"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Expiry date",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["expiry_date", "date_of_expiry", "passport_expiry_date"],
-          "current_passport"
-        ),
-      },
-      {
-        label: "Issue place",
-        field: pickFromPassportOrFallback(
-          fields,
-          ["issue_place", "place_of_issue", "issuing_office"],
-          "current_passport"
-        ),
-      },
-    ];
-    const renewalAddressSpecs = addressFields.map((f) => ({
-      label: normalizeStoredFieldKey(f.field_name),
-      field: f,
-    }));
-    const renewalAllSpecs = [
-      ...renewalApplicantSpecs,
-      ...renewalPassportSpecs,
-      ...renewalAddressSpecs,
-    ];
-    let renewalFilled = 0;
-    for (const row of renewalAllSpecs) {
-      if (extractedFieldHasValue(row.field)) renewalFilled += 1;
-    }
-    const renewalTotal = renewalAllSpecs.length;
-    const renewalEmpty = renewalTotal - renewalFilled;
+    const { filled: renewalFilled, manual: renewalManual } = renewalProgress;
 
     return (
       <div className="fill-print-root mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-[#f8fafc] px-4 py-6 sm:px-6 lg:px-8">
@@ -885,8 +800,8 @@ export function FormFillPageClient({
                 <span>{customerName}</span>
               </h1>
               <p className="mt-2 text-sm text-slate-600">
-                Indian passport renewal — extracted values only (no cross-doc
-                reconciliation).
+                Indian passport renewal — copy values into the VFS portal. Source
+                tags show which document each value came from.
               </p>
             </div>
             <FillHeaderPrintAndDownloads
@@ -911,46 +826,27 @@ export function FormFillPageClient({
           >
             About
           </a>
-          <span className="text-slate-300" aria-hidden>
-            ·
-          </span>
-          <a
-            href="#fill-renewal-s1-applicant"
-            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
-          >
-            Applicant
-          </a>
-          <span className="text-slate-300" aria-hidden>
-            ·
-          </span>
-          <a
-            href="#fill-renewal-s2-passport"
-            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
-          >
-            Passport
-          </a>
-          <span className="text-slate-300" aria-hidden>
-            ·
-          </span>
-          <a
-            href="#fill-renewal-s3-address"
-            className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
-          >
-            Address
-          </a>
+          {FILL_JUMP_SECTIONS_RENEWAL.map((j) => (
+            <span key={j.id} className="contents">
+              <span className="text-slate-300" aria-hidden>
+                ·
+              </span>
+              <a
+                href={`#${j.id}`}
+                className="rounded-md px-2 py-1 font-medium text-[#1e3a5f] transition-colors hover:bg-white hover:text-[#152a45]"
+              >
+                {j.label}
+              </a>
+            </span>
+          ))}
         </nav>
 
         <div
           id="fill-renewal-about"
           className="no-print scroll-mt-24 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
         >
-          Fields below come from AI extraction. Source tags show which uploaded
-          document each value came from.
-          {lastReviewedLabel !== "—" ? (
-            <span className="mt-2 block text-slate-600">
-              Last reviewed: {lastReviewedLabel}
-            </span>
-          ) : null}
+          Fields below come from AI extraction. Edit inline if needed; Copy pastes
+          into the portal.
         </div>
 
         <div
@@ -961,134 +857,102 @@ export function FormFillPageClient({
             className="text-base font-semibold text-slate-900"
             data-testid="form-fill-renewal-progress"
           >
-            {renewalFilled} of {renewalTotal} fields have values
+            {renewalFilled} of {renewalVisibleFieldCount} fields have values
           </p>
+          {lastReviewedLabel !== "—" ? (
+            <p className="mt-1 text-slate-600">
+              Last reviewed: {lastReviewedLabel}
+            </p>
+          ) : null}
+          {renewalManual > 0 ? (
+            <p
+              className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950"
+              data-testid="form-fill-renewal-manual-banner"
+            >
+              {renewalManual} field{renewalManual === 1 ? "" : "s"} need manual
+              entry
+            </p>
+          ) : null}
           <FillHideEmptyToolbar
             hideEmptyFields={hideEmptyFields}
             onShowAll={() => setHideEmptyFields(false)}
             onHideEmpty={() => setHideEmptyFields(true)}
             filled={renewalFilled}
-            empty={renewalEmpty}
+            empty={renewalManual}
           />
         </div>
 
-        <section
-          id="fill-renewal-s1-applicant"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
-        >
-          <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
-            Section 1 — Applicant details
-          </h2>
-          {effectiveHideEmpty &&
-          renewalApplicantSpecs.every((s) => !extractedFieldHasValue(s.field)) ? (
-            <p className="text-sm text-slate-600">
-              All fields empty in this section.{" "}
-              <button
-                type="button"
-                className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                onClick={() => setHideEmptyFields(false)}
-              >
-                Show all fields
-              </button>
-            </p>
-          ) : (
-            renewalApplicantSpecs
-              .filter(
-                (s) =>
-                  !effectiveHideEmpty || extractedFieldHasValue(s.field)
-              )
-              .map((s) => (
-                <PassportFieldRow
-                  key={s.label}
-                  label={s.label}
-                  field={s.field}
-                />
-              ))
-          )}
-        </section>
-
-        <section
-          id="fill-renewal-s2-passport"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
-        >
-          <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
-            Section 2 — Current passport
-          </h2>
-          <p className="mb-3 text-xs text-slate-500">
-            Typically extracted from the current Indian passport upload.
+        <div className="hidden print:block print:mb-4 print:border-b print:border-black/20 print:pb-3">
+          <p className="text-[11pt] font-semibold text-black">
+            {appNumber} · {customerName}
           </p>
-          {effectiveHideEmpty &&
-          renewalPassportSpecs.every((s) => !extractedFieldHasValue(s.field)) ? (
-            <p className="text-sm text-slate-600">
-              All fields empty in this section.{" "}
-              <button
-                type="button"
-                className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                onClick={() => setHideEmptyFields(false)}
-              >
-                Show all fields
-              </button>
-            </p>
-          ) : (
-            renewalPassportSpecs
-              .filter(
-                (s) =>
-                  !effectiveHideEmpty || extractedFieldHasValue(s.field)
-              )
-              .map((s) => (
-                <PassportFieldRow
-                  key={s.label}
-                  label={s.label}
-                  field={s.field}
-                />
-              ))
-          )}
-        </section>
-
-        <section
-          id="fill-renewal-s3-address"
-          className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
-        >
-          <h2 className="mb-4 border-b border-slate-200 pb-2 text-lg font-bold text-[#1e3a5f]">
-            Section 3 — Address
-          </h2>
-          <p className="mb-3 text-xs text-slate-500">
-            From US or Indian address proof uploads, when provided.
+          <p className="mt-1 text-[9pt] text-black/70">
+            {renewalFilled} of {renewalVisibleFieldCount} fields have values
+            {lastReviewedLabel !== "—"
+              ? ` · Last reviewed ${lastReviewedLabel}`
+              : ""}
           </p>
-          {addressFields.length === 0 ? (
-            <p className="text-sm text-slate-600">
-              No address fields extracted yet from address proof documents.
-            </p>
-          ) : effectiveHideEmpty &&
-            renewalAddressSpecs.every((s) => !extractedFieldHasValue(s.field)) ? (
-            <p className="text-sm text-slate-600">
-              All fields empty in this section.{" "}
-              <button
-                type="button"
-                className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                onClick={() => setHideEmptyFields(false)}
+        </div>
+
+        <div className="flex flex-col gap-8">
+          {renewalSectionPlan.map((sec, planIdx) => {
+            const sectionNum = planIdx + 1;
+            const rowsToShow = effectiveHideEmpty
+              ? sec.rows.filter((r) => fillRowHasValue(r))
+              : sec.rows;
+            const emptyHiddenCount = sec.rows.length - rowsToShow.length;
+
+            return (
+              <section
+                key={sec.blockId}
+                id={`fill-renewal-section-${sectionNum}-${sec.blockId}`}
+                className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4 sm:p-6 print:shadow-none"
               >
-                Show all fields
-              </button>
-            </p>
-          ) : (
-            <div>
-              {renewalAddressSpecs
-                .filter(
-                  (s) =>
-                    !effectiveHideEmpty ||
-                    extractedFieldHasValue(s.field)
-                )
-                .map((s) => (
-                  <PassportFieldRow
-                    key={s.field.id}
-                    label={s.label}
-                    field={s.field}
-                  />
-                ))}
-            </div>
-          )}
-        </section>
+                <div className="mb-4 border-b border-blue-200 pb-2">
+                  <h2 className="fill-print-section-title text-lg font-bold text-[#1e3a5f]">
+                    SECTION {sectionNum} — {sec.title}
+                  </h2>
+                  {sec.subtitle ? (
+                    <p className="mt-2 text-xs text-slate-500">{sec.subtitle}</p>
+                  ) : null}
+                </div>
+
+                {rowsToShow.length === 0 && sec.rows.length > 0 ? (
+                  <p className="text-sm text-slate-600">
+                    All fields empty in this section.{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-blue-700 underline-offset-2 hover:underline"
+                      onClick={() => setHideEmptyFields(false)}
+                    >
+                      Show all fields
+                    </button>
+                  </p>
+                ) : (
+                  <>
+                    {effectiveHideEmpty &&
+                    emptyHiddenCount > 0 &&
+                    rowsToShow.length > 0 ? (
+                      <p className="mb-2 text-xs text-slate-500">
+                        {emptyHiddenCount} empty hidden —{" "}
+                        <button
+                          type="button"
+                          className="font-medium text-blue-700 hover:underline"
+                          onClick={() => setHideEmptyFields(false)}
+                        >
+                          Show all fields
+                        </button>
+                      </p>
+                    ) : null}
+                    <div className="divide-y divide-slate-100">
+                      {rowsToShow.map(renderRow)}
+                    </div>
+                  </>
+                )}
+              </section>
+            );
+          })}
+        </div>
       </div>
     );
   }

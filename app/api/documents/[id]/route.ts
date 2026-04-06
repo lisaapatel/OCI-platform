@@ -42,7 +42,7 @@ export async function PATCH(
 
     const { data: row, error: fetchError } = await supabaseAdmin
       .from("documents")
-      .select("id, doc_type")
+      .select("id, doc_type, application_id")
       .eq("id", id)
       .single();
 
@@ -61,7 +61,15 @@ export async function PATCH(
       );
     }
 
-    const extraction_status = shouldSkipAiExtraction(nextType)
+    const { data: appRow } = await supabaseAdmin
+      .from("applications")
+      .select("service_type")
+      .eq("id", String(row.application_id ?? ""))
+      .maybeSingle();
+
+    const extraction_status = shouldSkipAiExtraction(nextType, {
+      serviceType: appRow?.service_type ?? null,
+    })
       ? "done"
       : "pending";
 

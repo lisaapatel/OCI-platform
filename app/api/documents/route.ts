@@ -71,7 +71,7 @@ export async function POST(req: Request) {
 
     const { data: app, error: appError } = await supabaseAdmin
       .from("applications")
-      .select("id, app_number, customer_name, drive_folder_id")
+      .select("id, app_number, customer_name, drive_folder_id, service_type")
       .eq("id", application_id)
       .single();
 
@@ -182,7 +182,11 @@ export async function POST(req: Request) {
         file_name: driveFileName,
         drive_file_id: uploaded.id,
         drive_view_url: uploaded.url,
-        extraction_status: shouldSkipAiExtraction(doc_type) ? "done" : "pending",
+        extraction_status: shouldSkipAiExtraction(doc_type, {
+          serviceType: app.service_type,
+        })
+          ? "done"
+          : "pending",
       })
       .select("*")
       .single();

@@ -33,6 +33,12 @@ export async function POST(req: Request) {
 
     const drive_view_url = `https://drive.google.com/file/d/${drive_file_id}/view`;
 
+    const { data: appRow } = await supabaseAdmin
+      .from("applications")
+      .select("service_type")
+      .eq("id", application_id)
+      .maybeSingle();
+
     try {
       await setFilePublicReadable(drive_file_id);
     } catch (permErr) {
@@ -69,7 +75,11 @@ export async function POST(req: Request) {
         file_name: canonicalFileName,
         drive_file_id,
         drive_view_url,
-        extraction_status: shouldSkipAiExtraction(doc_type) ? "done" : "pending",
+        extraction_status: shouldSkipAiExtraction(doc_type, {
+          serviceType: appRow?.service_type ?? null,
+        })
+          ? "done"
+          : "pending",
       })
       .select("*")
       .single();

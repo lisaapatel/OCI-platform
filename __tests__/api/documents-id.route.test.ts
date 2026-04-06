@@ -49,6 +49,18 @@ describe("PATCH /api/documents/[id]", () => {
 
     supabaseAdminFrom.mockImplementation((table: string) => {
       if (table === "documents") return docsMock;
+      if (table === "applications") {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest.fn().mockResolvedValue({
+                data: { service_type: "oci_new" },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
       return {};
     });
 
@@ -81,6 +93,18 @@ describe("PATCH /api/documents/[id]", () => {
     };
     supabaseAdminFrom.mockImplementation((table: string) => {
       if (table === "documents") return docsMock;
+      if (table === "applications") {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              maybeSingle: jest.fn().mockResolvedValue({
+                data: { service_type: "oci_new" },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
       return {};
     });
 

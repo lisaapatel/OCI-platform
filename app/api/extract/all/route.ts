@@ -111,7 +111,9 @@ export async function POST(req: Request) {
     const pending = allDocs.filter(
       (d) =>
         d.extraction_status === "pending" &&
-        !shouldSkipAiExtraction(String((d as { doc_type?: string }).doc_type ?? ""))
+        !shouldSkipAiExtraction(String((d as { doc_type?: string }).doc_type ?? ""), {
+          serviceType,
+        })
     );
     let docsProcessed = 0;
     let fieldsExtracted = 0;

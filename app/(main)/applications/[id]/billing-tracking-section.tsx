@@ -25,6 +25,7 @@ export function BillingTrackingSection({
   application,
   onApplicationUpdated,
 }: Props) {
+  const showOciFileRef = isOciServiceType(application.service_type);
   const [expanded, setExpanded] = useState(true);
   const [vfs, setVfs] = useState("");
   const [govt, setGovt] = useState("");
@@ -81,8 +82,12 @@ export function BillingTrackingSection({
           body: JSON.stringify({
             vfs_tracking_number: vfs.trim() === "" ? null : vfs.trim(),
             govt_tracking_number: govt.trim() === "" ? null : govt.trim(),
-            oci_file_reference_number:
-              ociFileRef.trim() === "" ? null : ociFileRef.trim(),
+            ...(showOciFileRef
+              ? {
+                  oci_file_reference_number:
+                    ociFileRef.trim() === "" ? null : ociFileRef.trim(),
+                }
+              : {}),
             customer_price,
             our_cost,
             payment_status: payment,
@@ -109,6 +114,7 @@ export function BillingTrackingSection({
     }
   }, [
     application.id,
+    showOciFileRef,
     vfs,
     govt,
     ociFileRef,
@@ -162,7 +168,12 @@ export function BillingTrackingSection({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">
               Tracking numbers
             </h3>
-            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+            <div
+              className={clsx(
+                "mt-3 grid gap-4",
+                showOciFileRef ? "sm:grid-cols-3" : "sm:grid-cols-2"
+              )}
+            >
               <div>
                 <label
                   className="block text-sm font-medium text-[#1e293b]"
@@ -193,25 +204,27 @@ export function BillingTrackingSection({
                   className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
                 />
               </div>
-              <div>
-                <label
-                  className="block text-sm font-medium text-[#1e293b]"
-                  htmlFor="oci-file-ref"
-                >
-                  OCI file reference #
-                </label>
-                <input
-                  id="oci-file-ref"
-                  value={ociFileRef}
-                  onChange={(e) => setOciFileRef(e.target.value)}
-                  placeholder="e.g. OCIUSA2024XXXXXXXX"
-                  className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
-                />
-                <p className="mt-1 text-[11px] leading-snug text-[#64748b]">
-                  From the government OCI portal after the applicant completes the
-                  online form. Required for the undertaking PDF.
-                </p>
-              </div>
+              {showOciFileRef ? (
+                <div>
+                  <label
+                    className="block text-sm font-medium text-[#1e293b]"
+                    htmlFor="oci-file-ref"
+                  >
+                    OCI file reference #
+                  </label>
+                  <input
+                    id="oci-file-ref"
+                    value={ociFileRef}
+                    onChange={(e) => setOciFileRef(e.target.value)}
+                    placeholder="e.g. OCIUSA2024XXXXXXXX"
+                    className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                  />
+                  <p className="mt-1 text-[11px] leading-snug text-[#64748b]">
+                    From the government OCI portal after the applicant completes
+                    the online form. Required for the undertaking PDF.
+                  </p>
+                </div>
+              ) : null}
             </div>
             {isOciServiceType(application.service_type) ? (
               <BillingPortalPdfHint />

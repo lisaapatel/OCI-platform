@@ -33,7 +33,11 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { FORM_FILL_ALL_FIELDS } from "@/lib/form-fill-sections";
+import {
+  FORM_FILL_ALL_FIELDS,
+  PASSPORT_RENEWAL_FORM_FILL_BLOCKS,
+} from "@/lib/form-fill-sections";
+import type { ExtractedField } from "@/lib/types";
 
 const allPrimaryKeys = FORM_FILL_ALL_FIELDS.map((f) => f.keys[0]);
 
@@ -78,6 +82,42 @@ const defaultProps = {
   lastReviewedLabel: "Mar 15, 2026 · 2:30 PM",
   portalReadiness: defaultPortalReadiness,
 };
+
+function buildRenewalFields(
+  overrides: Record<
+    string,
+    Partial<{ value: string; flagged: boolean; note: string }>
+  > = {},
+): ExtractedField[] {
+  const rows: ExtractedField[] = [];
+  let i = 0;
+  for (const block of PASSPORT_RENEWAL_FORM_FILL_BLOCKS) {
+    for (const def of block.fields) {
+      if (def.displayOnly || def.referenceOnly) continue;
+      const key = def.keys[0];
+      const o = overrides[key] ?? {};
+      const value = o.value ?? "Renewal";
+      let sourceDocType = "current_passport";
+      if (block.id === "renewal_present_address") {
+        sourceDocType = "us_address_proof";
+      } else if (block.id === "renewal_indian_address") {
+        sourceDocType = "indian_address_proof";
+      }
+      rows.push({
+        id: `renewal-${i++}`,
+        application_id: "app-1",
+        field_name: key,
+        field_value: value,
+        source_doc_type: sourceDocType,
+        is_flagged: o.flagged ?? false,
+        flag_note: o.note ?? "",
+        reviewed_by: "",
+        reviewed_at: "",
+      });
+    }
+  }
+  return rows;
+}
 
 describe("Form fill page", () => {
   beforeEach(() => {
@@ -277,5 +317,84 @@ describe("Form fill page", () => {
     expect(screen.getByTestId("form-fill-detection-banner")).toBeInTheDocument();
     const back = screen.getByRole("link", { name: /Back to Review/i });
     expect(back).toHaveAttribute("href", "/applications/app-1/review");
+  });
+});
+
+describe("Passport renewal fill page", () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: { writeText: jest.fn().mockResolvedValue(undefined) },
+    });
+  });
+
+  const renewalProps = {
+    ...defaultProps,
+    serviceType: "passport_renewal" as const,
+  };
+
+  test("Renewal: portal section headings render", async () => {
+    const { FormFillPageClient } = await import(
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
+    );
+    render(
+      <FormFillPageClient
+        {...renewalProps}
+        initialFields={buildRenewalFields()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /SECTION 1 — Personal Details/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: /SECTION 2 — Current Indian Passport/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /SECTION 3 — Family/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /SECTION 4 — Present Address \(USA\)/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /SECTION 5 — Indian Address/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("Renewal: Copy copies field value to clipboard", async () => {
+    const { FormFillPageClient } = await import(
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
+    );
+    render(
+      <FormFillPageClient
+        {...renewalProps}
+        initialFields={buildRenewalFields()}
+      />,
+    );
+
+    const copyBtn = screen.getAllByRole("button", { name: /^copy$/i })[0];
+    await userEvent.click(copyBtn);
+    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+  });
+
+  test("Renewal: Hide empty filters out empty rows", async () => {
+    const { FormFillPageClient } = await import(
+      "../../app/(main)/applications/[id]/fill/form-fill-page-client"
+    );
+    const fields = buildRenewalFields({
+      first_name: { value: "Filled" },
+      middle_name: { value: "" },
+    });
+    render(<FormFillPageClient {...renewalProps} initialFields={fields} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Hide empty$/i }));
+
+    expect(
+      screen.getByRole("textbox", { name: /^First name$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: /^Middle name$/i }),
+    ).not.toBeInTheDocument();
   });
 });

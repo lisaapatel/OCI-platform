@@ -68,6 +68,16 @@ export function buildPortalPdfRows(app: AppLike): PortalPdfRow[] {
         "Confirm packet documents; applicant name and photocopy lines prefilled.",
       enabled: true,
     });
+  } else if (app.service_type === "passport_renewal") {
+    rows.push({
+      id: "fill-page-print",
+      title: "Print-friendly fill summary",
+      description:
+        "No separate government PDF for renewal yet — use Print this page on the fill form.",
+      enabled: false,
+      disabledHint:
+        "Open Form fill on this application and use Print this page (top right).",
+    });
   }
 
   return rows;

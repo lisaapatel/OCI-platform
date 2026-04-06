@@ -20,6 +20,12 @@ export async function POST(req: Request) {
       );
     }
 
+    const { data: appRow } = await supabaseAdmin
+      .from("applications")
+      .select("service_type")
+      .eq("id", application_id)
+      .maybeSingle();
+
     const { data: rows, error: listErr } = await supabaseAdmin
       .from("documents")
       .select("id, doc_type")
@@ -35,7 +41,11 @@ export async function POST(req: Request) {
 
     const ids =
       rows
-        ?.filter((r) => shouldSkipAiExtraction(r.doc_type))
+        ?.filter((r) =>
+          shouldSkipAiExtraction(r.doc_type, {
+            serviceType: appRow?.service_type ?? null,
+          })
+        )
         .map((r) => r.id) ?? [];
 
     if (ids.length === 0) {

@@ -538,7 +538,12 @@ export function ApplicationDetailClient({
 
   const extractionAttention = useMemo(() => {
     if (documents.length === 0) return false;
-    const extractable = documents.filter((d) => !shouldSkipAiExtraction(d.doc_type));
+    const extractable = documents.filter(
+      (d) =>
+        !shouldSkipAiExtraction(d.doc_type, {
+          serviceType: application.service_type,
+        })
+    );
     if (extractable.length === 0) return false;
     return (
       isProcessing ||
@@ -553,7 +558,12 @@ export function ApplicationDetailClient({
 
   const extractionSummaryLine = useMemo(() => {
     if (documents.length === 0) return "";
-    const extractable = documents.filter((d) => !shouldSkipAiExtraction(d.doc_type));
+    const extractable = documents.filter(
+      (d) =>
+        !shouldSkipAiExtraction(d.doc_type, {
+          serviceType: application.service_type,
+        })
+    );
     if (extractable.length === 0) {
       return "No uploads in this checklist require AI extraction.";
     }
@@ -1195,7 +1205,11 @@ export function ApplicationDetailClient({
 
   async function retryExtractionForDoc(doc: Document) {
     setPatchError(null);
-    if (shouldSkipAiExtraction(doc.doc_type)) {
+    if (
+      shouldSkipAiExtraction(doc.doc_type, {
+        serviceType: application.service_type,
+      })
+    ) {
       setPatchError(
         "Applicant photo and signature are not run through document extraction."
       );
@@ -2081,6 +2095,7 @@ export function ApplicationDetailClient({
       <DocumentChecklistCard
         key={item.doc_type}
         item={item}
+        serviceType={application.service_type}
         document={slotDoc}
         uploading={isUploadingForChecklistItem(
           item.doc_type,
@@ -2688,6 +2703,7 @@ export function ApplicationDetailClient({
 
 function DocumentChecklistCard({
   item,
+  serviceType,
   document,
   uploading,
   progress,
@@ -2700,6 +2716,7 @@ function DocumentChecklistCard({
   parentKindSelector,
 }: {
   item: ChecklistItem;
+  serviceType: Application["service_type"];
   document: Document | undefined;
   uploading: boolean;
   progress: number | null;
@@ -2854,7 +2871,9 @@ function DocumentChecklistCard({
                 <p className="flex items-center gap-1 font-medium text-blue-700 animate-pulse">
                   <span aria-hidden>🔄</span> Extracting…
                 </p>
-              ) : shouldSkipAiExtraction(document.doc_type) &&
+              ) : shouldSkipAiExtraction(document.doc_type, {
+                  serviceType,
+                }) &&
                 document.extraction_status === "done" ? (
                 <p className="font-medium text-black/45">
                   <span aria-hidden>⏭️</span> Skipped

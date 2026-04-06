@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import { extractFieldsFromDocument } from "@/lib/claude";
 import {
-  PASSPORT_DOC_TYPES,
   type PassportRoutingContext,
 } from "@/lib/extraction-profiles";
 import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
@@ -102,6 +101,18 @@ async function runExtraction(args: {
   const docId = String(doc.id);
   const docType = String(doc.doc_type ?? "");
   const docLabel = resolveDocTypeChecklistLabel(docType);
+  const { data: appRow } = await supabaseAdmin
+    .from("applications")
+    .select("service_type, oci_intake_variant")
+    .eq("id", application_id)
+    .maybeSingle();
+  const extractionRouting: PassportRoutingContext = {
+    serviceType:
+      (appRow?.service_type as Application["service_type"]) ?? null,
+    ociIntakeVariant: normalizeStoredOciIntakeVariant(
+      appRow?.oci_intake_variant
+    ),
+  };
 
   const progress = (step: number, message: string) => {
     emit?.({
@@ -112,7 +123,11 @@ async function runExtraction(args: {
     });
   };
 
-  if (shouldSkipAiExtraction(docType)) {
+  if (
+    shouldSkipAiExtraction(docType, {
+      serviceType: extractionRouting.serviceType ?? null,
+    })
+  ) {
     await markDocument(docId, {
       extraction_status: "done",
       failure_reason: null,
@@ -197,29 +212,13 @@ async function runExtraction(args: {
 
   progress(2, "Sending to AI…");
 
-  let passportRouting: PassportRoutingContext | undefined;
-  if (PASSPORT_DOC_TYPES.has(docType)) {
-    const { data: appRow } = await supabaseAdmin
-      .from("applications")
-      .select("service_type, oci_intake_variant")
-      .eq("id", application_id)
-      .maybeSingle();
-    passportRouting = {
-      serviceType:
-        (appRow?.service_type as Application["service_type"]) ?? null,
-      ociIntakeVariant: normalizeStoredOciIntakeVariant(
-        appRow?.oci_intake_variant
-      ),
-    };
-  }
-
   let extracted: Record<string, string | null>;
   try {
     extracted = await extractFieldsFromDocument({
       base64: b64,
       mimeType,
       docType,
-      passportRouting,
+      passportRouting: extractionRouting,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
