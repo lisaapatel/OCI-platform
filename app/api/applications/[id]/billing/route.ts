@@ -2,9 +2,25 @@ import { NextResponse } from "next/server";
 
 import { applicationFromDbRow } from "@/lib/application-from-row";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { PaymentStatus } from "@/lib/types";
+import type {
+  GovernmentFeesPaidBy,
+  PaymentMethod,
+  PaymentStatus,
+} from "@/lib/types";
 
 const PAYMENT: PaymentStatus[] = ["unpaid", "partial", "paid"];
+const GOV_FEES_PAID_BY: GovernmentFeesPaidBy[] = [
+  "customer_direct",
+  "company_card",
+  "company_advanced",
+  "not_applicable",
+];
+const PAYMENT_METHODS: PaymentMethod[] = [
+  "zelle",
+  "cash",
+  "check",
+  "credit_card",
+];
 
 export async function PATCH(
   req: Request,
@@ -19,6 +35,10 @@ export async function PATCH(
       customer_price?: number | null;
       our_cost?: number | null;
       payment_status?: PaymentStatus | null;
+      payment_method?: PaymentMethod | null;
+      billing_government_fees?: number | null;
+      billing_government_fees_paid_by?: GovernmentFeesPaidBy | null;
+      billing_service_fee?: number | null;
     };
 
     const patch: Record<string, unknown> = {};
@@ -59,9 +79,9 @@ export async function PATCH(
         patch.our_cost = null;
       } else {
         const n = Number(body.our_cost);
-        if (!Number.isFinite(n) || n <= 0) {
+        if (!Number.isFinite(n) || n < 0) {
           return NextResponse.json(
-            { error: "our_cost must be a positive number when provided." },
+            { error: "our_cost must be zero or a positive number when provided." },
             { status: 400 }
           );
         }
@@ -86,6 +106,71 @@ export async function PATCH(
         );
       }
       patch.payment_status = body.payment_status;
+    }
+
+    if (body.payment_method !== undefined) {
+      if (body.payment_method === null) {
+        patch.payment_method = null;
+      } else if (!PAYMENT_METHODS.includes(body.payment_method)) {
+        return NextResponse.json(
+          { error: "Invalid payment_method." },
+          { status: 400 }
+        );
+      } else {
+        patch.payment_method = body.payment_method;
+      }
+    }
+
+    if (body.billing_government_fees !== undefined) {
+      if (body.billing_government_fees === null) {
+        patch.billing_government_fees = null;
+      } else {
+        const n = Number(body.billing_government_fees);
+        if (!Number.isFinite(n) || n < 0) {
+          return NextResponse.json(
+            {
+              error:
+                "billing_government_fees must be zero or a positive number when provided.",
+            },
+            { status: 400 }
+          );
+        }
+        patch.billing_government_fees = n;
+      }
+    }
+
+    if (body.billing_government_fees_paid_by !== undefined) {
+      if (body.billing_government_fees_paid_by === null) {
+        patch.billing_government_fees_paid_by = null;
+      } else if (
+        !GOV_FEES_PAID_BY.includes(body.billing_government_fees_paid_by)
+      ) {
+        return NextResponse.json(
+          { error: "Invalid billing_government_fees_paid_by." },
+          { status: 400 }
+        );
+      } else {
+        patch.billing_government_fees_paid_by =
+          body.billing_government_fees_paid_by;
+      }
+    }
+
+    if (body.billing_service_fee !== undefined) {
+      if (body.billing_service_fee === null) {
+        patch.billing_service_fee = null;
+      } else {
+        const n = Number(body.billing_service_fee);
+        if (!Number.isFinite(n) || n < 0) {
+          return NextResponse.json(
+            {
+              error:
+                "billing_service_fee must be zero or a positive number when provided.",
+            },
+            { status: 400 }
+          );
+        }
+        patch.billing_service_fee = n;
+      }
     }
 
     if (Object.keys(patch).length === 0) {

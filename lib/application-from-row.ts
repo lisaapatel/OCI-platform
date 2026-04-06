@@ -1,5 +1,10 @@
 import { normalizeStoredOciIntakeVariant } from "@/lib/oci-intake-variant";
-import type { Application, PaymentStatus } from "@/lib/types";
+import type {
+  Application,
+  GovernmentFeesPaidBy,
+  PaymentMethod,
+  PaymentStatus,
+} from "@/lib/types";
 
 function parsePaymentStatus(
   row: Record<string, unknown>
@@ -10,6 +15,46 @@ function parsePaymentStatus(
   const s = String(p);
   if (s === "unpaid" || s === "partial" || s === "paid") {
     return s as PaymentStatus;
+  }
+  return null;
+}
+
+const PAYMENT_METHODS: PaymentMethod[] = [
+  "zelle",
+  "cash",
+  "check",
+  "credit_card",
+];
+
+function parsePaymentMethod(
+  row: Record<string, unknown>
+): PaymentMethod | null | undefined {
+  if (!("payment_method" in row)) return undefined;
+  const p = row.payment_method;
+  if (p == null || p === "") return null;
+  const s = String(p);
+  if (PAYMENT_METHODS.includes(s as PaymentMethod)) {
+    return s as PaymentMethod;
+  }
+  return null;
+}
+
+const GOV_PAID_BY: GovernmentFeesPaidBy[] = [
+  "customer_direct",
+  "company_card",
+  "company_advanced",
+  "not_applicable",
+];
+
+function parseGovernmentFeesPaidBy(
+  row: Record<string, unknown>,
+): GovernmentFeesPaidBy | null | undefined {
+  if (!("billing_government_fees_paid_by" in row)) return undefined;
+  const p = row.billing_government_fees_paid_by;
+  if (p == null || p === "") return null;
+  const s = String(p);
+  if (GOV_PAID_BY.includes(s as GovernmentFeesPaidBy)) {
+    return s as GovernmentFeesPaidBy;
   }
   return null;
 }
@@ -52,6 +97,17 @@ export function applicationFromDbRow(row: Record<string, unknown>): Application 
     our_cost:
       row.our_cost == null || row.our_cost === "" ? null : Number(row.our_cost),
     payment_status: parsePaymentStatus(row),
+    payment_method: parsePaymentMethod(row),
+    billing_government_fees:
+      row.billing_government_fees == null ||
+      row.billing_government_fees === ""
+        ? null
+        : Number(row.billing_government_fees),
+    billing_government_fees_paid_by: parseGovernmentFeesPaidBy(row),
+    billing_service_fee:
+      row.billing_service_fee == null || row.billing_service_fee === ""
+        ? null
+        : Number(row.billing_service_fee),
     is_minor: row.is_minor === true,
     oci_intake_variant: normalizeStoredOciIntakeVariant(row.oci_intake_variant),
   };

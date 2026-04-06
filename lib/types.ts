@@ -2,6 +2,16 @@ import type { DocumentQualityResult } from "@/lib/document-quality-gate";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
+/** How the customer paid (Billing & tracking). */
+export type PaymentMethod = "zelle" | "cash" | "check" | "credit_card";
+
+/** Who paid government/VFS fees (Billing & tracking, structured model). */
+export type GovernmentFeesPaidBy =
+  | "customer_direct"
+  | "company_card"
+  | "company_advanced"
+  | "not_applicable";
+
 /** OCI intake lane; null/omitted = legacy behavior. See `lib/oci-intake-variant.ts`. */
 export type OciIntakeVariant =
   | "new_prev_indian"
@@ -41,6 +51,13 @@ export interface Application {
   our_cost?: number | null;
   /** Omitted on legacy rows; null if unknown */
   payment_status?: PaymentStatus | null;
+  /** zelle / cash / check / credit_card; null if not set */
+  payment_method?: PaymentMethod | null;
+  /** Government + VFS-style fees (single bucket v1). */
+  billing_government_fees?: number | null;
+  billing_government_fees_paid_by?: GovernmentFeesPaidBy | null;
+  /** Explicit service fee; when null, UI may derive from customer_price − government fees. */
+  billing_service_fee?: number | null;
   /** When true, parent passport + address checklist slots apply (all service types). */
   is_minor?: boolean;
   /** OCI-only; null for legacy rows or non-OCI services. */

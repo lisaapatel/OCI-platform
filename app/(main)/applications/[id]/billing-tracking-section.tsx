@@ -1,10 +1,22 @@
 "use client";
 
 import clsx from "clsx";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  computeStructuredServiceMargin,
+  GOVERNMENT_FEES_PAID_BY_OPTIONS,
+  governmentFeesPaidByLabel,
+  parseNonNegativeMoney,
+  usesStructuredBilling,
+} from "@/lib/billing-financials";
 import { isOciServiceType } from "@/lib/oci-intake-variant";
-import type { Application, PaymentStatus } from "@/lib/types";
+import type {
+  Application,
+  GovernmentFeesPaidBy,
+  PaymentMethod,
+  PaymentStatus,
+} from "@/lib/types";
 
 import { BillingPortalPdfHint } from "./application-pdf-downloads";
 
@@ -13,7 +25,8 @@ type Props = {
   onApplicationUpdated: (app: Application) => void;
 };
 
-function parseMoney(s: string): number | null {
+/** Customer charged: empty or invalid → null; must be positive when set. */
+function parseCustomerCharged(s: string): number | null {
   const t = s.trim();
   if (t === "") return null;
   const n = Number(t);
@@ -21,18 +34,58 @@ function parseMoney(s: string): number | null {
   return n;
 }
 
+type OurCostParse = number | null | "invalid";
+
+/** Our cost (DS-82 legacy): empty → null. Zero or positive → number. */
+function parseOurCostForSave(s: string): OurCostParse {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return "invalid";
+  return n;
+}
+
+/**
+ * Profit = customer charged − our cost. Empty cost treated as 0 (legacy DS-82).
+ */
+function computeLegacyProfit(priceStr: string, costStr: string): number | null {
+  const pt = priceStr.trim();
+  if (pt === "") return null;
+  const price = Number(pt);
+  if (!Number.isFinite(price) || price < 0) return null;
+
+  const ct = costStr.trim();
+  const cost = ct === "" ? 0 : Number(ct);
+  if (!Number.isFinite(cost) || cost < 0) return null;
+
+  return price - cost;
+}
+
+const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: "zelle", label: "Zelle" },
+  { value: "cash", label: "Cash" },
+  { value: "check", label: "Check" },
+  { value: "credit_card", label: "Credit card" },
+];
+
 export function BillingTrackingSection({
   application,
   onApplicationUpdated,
 }: Props) {
   const showOciFileRef = isOciServiceType(application.service_type);
+  const structured = usesStructuredBilling(application.service_type);
+
   const [expanded, setExpanded] = useState(true);
   const [vfs, setVfs] = useState("");
   const [govt, setGovt] = useState("");
   const [ociFileRef, setOciFileRef] = useState("");
   const [priceStr, setPriceStr] = useState("");
   const [costStr, setCostStr] = useState("");
+  const [govFeesStr, setGovFeesStr] = useState("");
+  const [govPaidBy, setGovPaidBy] = useState<GovernmentFeesPaidBy | "">("");
+  const [serviceFeeStr, setServiceFeeStr] = useState("");
   const [payment, setPayment] = useState<PaymentStatus>("unpaid");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -42,7 +95,8 @@ export function BillingTrackingSection({
     setGovt(application.govt_tracking_number ?? "");
     setOciFileRef(application.oci_file_reference_number ?? "");
     setPriceStr(
-      application.customer_price != null && Number.isFinite(application.customer_price)
+      application.customer_price != null &&
+        Number.isFinite(application.customer_price)
         ? String(application.customer_price)
         : ""
     );
@@ -51,47 +105,165 @@ export function BillingTrackingSection({
         ? String(application.our_cost)
         : ""
     );
+    setGovFeesStr(
+      application.billing_government_fees != null &&
+        Number.isFinite(application.billing_government_fees)
+        ? String(application.billing_government_fees)
+        : ""
+    );
+    const gpb = application.billing_government_fees_paid_by;
+    setGovPaidBy(
+      gpb === "customer_direct" ||
+        gpb === "company_card" ||
+        gpb === "company_advanced" ||
+        gpb === "not_applicable"
+        ? gpb
+        : ""
+    );
+    setServiceFeeStr(
+      application.billing_service_fee != null &&
+        Number.isFinite(application.billing_service_fee)
+        ? String(application.billing_service_fee)
+        : ""
+    );
     setPayment(application.payment_status ?? "unpaid");
+    const pm = application.payment_method;
+    setPaymentMethod(
+      pm === "zelle" ||
+        pm === "cash" ||
+        pm === "check" ||
+        pm === "credit_card"
+        ? pm
+        : ""
+    );
   }, [application]);
 
-  const priceNum = parseMoney(priceStr);
-  const costNum = parseMoney(costStr);
-  const profit =
-    priceNum != null && costNum != null ? priceNum - costNum : null;
+  const customerNum = parseCustomerCharged(priceStr);
+  const govFeesParsed = parseNonNegativeMoney(govFeesStr);
+  const serviceFeeParsed = parseNonNegativeMoney(serviceFeeStr);
+
+  const serviceMargin = useMemo(() => {
+    if (!structured) return null;
+    const gov =
+      govFeesParsed === "invalid" ? null : govFeesParsed;
+    const svc =
+      serviceFeeStr.trim() === ""
+        ? null
+        : serviceFeeParsed === "invalid"
+          ? null
+          : serviceFeeParsed;
+    return computeStructuredServiceMargin({
+      customerPrice: customerNum,
+      governmentFees: gov,
+      explicitServiceFee: svc,
+    });
+  }, [
+    structured,
+    customerNum,
+    govFeesParsed,
+    serviceFeeStr,
+    serviceFeeParsed,
+  ]);
+
+  const impliedServiceMismatch = useMemo(() => {
+    if (!structured) return false;
+    if (serviceFeeStr.trim() === "") return false;
+    if (
+      serviceFeeParsed === "invalid" ||
+      serviceFeeParsed === null ||
+      customerNum == null ||
+      govFeesParsed === "invalid" ||
+      govFeesParsed == null
+    ) {
+      return false;
+    }
+    const explicitSvc = serviceFeeParsed;
+    const implied = Math.max(0, customerNum - govFeesParsed);
+    return Math.abs(explicitSvc - implied) > 0.02;
+  }, [
+    structured,
+    serviceFeeStr,
+    serviceFeeParsed,
+    customerNum,
+    govFeesParsed,
+  ]);
+
+  const legacyProfit = computeLegacyProfit(priceStr, costStr);
 
   const save = useCallback(async () => {
     setError(null);
-    const customer_price = parseMoney(priceStr);
-    const our_cost = parseMoney(costStr);
+    const customer_price = parseCustomerCharged(priceStr);
+
     if (priceStr.trim() !== "" && customer_price === null) {
       setError("Customer charged must be a positive number or empty.");
       return;
     }
-    if (costStr.trim() !== "" && our_cost === null) {
-      setError("Our cost must be a positive number or empty.");
-      return;
+
+    let our_cost: number | null | undefined;
+    let billing_government_fees: number | null | undefined;
+    let billing_government_fees_paid_by: GovernmentFeesPaidBy | null | undefined;
+    let billing_service_fee: number | null | undefined;
+
+    if (structured) {
+      if (govFeesParsed === "invalid") {
+        setError("Government fees must be zero or a positive number, or empty.");
+        return;
+      }
+      if (serviceFeeStr.trim() !== "" && serviceFeeParsed === "invalid") {
+        setError("Service fee must be zero or a positive number, or empty.");
+        return;
+      }
+      billing_government_fees = govFeesParsed;
+      billing_government_fees_paid_by =
+        govPaidBy === "" ? null : govPaidBy;
+      billing_service_fee =
+        serviceFeeStr.trim() === "" ||
+        serviceFeeParsed === "invalid" ||
+        serviceFeeParsed === null
+          ? null
+          : serviceFeeParsed;
+      our_cost = undefined;
+    } else {
+      const ourCostParsed = parseOurCostForSave(costStr);
+      if (ourCostParsed === "invalid") {
+        setError("Our cost must be zero or a positive number, or empty.");
+        return;
+      }
+      our_cost = ourCostParsed;
     }
 
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        vfs_tracking_number: vfs.trim() === "" ? null : vfs.trim(),
+        govt_tracking_number: govt.trim() === "" ? null : govt.trim(),
+        ...(showOciFileRef
+          ? {
+              oci_file_reference_number:
+                ociFileRef.trim() === "" ? null : ociFileRef.trim(),
+            }
+          : {}),
+        customer_price,
+        payment_status: payment,
+        payment_method:
+          paymentMethod === "" ? null : (paymentMethod as PaymentMethod),
+      };
+
+      if (structured) {
+        body.billing_government_fees = billing_government_fees ?? null;
+        body.billing_government_fees_paid_by =
+          billing_government_fees_paid_by ?? null;
+        body.billing_service_fee = billing_service_fee ?? null;
+      } else {
+        body.our_cost = our_cost ?? null;
+      }
+
       const res = await fetch(
         `/api/applications/${encodeURIComponent(application.id)}/billing`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            vfs_tracking_number: vfs.trim() === "" ? null : vfs.trim(),
-            govt_tracking_number: govt.trim() === "" ? null : govt.trim(),
-            ...(showOciFileRef
-              ? {
-                  oci_file_reference_number:
-                    ociFileRef.trim() === "" ? null : ociFileRef.trim(),
-                }
-              : {}),
-            customer_price,
-            our_cost,
-            payment_status: payment,
-          }),
+          body: JSON.stringify(body),
         }
       );
       const data = (await res.json()) as {
@@ -114,15 +286,25 @@ export function BillingTrackingSection({
     }
   }, [
     application.id,
+    structured,
     showOciFileRef,
     vfs,
     govt,
     ociFileRef,
     priceStr,
     costStr,
+    govFeesParsed,
+    govPaidBy,
+    serviceFeeStr,
+    serviceFeeParsed,
     payment,
+    paymentMethod,
     onApplicationUpdated,
   ]);
+
+  const showGovSummary =
+    structured &&
+    (govFeesStr.trim() !== "" || govPaidBy !== "");
 
   return (
     <section className="rounded-xl border border-[#1e3a5f] border-l-4 border-l-[#2563eb] bg-white p-0 shadow-sm transition-shadow duration-150 hover:shadow-md">
@@ -137,7 +319,9 @@ export function BillingTrackingSection({
             Billing &amp; Tracking
           </h2>
           <p className="mt-0.5 text-xs text-[#64748b]">
-            VFS / govt tracking numbers and sale vs. cost for this application.
+            {structured
+              ? "Tracking numbers, customer total, government fees, and service margin."
+              : "VFS / govt tracking numbers and sale vs. cost for this application."}
           </p>
         </div>
         <span
@@ -235,86 +419,284 @@ export function BillingTrackingSection({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">
               Financials
             </h3>
-            <div className="mt-3 grid gap-4 sm:grid-cols-3">
-              <div>
-                <label
-                  className="block text-sm font-medium text-[#1e293b]"
-                  htmlFor="customer-price"
-                >
-                  Customer charged ($)
-                </label>
-                <input
-                  id="customer-price"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
-                  value={priceStr}
-                  onChange={(e) => setPriceStr(e.target.value)}
-                  placeholder="0.00"
-                  className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
-                />
-              </div>
-              <div>
-                <label
-                  className="block text-sm font-medium text-[#1e293b]"
-                  htmlFor="our-cost"
-                >
-                  Our cost ($)
-                </label>
-                <input
-                  id="our-cost"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
-                  value={costStr}
-                  onChange={(e) => setCostStr(e.target.value)}
-                  placeholder="0.00"
-                  className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
-                />
-              </div>
-              <div>
-                <span className="block text-sm font-medium text-[#1e293b]">
-                  Profit
-                </span>
-                <div
-                  className={clsx(
-                    "mt-1 flex h-10 items-center rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 text-sm font-semibold tabular-nums",
-                    profit == null
-                      ? "text-[#64748b]"
-                      : profit >= 0
-                        ? "text-green-700"
-                        : "text-red-700"
-                  )}
-                >
-                  {profit == null
-                    ? "—"
-                    : `${profit < 0 ? "-" : ""}$${Math.abs(profit).toFixed(2)}`}
+
+            {structured ? (
+              <div className="mt-3 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label
+                      className="block text-sm font-medium text-[#1e293b]"
+                      htmlFor="customer-price"
+                    >
+                      Total customer charged ($)
+                    </label>
+                    <input
+                      id="customer-price"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      value={priceStr}
+                      onChange={(e) => setPriceStr(e.target.value)}
+                      placeholder="0.00"
+                      className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="block text-sm font-medium text-[#1e293b]"
+                      htmlFor="gov-fees"
+                    >
+                      Government fees ($)
+                    </label>
+                    <input
+                      id="gov-fees"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      value={govFeesStr}
+                      onChange={(e) => setGovFeesStr(e.target.value)}
+                      placeholder="0.00"
+                      className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                    />
+                    <p className="mt-1 text-[11px] leading-snug text-[#64748b]">
+                      VFS + government portal fees if one combined amount.
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      className="block text-sm font-medium text-[#1e293b]"
+                      htmlFor="service-fee"
+                    >
+                      Service fee ($){" "}
+                      <span className="font-normal text-[#64748b]">
+                        (optional)
+                      </span>
+                    </label>
+                    <input
+                      id="service-fee"
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01"
+                      value={serviceFeeStr}
+                      onChange={(e) => setServiceFeeStr(e.target.value)}
+                      placeholder="Leave blank to derive from total − gov fees"
+                      className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                    />
+                  </div>
+                </div>
+
+                <div className="max-w-md">
+                  <label
+                    className="block text-sm font-medium text-[#1e293b]"
+                    htmlFor="gov-paid-by"
+                  >
+                    Government fees paid by
+                  </label>
+                  <select
+                    id="gov-paid-by"
+                    value={govPaidBy}
+                    onChange={(e) =>
+                      setGovPaidBy(
+                        (e.target.value || "") as GovernmentFeesPaidBy | ""
+                      )
+                    }
+                    className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                  >
+                    <option value="">Not set</option>
+                    {GOVERNMENT_FEES_PAID_BY_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {govPaidBy === "company_advanced" ? (
+                    <p className="mt-1 text-[11px] leading-snug text-amber-900/90">
+                      Track reimbursement separately if the company advanced
+                      these fees.
+                    </p>
+                  ) : null}
+                </div>
+
+                {impliedServiceMismatch ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    Service fee differs from total charged minus government fees
+                    {customerNum != null && govFeesParsed !== "invalid" && govFeesParsed != null
+                      ? ` ($${Math.max(0, customerNum - govFeesParsed).toFixed(2)} implied).`
+                      : "."}{" "}
+                    Confirm which number is correct for your records.
+                  </p>
+                ) : null}
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {showGovSummary ? (
+                    <div>
+                      <span className="block text-sm font-medium text-[#1e293b]">
+                        Government fees summary
+                      </span>
+                      <div className="mt-1 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-sm text-[#334155]">
+                        {govFeesStr.trim() !== "" &&
+                        govFeesParsed !== "invalid" &&
+                        govFeesParsed != null ? (
+                          <span className="font-semibold tabular-nums">
+                            ${govFeesParsed.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-[#64748b]">Amount not set</span>
+                        )}
+                        {govPaidBy !== "" ? (
+                          <span className="mt-1 block text-xs text-[#64748b]">
+                            Paid by: {governmentFeesPaidByLabel(govPaidBy)}
+                          </span>
+                        ) : (
+                          <span className="mt-1 block text-xs text-[#64748b]">
+                            Payer not set
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div>
+                    <span className="block text-sm font-medium text-[#1e293b]">
+                      Service margin
+                    </span>
+                    <p className="mt-0.5 text-[11px] text-[#64748b]">
+                      Your fee portion (explicit service fee, or total −
+                      government fees).
+                    </p>
+                    <div
+                      className={clsx(
+                        "mt-1 flex min-h-10 items-center rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2 text-sm font-semibold tabular-nums",
+                        serviceMargin == null
+                          ? "text-[#64748b]"
+                          : serviceMargin >= 0
+                            ? "text-green-700"
+                            : "text-red-700"
+                      )}
+                    >
+                      {serviceMargin == null
+                        ? "—"
+                        : `${serviceMargin < 0 ? "-" : ""}$${Math.abs(serviceMargin).toFixed(2)}`}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label
+                    className="block text-sm font-medium text-[#1e293b]"
+                    htmlFor="customer-price-legacy"
+                  >
+                    Customer charged ($)
+                  </label>
+                  <input
+                    id="customer-price-legacy"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    value={priceStr}
+                    onChange={(e) => setPriceStr(e.target.value)}
+                    placeholder="0.00"
+                    className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                  />
+                </div>
+                <div>
+                  <label
+                    className="block text-sm font-medium text-[#1e293b]"
+                    htmlFor="our-cost"
+                  >
+                    Our cost ($)
+                  </label>
+                  <input
+                    id="our-cost"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    value={costStr}
+                    onChange={(e) => setCostStr(e.target.value)}
+                    placeholder="0.00"
+                    className="mt-1 h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors placeholder:text-[#94a3b8] focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                  />
+                </div>
+                <div>
+                  <span className="block text-sm font-medium text-[#1e293b]">
+                    Profit
+                  </span>
+                  <div
+                    className={clsx(
+                      "mt-1 flex h-10 items-center rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 text-sm font-semibold tabular-nums",
+                      legacyProfit == null
+                        ? "text-[#64748b]"
+                        : legacyProfit >= 0
+                          ? "text-green-700"
+                          : "text-red-700"
+                    )}
+                  >
+                    {legacyProfit == null
+                      ? "—"
+                      : `${legacyProfit < 0 ? "-" : ""}$${Math.abs(legacyProfit).toFixed(2)}`}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">
-              Payment status
+              Payment
             </h3>
-            <label className="sr-only" htmlFor="payment-status">
-              Payment status
-            </label>
-            <select
-              id="payment-status"
-              value={payment}
-              onChange={(e) =>
-                setPayment(e.target.value as PaymentStatus)
-              }
-              className="mt-3 h-10 w-full max-w-md rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25 sm:w-auto"
-            >
-              <option value="unpaid">🔴 Unpaid</option>
-              <option value="partial">🟡 Partially paid</option>
-              <option value="paid">🟢 Paid</option>
-            </select>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 sm:items-end">
+              <div>
+                <label
+                  className="block text-sm font-medium text-[#1e293b]"
+                  htmlFor="payment-type"
+                >
+                  Payment type
+                </label>
+                <select
+                  id="payment-type"
+                  value={paymentMethod}
+                  onChange={(e) =>
+                    setPaymentMethod(
+                      (e.target.value || "") as PaymentMethod | ""
+                    )
+                  }
+                  className="mt-1 h-10 w-full max-w-md rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                >
+                  <option value="">Not set</option>
+                  {PAYMENT_METHOD_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label
+                  className="block text-sm font-medium text-[#1e293b]"
+                  htmlFor="payment-status"
+                >
+                  Payment status
+                </label>
+                <select
+                  id="payment-status"
+                  value={payment}
+                  onChange={(e) =>
+                    setPayment(e.target.value as PaymentStatus)
+                  }
+                  className="mt-1 h-10 w-full max-w-md rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm text-[#1e293b] outline-none transition-colors focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/25"
+                >
+                  <option value="unpaid">🔴 Unpaid</option>
+                  <option value="partial">🟡 Partially paid</option>
+                  <option value="paid">🟢 Paid</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
