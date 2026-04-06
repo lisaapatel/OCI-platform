@@ -11,6 +11,20 @@ function toAppNumber(n: number) {
   return `APP-${String(n).padStart(4, "0")}`;
 }
 
+/** Highest numeric suffix from APP-#### (null if none / unparsable). */
+function parseAppNumberSerial(appNumber: string): number | null {
+  const m = /^APP-(\d+)$/i.exec(String(appNumber).trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function isUniqueAppNumberViolation(err: { message?: string; code?: string }) {
+  const code = String(err.code ?? "");
+  const msg = String(err.message ?? "");
+  return code === "23505" || /duplicate key|unique constraint|app_number/i.test(msg);
+}
+
 export async function POST(req: Request) {
   try {
     console.log("ENV CHECK:", {
@@ -86,65 +100,115 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    // a) Generate app_number by counting existing apps
-    const { count, error: countError } = await supabaseAdmin
-      .from("applications")
-      .select("id", { count: "exact", head: true });
+    // a) Next app_number = max(existing APP-####) + 1 (not count — avoids
+    //    duplicates after deletes leave gaps, e.g. APP-0001 + APP-0003 → count 2 → APP-0003 clash).
+    const resolveNextSerial = async (): Promise<
+      { ok: true; serial: number } | { ok: false; message: string }
+    > => {
+      const { data: rows, error } = await supabaseAdmin
+        .from("applications")
+        .select("app_number")
+        .order("app_number", { ascending: false })
+        .limit(1);
 
-    if (countError) {
+      if (error) {
+        return { ok: false, message: error.message };
+      }
+
+      const top = rows?.[0]?.app_number;
+      if (top == null || String(top).trim() === "") {
+        return { ok: true, serial: 1 };
+      }
+
+      const parsed = parseAppNumberSerial(String(top));
+      if (parsed == null) {
+        return {
+          ok: false,
+          message: `Cannot derive next app number from existing value: ${String(top)}`,
+        };
+      }
+      return { ok: true, serial: parsed + 1 };
+    };
+
+    let insertedId: string | null = null;
+    let app_number = "";
+    let lastInsertError: { message?: string; code?: string } | null = null;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const next = await resolveNextSerial();
+      if (!next.ok) {
+        return NextResponse.json(
+          { error: `Failed to generate app number: ${next.message}` },
+          { status: 500 }
+        );
+      }
+
+      app_number = toAppNumber(next.serial);
+
+      const { data: inserted, error: insertError } = await supabaseAdmin
+        .from("applications")
+        .insert({
+          app_number,
+          customer_name,
+          customer_email,
+          customer_phone,
+          service_type,
+          status: "docs_pending",
+          drive_folder_id: "",
+          drive_folder_url: "",
+          notes,
+          is_minor,
+          oci_intake_variant,
+        })
+        .select("id")
+        .single();
+
+      if (!insertError && inserted?.id) {
+        insertedId = inserted.id;
+        break;
+      }
+
+      lastInsertError = insertError ?? { message: "Unknown insert error" };
+      if (!isUniqueAppNumberViolation(lastInsertError)) {
+        return NextResponse.json(
+          {
+            error: `Failed to create application: ${lastInsertError.message ?? "insert failed"}`,
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (!insertedId) {
       return NextResponse.json(
-        { error: `Failed to generate app number: ${countError.message}` },
+        {
+          error: `Failed to create application: ${lastInsertError?.message ?? "duplicate app_number retries exhausted"}`,
+        },
         { status: 500 }
       );
     }
 
-    const nextNum = (count ?? 0) + 1;
-    const app_number = toAppNumber(nextNum);
-
-    // b) Create Google Drive folder
-    let driveFolderId = "";
-    let driveFolderUrl = "";
     try {
-      const driveFolder = await createApplicationFolder(app_number, customer_name);
-      driveFolderId = driveFolder.id;
-      driveFolderUrl = driveFolder.url;
+      const driveFolder = await createApplicationFolder(
+        app_number,
+        customer_name
+      );
+      await supabaseAdmin
+        .from("applications")
+        .update({
+          drive_folder_id: driveFolder.id,
+          drive_folder_url: driveFolder.url,
+        })
+        .eq("id", insertedId);
     } catch (error) {
       const err = error as Error & { stack?: string };
       console.error("Google Drive folder creation failed", {
         message: err?.message,
         stack: err?.stack,
       });
-      // Continue creating the application even if Drive setup fails.
     }
 
-    // c) Insert row
-    const { data: inserted, error: insertError } = await supabaseAdmin
-      .from("applications")
-      .insert({
-        app_number,
-        customer_name,
-        customer_email,
-        customer_phone,
-        service_type,
-        status: "docs_pending",
-        drive_folder_id: driveFolderId,
-        drive_folder_url: driveFolderUrl,
-        notes,
-        is_minor,
-        oci_intake_variant,
-      })
-      .select("id")
-      .single();
-
-    if (insertError) {
-      return NextResponse.json(
-        { error: `Failed to create application: ${insertError.message}` },
-        { status: 500 }
-      );
-    }
-
-    // d) Return new ID
-    return NextResponse.json({ id: inserted.id }, { status: 200 });
+    return NextResponse.json({ id: insertedId }, { status: 200 });
   } catch (error) {
     const err = error as Error & { stack?: string };
     console.error("POST /api/applications failed", {

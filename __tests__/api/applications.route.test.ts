@@ -31,19 +31,43 @@ describe("POST /api/applications", () => {
 
     const insertPayloads: unknown[] = [];
 
-    const countSelect = jest.fn().mockResolvedValue({ count: 2, error: null });
-    const insertSingle = jest
-      .fn()
-      .mockResolvedValue({ data: { id: "new-app-id" }, error: null });
-    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
-    const insert = jest.fn((payload) => {
-      insertPayloads.push(payload);
-      return { select: insertSelect };
-    });
-
-    supabaseAdminFrom.mockReturnValue({
-      select: countSelect,
-      insert,
+    let insertStep = 0;
+    supabaseAdminFrom.mockImplementation(() => {
+      insertStep += 1;
+      if (insertStep === 1) {
+        return {
+          select: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest
+                .fn()
+                .mockResolvedValue({ data: [{ app_number: "APP-0002" }], error: null }),
+            }),
+          }),
+        };
+      }
+      if (insertStep === 2) {
+        return {
+          insert: jest.fn((payload: unknown) => {
+            insertPayloads.push(payload);
+            return {
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: { id: "new-app-id" },
+                  error: null,
+                }),
+              }),
+            };
+          }),
+        };
+      }
+      if (insertStep === 3) {
+        return {
+          update: jest.fn(() => ({
+            eq: jest.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      return {};
     });
 
     const req = new Request("http://localhost/api/applications", {
@@ -63,16 +87,15 @@ describe("POST /api/applications", () => {
     await expect(res.json()).resolves.toEqual({ id: "new-app-id" });
 
     expect(createApplicationFolder).toHaveBeenCalledWith("APP-0003", "Priya Sharma");
-    expect(insert).toHaveBeenCalledTimes(1);
+    expect(insertPayloads).toHaveLength(1);
     expect(insertPayloads[0]).toEqual(
       expect.objectContaining({
         app_number: "APP-0003",
         customer_name: "Priya Sharma",
         service_type: "oci_new",
         status: "docs_pending",
-        drive_folder_id: "drive-folder-id",
-        drive_folder_url:
-          "https://drive.google.com/drive/folders/drive-folder-id",
+        drive_folder_id: "",
+        drive_folder_url: "",
       })
     );
   });
@@ -101,16 +124,35 @@ describe("POST /api/applications", () => {
   test("still creates application when Drive folder creation fails", async () => {
     createApplicationFolder.mockRejectedValue(new Error("drive down"));
 
-    const countSelect = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const insertSingle = jest
-      .fn()
-      .mockResolvedValue({ data: { id: "app-without-drive" }, error: null });
-    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
-    const insert = jest.fn(() => ({ select: insertSelect }));
-
-    supabaseAdminFrom.mockReturnValue({
-      select: countSelect,
-      insert,
+    const insertPayloads: unknown[] = [];
+    let step = 0;
+    supabaseAdminFrom.mockImplementation(() => {
+      step += 1;
+      if (step === 1) {
+        return {
+          select: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      if (step === 2) {
+        return {
+          insert: jest.fn((payload: unknown) => {
+            insertPayloads.push(payload);
+            return {
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: { id: "app-without-drive" },
+                  error: null,
+                }),
+              }),
+            };
+          }),
+        };
+      }
+      return {};
     });
 
     const req = new Request("http://localhost/api/applications", {
@@ -125,11 +167,12 @@ describe("POST /api/applications", () => {
     const res = await POST(req);
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ id: "app-without-drive" });
-    expect(insert).toHaveBeenCalledWith(
+    expect(insertPayloads[0]).toEqual(
       expect.objectContaining({
         customer_name: "Raj Patel",
         drive_folder_id: "",
         drive_folder_url: "",
+        app_number: "APP-0001",
       })
     );
   });
@@ -141,19 +184,41 @@ describe("POST /api/applications", () => {
     });
 
     const insertPayloads: unknown[] = [];
-    const countSelect = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const insertSingle = jest
-      .fn()
-      .mockResolvedValue({ data: { id: "minor-app" }, error: null });
-    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
-    const insert = jest.fn((payload) => {
-      insertPayloads.push(payload);
-      return { select: insertSelect };
-    });
-
-    supabaseAdminFrom.mockReturnValue({
-      select: countSelect,
-      insert,
+    let step = 0;
+    supabaseAdminFrom.mockImplementation(() => {
+      step += 1;
+      if (step === 1) {
+        return {
+          select: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      if (step === 2) {
+        return {
+          insert: jest.fn((payload: unknown) => {
+            insertPayloads.push(payload);
+            return {
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: { id: "minor-app" },
+                  error: null,
+                }),
+              }),
+            };
+          }),
+        };
+      }
+      if (step === 3) {
+        return {
+          update: jest.fn(() => ({
+            eq: jest.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      return {};
     });
 
     const req = new Request("http://localhost/api/applications", {
@@ -180,19 +245,41 @@ describe("POST /api/applications", () => {
     });
 
     const insertPayloads: unknown[] = [];
-    const countSelect = jest.fn().mockResolvedValue({ count: 0, error: null });
-    const insertSingle = jest
-      .fn()
-      .mockResolvedValue({ data: { id: "variant-app" }, error: null });
-    const insertSelect = jest.fn().mockReturnValue({ single: insertSingle });
-    const insert = jest.fn((payload) => {
-      insertPayloads.push(payload);
-      return { select: insertSelect };
-    });
-
-    supabaseAdminFrom.mockReturnValue({
-      select: countSelect,
-      insert,
+    let step = 0;
+    supabaseAdminFrom.mockImplementation(() => {
+      step += 1;
+      if (step === 1) {
+        return {
+          select: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      if (step === 2) {
+        return {
+          insert: jest.fn((payload: unknown) => {
+            insertPayloads.push(payload);
+            return {
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: { id: "variant-app" },
+                  error: null,
+                }),
+              }),
+            };
+          }),
+        };
+      }
+      if (step === 3) {
+        return {
+          update: jest.fn(() => ({
+            eq: jest.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      return {};
     });
 
     const req = new Request("http://localhost/api/applications", {
@@ -256,6 +343,69 @@ describe("POST /api/applications", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(String(body.error)).toMatch(/only valid for OCI applications/i);
+  });
+
+  test("uses max app_number + 1, not row count (gaps after deletes)", async () => {
+    createApplicationFolder.mockResolvedValue({
+      id: "drive-folder-id",
+      url: "https://drive.google.com/drive/folders/drive-folder-id",
+    });
+
+    const insertPayloads: unknown[] = [];
+    let step = 0;
+    supabaseAdminFrom.mockImplementation(() => {
+      step += 1;
+      if (step === 1) {
+        return {
+          select: jest.fn().mockReturnValue({
+            order: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue({
+                data: [{ app_number: "APP-0005" }],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (step === 2) {
+        return {
+          insert: jest.fn((payload: unknown) => {
+            insertPayloads.push(payload);
+            return {
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: { id: "gap-app" },
+                  error: null,
+                }),
+              }),
+            };
+          }),
+        };
+      }
+      if (step === 3) {
+        return {
+          update: jest.fn(() => ({
+            eq: jest.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      return {};
+    });
+
+    const req = new Request("http://localhost/api/applications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_name: "Gap Test",
+        service_type: "oci_new",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    expect(insertPayloads[0]).toEqual(
+      expect.objectContaining({ app_number: "APP-0006" })
+    );
   });
 
   test("returns 400 when is_minor is not boolean", async () => {

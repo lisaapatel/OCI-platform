@@ -56,13 +56,17 @@ create table extracted_fields (
   updated_at timestamp with time zone default now()
 );
 
--- Auto-increment app number function
+-- Next app number: max(APP-####) + 1 (not count — avoids duplicates after deletes).
 create or replace function generate_app_number()
 returns text as $$
 declare
   next_num int;
 begin
-  select count(*) + 1 into next_num from applications;
+  select coalesce(max(
+    (regexp_replace(app_number, '^APP-', '', 'i'))::int
+  ), 0) + 1 into next_num
+  from applications
+  where app_number ~* '^APP-[0-9]+$';
   return 'APP-' || lpad(next_num::text, 4, '0');
 end;
 $$ language plpgsql;
