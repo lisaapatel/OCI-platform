@@ -10,6 +10,10 @@ export const OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX = 67;
 export const OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX = 1500;
 export const OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX = 500;
 
+/** 3:1 export size in `SignatureCropEditorModal` (matches server checks). */
+export const OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX = 600;
+export const OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX = 200;
+
 /** Signature requires 3:1 width:height (w/h). */
 const SIG_RATIO = 3;
 /** ±2% tolerance in terms of ratio magnitude. */

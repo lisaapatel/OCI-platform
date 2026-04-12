@@ -114,3 +114,17 @@ export function portalCompressedDriveName(
 export function govtFixedDriveName(doc_type: string): string {
   return `${drivePrefixForDocType(doc_type)}_fixed.jpg`;
 }
+
+/** Standalone photo tool: JPEG in `Photos/{category}/` or local download name. */
+export function standalonePhotoDriveName(
+  imageType: "photo" | "signature",
+  clientLabel?: string | null
+): string {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const raw = clientLabel?.trim();
+  if (raw) {
+    const seg = sanitizeDriveSegment(raw).slice(0, 80);
+    return `${imageType}_${seg}_${ts}.jpg`;
+  }
+  return `${imageType}_${ts}.jpg`;
+}

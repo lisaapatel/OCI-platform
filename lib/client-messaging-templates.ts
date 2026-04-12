@@ -43,7 +43,24 @@ Thank you for trusting Akshar Travels!
 Warm regards,
 Akshar Travels`;
 
-/** Shared by OCI New Message 3, OCI Renewal Message 3, Passport Renewal Message 3 */
+/** Shared missing-documents follow-up for all services */
+export const MISSING_DOCUMENTS_FOLLOW_UP_BODY = `Hi [Client Name],
+
+Thank you so much for trusting Akshar Travels.
+
+We are still waiting for the following documents from you to proceed with your filing:
+- [Document 1]
+- [Document 2]
+- [Document 3]
+
+Could you please send these at your earliest convenience?
+
+Once we receive them, we will continue with the next steps right away.
+
+Warm regards,
+Akshar Travels`;
+
+/** Shared by OCI New Message 4, OCI Renewal Message 4, Passport Renewal Message 4 */
 export const OCI_NEW_MESSAGE_3_BODY = `Hi [Client Name],
 
 Thank you for completing your OCI application with Akshar Travels! It was a pleasure working with you.
@@ -187,13 +204,19 @@ export const CLIENT_MESSAGING_TEMPLATES: Record<
     },
     {
       id: "oci_new_2",
-      title: "Message 2 - Application Submitted",
-      body: OCI_NEW_MESSAGE_2_BODY,
+      title: "Message 2 - Missing Documents Follow-up",
+      body: MISSING_DOCUMENTS_FOLLOW_UP_BODY,
       channelTag: CHANNEL_TAG,
     },
     {
       id: "oci_new_3",
-      title: "Message 3 - Thank You + Gift Card",
+      title: "Message 3 - Application Submitted",
+      body: OCI_NEW_MESSAGE_2_BODY,
+      channelTag: CHANNEL_TAG,
+    },
+    {
+      id: "oci_new_4",
+      title: "Message 4 - Thank You + Gift Card",
       body: OCI_NEW_MESSAGE_3_BODY,
       channelTag: CHANNEL_TAG,
     },
@@ -209,13 +232,19 @@ export const CLIENT_MESSAGING_TEMPLATES: Record<
     },
     {
       id: "oci_renewal_2",
-      title: "Message 2 - Submitted",
-      body: OCI_NEW_MESSAGE_2_BODY,
+      title: "Message 2 - Missing Documents Follow-up",
+      body: MISSING_DOCUMENTS_FOLLOW_UP_BODY,
       channelTag: CHANNEL_TAG,
     },
     {
       id: "oci_renewal_3",
-      title: "Message 3 - Thank You + Gift Card",
+      title: "Message 3 - Submitted",
+      body: OCI_NEW_MESSAGE_2_BODY,
+      channelTag: CHANNEL_TAG,
+    },
+    {
+      id: "oci_renewal_4",
+      title: "Message 4 - Thank You + Gift Card",
       body: OCI_NEW_MESSAGE_3_BODY,
       channelTag: CHANNEL_TAG,
     },
@@ -231,13 +260,19 @@ export const CLIENT_MESSAGING_TEMPLATES: Record<
     },
     {
       id: "passport_2",
-      title: "Message 2 - Submitted",
-      body: PASSPORT_RENEWAL_MESSAGE_2_BODY,
+      title: "Message 2 - Missing Documents Follow-up",
+      body: MISSING_DOCUMENTS_FOLLOW_UP_BODY,
       channelTag: CHANNEL_TAG,
     },
     {
       id: "passport_3",
-      title: "Message 3 - Thank You + Gift Card",
+      title: "Message 3 - Submitted",
+      body: PASSPORT_RENEWAL_MESSAGE_2_BODY,
+      channelTag: CHANNEL_TAG,
+    },
+    {
+      id: "passport_4",
+      title: "Message 4 - Thank You + Gift Card",
       body: OCI_NEW_MESSAGE_3_BODY,
       channelTag: CHANNEL_TAG,
     },

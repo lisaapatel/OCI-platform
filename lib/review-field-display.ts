@@ -44,6 +44,23 @@ const REVIEW_SECTIONS: ReviewSection[] = [
     ],
   },
   {
+    id: "id_document",
+    title: "Government ID / License",
+    fields: [
+      "id_document_number",
+      "state_id_number",
+      "drivers_license_number",
+      "license_number",
+      "id_issue_date",
+      "id_expiry_date",
+      "document_expiry_date",
+      "license_expiry_date",
+      "id_document_holder_name",
+      "name_on_id",
+      "license_holder_name",
+    ],
+  },
+  {
     id: "address",
     title: "Address",
     fields: [
@@ -57,11 +74,26 @@ const REVIEW_SECTIONS: ReviewSection[] = [
       "town",
       "state",
       "state_province",
+      "province",
       "postal_code",
       "pin_code",
       "pincode",
       "zip",
       "country",
+      "phone",
+      "mobile",
+      "mobile_no",
+      "email",
+      "e_mail",
+      "permanent_address_line_1",
+      "permanent_address_line1",
+      "permanent_address_line_2",
+      "permanent_address_line2",
+      "permanent_city",
+      "permanent_state",
+      "permanent_state_province",
+      "permanent_country",
+      "permanent_postal_code",
     ],
   },
   {
@@ -117,6 +149,9 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   marriage_certificate: "Marriage Certificate",
   indian_citizenship_relinquishment: "Citizenship Relinquishment / Surrender",
   applicant_oci_card: "Applicant OCI Card",
+  us_address_proof: "US Address Proof",
+  indian_address_proof: "Indian Address Proof",
+  us_status_proof: "US Status Proof",
   photo: "Photo",
   signature: "Signature",
 };
@@ -125,8 +160,15 @@ export function fieldSectionId(fieldName: string): string {
   return FIELD_TO_SECTION.get(fieldName) ?? "personal_info";
 }
 
+const FIELD_LABEL_OVERRIDES: Record<string, string> = {
+  id_document_number: "ID / license number",
+  id_issue_date: "ID issue date",
+  id_expiry_date: "ID expiration date",
+  id_document_holder_name: "Name on document",
+};
+
 export function humanFieldLabel(fieldName: string): string {
-  return startCase(fieldName);
+  return FIELD_LABEL_OVERRIDES[fieldName] ?? startCase(fieldName);
 }
 
 export function sourceDocumentLabel(sourceDocType: string): string {

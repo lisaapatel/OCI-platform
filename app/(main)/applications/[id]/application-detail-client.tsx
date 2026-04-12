@@ -54,8 +54,8 @@ import type { Application, Document, ExtractSingleResultBody } from "@/lib/types
 
 import { ApplicationPdfDownloadsForApplication } from "./application-pdf-downloads";
 import { BillingTrackingSection } from "./billing-tracking-section";
-import { PhotoCropEditorModal } from "./photo-crop-editor-modal";
-import { SignatureCropEditorModal } from "./signature-crop-editor-modal";
+import { PhotoCropEditorModal } from "@/components/photo-crop-editor-modal";
+import { SignatureCropEditorModal } from "@/components/signature-crop-editor-modal";
 
 function isUploadingForChecklistItem(
   itemDocType: string,
@@ -2678,7 +2678,20 @@ export function ApplicationDetailClient({
         photoSpecs={
           isPassportRenewalFlow ? PASSPORT_RENEWAL_PHOTO_SPECS : undefined
         }
-        onSaved={async () => {
+        onSave={async (image_base64) => {
+          if (!photoEditorDoc) throw new Error("No document to save.");
+          const res = await fetch("/api/documents/fix-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              application_id: application.id,
+              document_id: photoEditorDoc.id,
+              image_type: "photo",
+              image_base64,
+            }),
+          });
+          const data = (await res.json()) as { error?: string };
+          if (!res.ok) throw new Error(data.error ?? "Save failed");
           const list = await loadDocuments();
           setDocuments(list);
           await loadPortalPrep();
@@ -2690,7 +2703,20 @@ export function ApplicationDetailClient({
         onClose={() => setSignatureEditorDoc(null)}
         applicationId={application.id}
         document={signatureEditorDoc}
-        onSaved={async () => {
+        onSave={async (image_base64) => {
+          if (!signatureEditorDoc) throw new Error("No document to save.");
+          const res = await fetch("/api/documents/fix-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              application_id: application.id,
+              document_id: signatureEditorDoc.id,
+              image_type: "signature",
+              image_base64,
+            }),
+          });
+          const data = (await res.json()) as { error?: string };
+          if (!res.ok) throw new Error(data.error ?? "Save failed");
           const list = await loadDocuments();
           setDocuments(list);
           await loadPortalPrep();

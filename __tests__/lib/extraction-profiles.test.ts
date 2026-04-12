@@ -173,6 +173,21 @@ describe("filterExtractedByProfile", () => {
     });
   });
 
+  test("address profile keeps state ID / DL metadata keys", () => {
+    const p = getExtractionProfile("us_address_proof");
+    const raw = {
+      id_document_number: "S0403 43972 55552",
+      id_expiry_date: "05-10-2029",
+      id_document_holder_name: "SANDHU LAKHBIR KAUR",
+      first_name: "nope",
+    };
+    expect(filterExtractedByProfile(raw, p)).toEqual({
+      id_document_number: "S0403 43972 55552",
+      id_expiry_date: "05-10-2029",
+      id_document_holder_name: "SANDHU LAKHBIR KAUR",
+    });
+  });
+
   test("foreign passport profile keeps MRZ overlay keys after merge simulation", () => {
     const p = getExtractionProfile("current_passport");
     const raw = {

@@ -49,7 +49,8 @@ Defined in `app-shell.tsx` `navItems`:
 1. Dashboard → `/dashboard`
 2. New Application → `/applications/new`
 3. **Client Messaging** → `/client-messaging` (optional `MessageSquare` icon from `lucide-react`; other items are text-only links)
-4. Archived apps → `/dashboard/archived`
+4. **Photo editing** → `/photos` (standalone crop/save; `Image` icon). Editors support **Save preview** (session preview, no Drive), **Download**, and **Save to Drive**; optional **Client** prefixes filenames. Outputs go to Google Drive folder **`Photos`** with subfolders **`OCI`** and **`Indian Passport`** (see `app/api/photos/save/route.ts`).
+5. Archived apps → `/dashboard/archived`
 
 Active styling: `/` is treated as dashboard; archived matches `/dashboard/archived` and subpaths; other routes match exact prefix.
 
@@ -68,7 +69,7 @@ Active styling: `/` is treated as dashboard; archived matches `/dashboard/archiv
 
 **Service keys** (`ClientMessagingServiceId`): `oci_new`, `oci_renewal`, `passport_renewal` — three products only (there is **no** fourth “Minor Application” nav item in the messaging UI; minor handling is per-checklist below).
 
-**Templates per service:** three messages for each — Welcome & document checklist, submitted, thank-you / gift card. **Message 2 (submitted)** and **Message 3 (gift card)** bodies are **shared constants** (`OCI_NEW_MESSAGE_2_BODY`, `OCI_NEW_MESSAGE_3_BODY`) so OCI renewal and passport renewal cannot drift from OCI new for those steps. Passport renewal message 2 has its **own** body (VFS copy differs).
+**Templates per service:** four messages for each — Welcome & document checklist, **missing documents follow-up**, submitted, thank-you / gift card. Follow-up and gift-card bodies are shared constants; submitted copy is shared for OCI new/renewal and separate for passport renewal (VFS copy differs).
 
 **Template card UI:** title, grey tag `Email / WhatsApp`, read-only resizable textarea, **Copy** (clipboard via `navigator.clipboard.writeText`), **Copied ✓** for ~2s.
 

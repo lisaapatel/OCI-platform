@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare } from "lucide-react";
+import { Image as ImageIcon, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
     label: "Client Messaging",
     icon: MessageSquare,
   },
+  { href: "/photos", label: "Photo Editing", icon: ImageIcon },
   { href: "/dashboard/archived", label: "Archived apps" },
 ];
 

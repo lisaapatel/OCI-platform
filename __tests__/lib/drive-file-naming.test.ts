@@ -8,6 +8,7 @@ import {
   originalUploadDriveName,
   portalCompressedDriveName,
   sanitizeDriveFilename,
+  standalonePhotoDriveName,
 } from "../../lib/drive-file-naming";
 
 describe("drive-file-naming", () => {
@@ -52,5 +53,17 @@ describe("drive-file-naming", () => {
     const out = sanitizeDriveFilename(long);
     expect(out.length).toBeLessThanOrEqual(220);
     expect(out.endsWith(".pdf")).toBe(true);
+  });
+
+  test("standalonePhotoDriveName without client", () => {
+    const name = standalonePhotoDriveName("photo", "");
+    expect(name).toMatch(/^photo_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.jpg$/);
+  });
+
+  test("standalonePhotoDriveName with client", () => {
+    const name = standalonePhotoDriveName("signature", "Jane Doe");
+    expect(name).toMatch(
+      /^signature_Jane_Doe_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.jpg$/
+    );
   });
 });

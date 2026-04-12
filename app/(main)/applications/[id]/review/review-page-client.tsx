@@ -32,6 +32,10 @@ import {
   parseLegacyAutoReconNote,
 } from "@/lib/review-legacy-auto-recon";
 import {
+  ADDRESS_PROOF_FIELD_NAME_SET,
+  ADDRESS_PROOF_SOURCE_DOC_TYPES,
+} from "@/lib/address-proof-fields";
+import {
   REVIEW_SECTION_ORDER,
   documentTabLabel,
   drivePreviewUrl,
@@ -201,15 +205,6 @@ export function ReviewPageClient({
     [documents, activeDocId]
   );
 
-  const visibleFields = useMemo(() => {
-    if (!activeDoc) return [];
-    let list = fieldsDeduped.filter((f) => f.source_doc_type === activeDoc.doc_type);
-    if (effectiveIsMinor) {
-      list = list.filter((f) => !isMaritalOrSpouseField(f.field_name));
-    }
-    return list;
-  }, [fieldsDeduped, activeDoc, effectiveIsMinor]);
-
   const displayFields = useMemo(
     () =>
       effectiveIsMinor
@@ -218,10 +213,27 @@ export function ReviewPageClient({
     [fieldsDeduped, effectiveIsMinor]
   );
 
+  /** Drops legacy or out-of-profile rows for address-proof docs so review stats match the sidebar. */
+  const reviewScopedFields = useMemo(
+    () =>
+      displayFields.filter((f) => {
+        if (!ADDRESS_PROOF_SOURCE_DOC_TYPES.has(f.source_doc_type)) return true;
+        return ADDRESS_PROOF_FIELD_NAME_SET.has(f.field_name);
+      }),
+    [displayFields]
+  );
+
+  const visibleFields = useMemo(() => {
+    if (!activeDoc) return [];
+    return reviewScopedFields.filter(
+      (f) => f.source_doc_type === activeDoc.doc_type
+    );
+  }, [reviewScopedFields, activeDoc]);
+
   const statsByDocId = useMemo(() => {
     const m = new Map<string, DocumentRailStats>();
     for (const d of documents) {
-      const list = displayFields.filter((f) => f.source_doc_type === d.doc_type);
+      const list = reviewScopedFields.filter((f) => f.source_doc_type === d.doc_type);
       const filled = list.filter((f) => fieldHasValue(f)).length;
       const conflicts = list.filter(
         (f) =>
@@ -234,11 +246,11 @@ export function ReviewPageClient({
       m.set(d.id, { total: list.length, filled, conflicts, manualFlags });
     }
     return m;
-  }, [documents, displayFields]);
+  }, [documents, reviewScopedFields]);
 
   const flaggedCount = useMemo(
-    () => displayFields.filter((f) => f.is_flagged).length,
-    [displayFields]
+    () => reviewScopedFields.filter((f) => f.is_flagged).length,
+    [reviewScopedFields]
   );
 
   const visibleStats = useMemo(() => {
@@ -249,9 +261,9 @@ export function ReviewPageClient({
   }, [visibleFields]);
 
   const reviewSummaryStats = useMemo(() => {
-    const totalFieldCount = displayFields.length;
-    const filledFieldCount = displayFields.filter(fieldHasValue).length;
-    const conflictFieldCount = displayFields.filter(
+    const totalFieldCount = reviewScopedFields.length;
+    const filledFieldCount = reviewScopedFields.filter(fieldHasValue).length;
+    const conflictFieldCount = reviewScopedFields.filter(
       (f) =>
         parseLegacyAutoReconNote(f.flag_note) === "conflict" && f.is_flagged
     ).length;
@@ -266,7 +278,7 @@ export function ReviewPageClient({
       filledFieldCount,
       totalFieldCount,
     };
-  }, [documents, displayFields, flaggedCount, statsByDocId]);
+  }, [documents, reviewScopedFields, flaggedCount, statsByDocId]);
 
   const fieldsBySection = useMemo(() => {
     const map = new Map<string, { title: string; fields: ExtractedField[] }>();

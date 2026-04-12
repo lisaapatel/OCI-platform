@@ -7,6 +7,8 @@ import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
 
 export const OCI_APPLICANT_PHOTO_MIN_PX = 200;
 export const OCI_APPLICANT_PHOTO_MAX_PX = 1500;
+/** Square output size after crop in `PhotoCropEditorModal` (matches portal-facing JPEG). */
+export const OCI_APPLICANT_PHOTO_EXPORT_PX = 600;
 /** Same tolerance as validateGovtImage (sharp): |w−h| ≤ 2 counts as square. */
 export const OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX = 2;
 

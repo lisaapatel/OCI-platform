@@ -45,8 +45,12 @@ jest.mock("react-dropzone", () => ({
   }),
 }));
 
-jest.mock("@/app/(main)/applications/[id]/photo-crop-editor-modal", () => ({
+jest.mock("@/components/photo-crop-editor-modal", () => ({
   PhotoCropEditorModal: () => null,
+}));
+
+jest.mock("@/components/signature-crop-editor-modal", () => ({
+  SignatureCropEditorModal: () => null,
 }));
 
 import React from "react";
@@ -193,8 +197,8 @@ describe("Application detail", () => {
     );
 
     expect(
-      screen.getByText(/2 of 4 required documents uploaded/i)
-    ).toBeInTheDocument();
+      screen.getAllByText(/2 of 4 required documents uploaded/i).length
+    ).toBeGreaterThanOrEqual(1);
   });
 
   test("Test 5: Process AI button appears when at least one document is uploaded", async () => {

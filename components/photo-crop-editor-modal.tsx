@@ -17,6 +17,7 @@ import "react-image-crop/dist/ReactCrop.css";
 import {
   allOciApplicantPhotoChecksPass,
   evaluateOciApplicantPhotoExportBlob,
+  OCI_APPLICANT_PHOTO_EXPORT_PX,
   OCI_APPLICANT_PHOTO_MAX_PX,
   OCI_APPLICANT_PHOTO_MIN_PX,
   OCI_APPLICANT_PHOTO_SQUARE_TOLERANCE_PX,
@@ -29,12 +30,13 @@ import {
   PASSPORT_RENEWAL_PHOTO_SPECS,
   type PassportRenewalPhotoExportChecks,
 } from "@/lib/passport-photo-specs";
+import { standalonePhotoDriveName } from "@/lib/drive-file-naming";
 import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
+import type { StandaloneCropClientToolbar } from "@/lib/standalone-photo-categories";
 import type { Document } from "@/lib/types";
 
 import styles from "./photo-crop-editor-modal.module.css";
 
-const OCI_EXPORT_PX = 600;
 const PORTAL_MAX_KB = Math.round(PORTAL_IMAGE_MAX_BYTES / 1024);
 
 let faceApiLoadPromise: Promise<void> | null = null;
@@ -291,20 +293,28 @@ function PassportGuidesOverlay() {
 export type PhotoCropEditorModalProps = {
   open: boolean;
   onClose: () => void;
-  applicationId: string;
-  document: Document | null;
-  onSaved: () => void | Promise<void>;
+  /** Local blob URL from upload (standalone). Caller revokes after close. */
+  imageSrc?: string | null;
+  /** Application flow: load from Drive when `imageSrc` is not set. */
+  applicationId?: string;
+  document?: Document | null;
+  /** Persist cropped JPEG (base64, raw bytes encoding). */
+  onSave: (imageBase64: string) => void | Promise<void>;
   /** When set (e.g. passport renewal), uses VFS-oriented limits instead of OCI portal limits. */
   photoSpecs?: typeof PASSPORT_RENEWAL_PHOTO_SPECS;
+  /** Standalone `/photos`: client field, save preview (no Drive), download uses client in filename. */
+  standaloneClientToolbar?: StandaloneCropClientToolbar;
 };
 
 export function PhotoCropEditorModal({
   open,
   onClose,
+  imageSrc,
   applicationId,
   document: doc,
-  onSaved,
+  onSave,
   photoSpecs,
+  standaloneClientToolbar,
 }: PhotoCropEditorModalProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceObjectUrl, setSourceObjectUrl] = useState<string | null>(null);
@@ -330,13 +340,16 @@ export function PhotoCropEditorModal({
   const [faceBusy, setFaceBusy] = useState(false);
   const [faceHint, setFaceHint] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [mediaNatural, setMediaNatural] = useState<{
     w: number;
     h: number;
   } | null>(null);
 
-  const exportEdgePx = photoSpecs ? PASSPORT_RENEWAL_EXPORT_PX : OCI_EXPORT_PX;
+  const exportEdgePx = photoSpecs
+    ? PASSPORT_RENEWAL_EXPORT_PX
+    : OCI_APPLICANT_PHOTO_EXPORT_PX;
 
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const displayImgRef = useRef<HTMLImageElement | null>(null);
@@ -364,7 +377,7 @@ export function PhotoCropEditorModal({
   }, []);
 
   useEffect(() => {
-    if (!open || !doc?.drive_file_id) return;
+    if (!open) return;
 
     let cancelled = false;
     setLoadError(null);
@@ -390,6 +403,16 @@ export function PhotoCropEditorModal({
     rotatedCanvasRef.current = null;
     sourceImgRef.current = null;
 
+    const trimmedSrc = imageSrc?.trim();
+    if (trimmedSrc) {
+      setSourceObjectUrl(trimmedSrc);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!doc?.drive_file_id || !applicationId) return;
+
     const dl = `/api/documents/download?application_id=${encodeURIComponent(applicationId)}&drive_file_id=${encodeURIComponent(doc.drive_file_id)}&filename=${encodeURIComponent(doc.file_name || "photo.jpg")}`;
 
     void (async () => {
@@ -414,7 +437,7 @@ export function PhotoCropEditorModal({
     return () => {
       cancelled = true;
     };
-  }, [open, doc, applicationId, cleanupUrls]);
+  }, [open, imageSrc, doc, applicationId, cleanupUrls]);
 
   const rebuildRotatedDisplay = useCallback((img: HTMLImageElement, deg: number) => {
     const canvas = drawRotatedToCanvas(img, deg);
@@ -686,44 +709,50 @@ export function PhotoCropEditorModal({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "applicant-photo-cropped.jpg";
+      a.download = standaloneClientToolbar
+        ? standalonePhotoDriveName(
+            "photo",
+            standaloneClientToolbar.clientLabel
+          )
+        : "applicant-photo-cropped.jpg";
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     }
-  }, [buildFinalBlob]);
+  }, [buildFinalBlob, standaloneClientToolbar]);
+
+  const onApplyPreview = useCallback(async () => {
+    if (!standaloneClientToolbar) return;
+    setPreviewBusy(true);
+    setLoadError(null);
+    try {
+      const blob = await buildFinalBlob();
+      const buf = await blob.arrayBuffer();
+      const b64 = uint8ToBase64(new Uint8Array(buf));
+      await standaloneClientToolbar.onPreview(b64);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreviewBusy(false);
+    }
+  }, [buildFinalBlob, standaloneClientToolbar]);
 
   const onApplySave = useCallback(async () => {
-    if (!doc) return;
     setSaveBusy(true);
     setLoadError(null);
     try {
       const blob = await buildFinalBlob();
       const buf = await blob.arrayBuffer();
       const b64 = uint8ToBase64(new Uint8Array(buf));
-      const res = await fetch("/api/documents/fix-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          application_id: applicationId,
-          document_id: doc.id,
-          image_type: "photo",
-          image_base64: b64,
-        }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? "Save failed");
-      }
-      await onSaved();
+      await onSave(b64);
       onClose();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaveBusy(false);
     }
-  }, [applicationId, doc, buildFinalBlob, onSaved, onClose]);
+  }, [buildFinalBlob, onSave, onClose]);
 
   const handleClose = useCallback(() => {
     cleanupUrls();
@@ -768,7 +797,7 @@ export function PhotoCropEditorModal({
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (!saveBusy) handleClose();
+        if (!saveBusy && !previewBusy) handleClose();
         return;
       }
       if (e.key === "g" || e.key === "G") {
@@ -784,7 +813,11 @@ export function PhotoCropEditorModal({
       if (e.key === "Enter") {
         e.preventDefault();
         if (meetsPortalExport && displayUrl && crop?.width) {
-          void onApplyDownload();
+          if (standaloneClientToolbar) {
+            void onApplyPreview();
+          } else {
+            void onApplyDownload();
+          }
         }
         return;
       }
@@ -808,12 +841,15 @@ export function PhotoCropEditorModal({
   }, [
     open,
     saveBusy,
+    previewBusy,
     handleClose,
     meetsPortalExport,
     displayUrl,
     crop?.width,
     nudgeCrop,
     onApplyDownload,
+    standaloneClientToolbar,
+    onApplyPreview,
   ]);
 
   useLayoutEffect(() => {
@@ -840,8 +876,9 @@ export function PhotoCropEditorModal({
 
   if (!mounted || !open) return null;
 
-  const shortcutsTitle =
-    "Shortcuts: Arrow keys nudge crop (Shift+Arrow 20px). R reset rotation. G toggle guides. Enter Apply & Download. Esc Cancel.";
+  const shortcutsTitle = standaloneClientToolbar
+    ? "Shortcuts: Arrow keys nudge crop (Shift+Arrow 20px). R reset rotation. G toggle guides. Enter Save preview. Esc Cancel."
+    : "Shortcuts: Arrow keys nudge crop (Shift+Arrow 20px). R reset rotation. G toggle guides. Enter Apply & Download. Esc Cancel.";
 
   const portal = (
     <div
@@ -899,7 +936,9 @@ export function PhotoCropEditorModal({
               className="hidden"
               onLoad={onSourceImageLoad}
             />
-          ) : !loadError && open && doc ? (
+          ) : !loadError &&
+            open &&
+            (doc?.drive_file_id || imageSrc?.trim()) ? (
             <p className="text-sm text-slate-600">Loading image…</p>
           ) : null}
 
@@ -1276,27 +1315,97 @@ export function PhotoCropEditorModal({
           ) : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
-          <button
-            type="button"
-            disabled={
-              !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
-            }
-            onClick={() => void onApplyDownload()}
-            className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
-          >
-            Apply &amp; Download
-          </button>
-          <button
-            type="button"
-            disabled={
-              !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
-            }
-            onClick={() => void onApplySave()}
-            className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
-          >
-            {saveBusy ? "Saving…" : "Apply & Save to Drive"}
-          </button>
+        <div className="border-t border-slate-200">
+          {standaloneClientToolbar ? (
+            <>
+              <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex min-w-0 max-w-md flex-1 flex-col gap-1">
+                  <label
+                    htmlFor="standalone-photo-client"
+                    className="text-xs font-medium text-slate-700"
+                  >
+                    Client (optional — used in download and Drive filenames)
+                  </label>
+                  <input
+                    id="standalone-photo-client"
+                    type="text"
+                    value={standaloneClientToolbar.clientLabel}
+                    onChange={(e) =>
+                      standaloneClientToolbar.onClientLabelChange(
+                        e.target.value
+                      )
+                    }
+                    placeholder="e.g. Priya Sharma"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-[11px] leading-snug text-slate-500 sm:max-w-xs sm:text-right">
+                  Save preview keeps the cropped JPEG in this browser session so
+                  you can review it, then download or upload to Drive.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 px-4 pb-3">
+                <button
+                  type="button"
+                  disabled={
+                    !displayUrl ||
+                    !crop?.width ||
+                    !meetsPortalExport ||
+                    saveBusy ||
+                    previewBusy
+                  }
+                  onClick={() => void onApplyPreview()}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {previewBusy ? "Saving preview…" : "Save preview"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
+                  }
+                  onClick={() => void onApplyDownload()}
+                  className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
+                  }
+                  onClick={() => void onApplySave()}
+                  className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
+                >
+                  {saveBusy ? "Saving…" : "Save to Drive"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-end gap-2 px-4 py-3">
+              <button
+                type="button"
+                disabled={
+                  !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
+                }
+                onClick={() => void onApplyDownload()}
+                className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
+              >
+                Apply &amp; Download
+              </button>
+              <button
+                type="button"
+                disabled={
+                  !displayUrl || !crop?.width || !meetsPortalExport || saveBusy
+                }
+                onClick={() => void onApplySave()}
+                className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
+              >
+                {saveBusy ? "Saving…" : "Apply & Save to Drive"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

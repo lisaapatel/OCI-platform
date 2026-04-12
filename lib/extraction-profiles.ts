@@ -1,4 +1,5 @@
 import { CLAUDE_EXTRACTION_KEY_INSTRUCTIONS } from "@/lib/form-fill-sections";
+import { ADDRESS_PROOF_FIELDS } from "@/lib/address-proof-fields";
 import type { Application, OciIntakeVariant } from "@/lib/types";
 
 /** Keys produced or overlaid by MRZ parse + merge (see `lib/claude.ts`). */
@@ -251,29 +252,20 @@ const BIRTH_CERT_INSTRUCTIONS = `
 Birth or registration certificate: names and dates as printed. Do not copy applicant fields from a different document.
 `.trim();
 
-/** Present + permanent blocks for `address_proof` in `OCI_FORM_FILL_BLOCKS`. */
-const ADDRESS_PROOF_FIELDS = [
-  "address_line_1",
-  "address_line_2",
-  "city",
-  "state_province",
-  "postal_code",
-  "country",
-  "phone",
-  "email",
-  "permanent_address_line_1",
-  "permanent_address_line_2",
-  "permanent_city",
-  "permanent_state",
-  "permanent_state_province",
-  "permanent_country",
-  "permanent_postal_code",
-] as const;
-
 const ADDRESS_PROOF_INSTRUCTIONS = `
-Utility bill, lease, bank statement, or similar. ONLY address/contact fields above.
+Utility bill, lease, bank statement, or US state ID / driver's license used as proof of address.
+ONLY the keys listed in the prompt (address/contact + optional ID lines below).
+
+ADDRESS: Split a single printed address into address_line_1, address_line_2 (if present), city, state_province, postal_code, country when identifiable. Use permanent_* only when the document clearly shows a separate "permanent" / mailing / home address block; otherwise leave permanent_* null.
+
+CONTACT: phone and email only when printed on the document.
+
+STATE ID / DRIVER LICENSE (when the upload is an ID card or DL):
+- id_document_number: the ID / DL / customer number as printed (not the barcode).
+- id_issue_date / id_expiry_date: from labeled issue / expiration dates only.
+- id_document_holder_name: the full name printed on the card (holder / name field). Do NOT copy this into first_name, last_name, or full_name — those keys are not in the allowed list.
+
 Do NOT output personal name keys (first_name, last_name, full_name, applicant_name, etc.).
-Split one long line into address_line_1, city, state_province, postal_code, country when identifiable.
 `.trim();
 
 const OCI_CARD_FIELDS = [

@@ -20,11 +20,15 @@ import ReactCrop, {
 } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 
+import { standalonePhotoDriveName } from "@/lib/drive-file-naming";
 import { PORTAL_IMAGE_MAX_BYTES } from "@/lib/portal-constants";
+import type { StandaloneCropClientToolbar } from "@/lib/standalone-photo-categories";
 import type { Document } from "@/lib/types";
 import {
   allOciApplicantSignatureChecksPass,
   evaluateOciApplicantSignatureExportBlob,
+  OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX,
+  OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX,
   OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX,
   OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX,
   OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX,
@@ -34,8 +38,8 @@ import {
 
 import styles from "./photo-crop-editor-modal.module.css";
 
-const EXPORT_W = 600;
-const EXPORT_H = 200;
+const EXPORT_W = OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX;
+const EXPORT_H = OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX;
 const PORTAL_MAX_KB = Math.round(PORTAL_IMAGE_MAX_BYTES / 1024);
 
 async function canvasToObjectUrl(
@@ -224,17 +228,21 @@ function SignatureAreaOverlay() {
 export type SignatureCropEditorModalProps = {
   open: boolean;
   onClose: () => void;
-  applicationId: string;
-  document: Document | null;
-  onSaved: () => void | Promise<void>;
+  imageSrc?: string | null;
+  applicationId?: string;
+  document?: Document | null;
+  onSave: (imageBase64: string) => void | Promise<void>;
+  standaloneClientToolbar?: StandaloneCropClientToolbar;
 };
 
 export function SignatureCropEditorModal({
   open,
   onClose,
+  imageSrc,
   applicationId,
   document: doc,
-  onSaved,
+  onSave,
+  standaloneClientToolbar,
 }: SignatureCropEditorModalProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourceObjectUrl, setSourceObjectUrl] = useState<string | null>(null);
@@ -266,6 +274,7 @@ export function SignatureCropEditorModal({
     null
   );
   const [saveBusy, setSaveBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [showGuides, setShowGuides] = useState(true);
   const [mediaNatural, setMediaNatural] = useState<{ w: number; h: number } | null>(
@@ -304,7 +313,7 @@ export function SignatureCropEditorModal({
   }, []);
 
   useEffect(() => {
-    if (!open || !doc?.drive_file_id) return;
+    if (!open) return;
 
     let cancelled = false;
     setLoadError(null);
@@ -329,6 +338,16 @@ export function SignatureCropEditorModal({
     lastDisplayUrlForCropRef.current = null;
     rotatedCanvasRef.current = null;
     sourceImgRef.current = null;
+
+    const trimmedSrc = imageSrc?.trim();
+    if (trimmedSrc) {
+      setSourceObjectUrl(trimmedSrc);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!doc?.drive_file_id || !applicationId) return;
 
     const dl = `/api/documents/download?application_id=${encodeURIComponent(
       applicationId
@@ -357,7 +376,7 @@ export function SignatureCropEditorModal({
     return () => {
       cancelled = true;
     };
-  }, [open, doc, applicationId, cleanupUrls]);
+  }, [open, imageSrc, doc, applicationId, cleanupUrls]);
 
   const rebuildRotatedDisplay = useCallback((img: HTMLImageElement, deg: number) => {
     const canvas = drawRotatedToCanvas(img, deg);
@@ -535,43 +554,55 @@ export function SignatureCropEditorModal({
   }, [buildFilteredExportCanvas]);
 
   const onApplyDownload = useCallback(async () => {
-    const blob = await buildFinalBlob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "signature-cropped.jpg";
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [buildFinalBlob]);
+    try {
+      const blob = await buildFinalBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = standaloneClientToolbar
+        ? standalonePhotoDriveName(
+            "signature",
+            standaloneClientToolbar.clientLabel
+          )
+        : "signature-cropped.jpg";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
+  }, [buildFinalBlob, standaloneClientToolbar]);
+
+  const onApplyPreview = useCallback(async () => {
+    if (!standaloneClientToolbar) return;
+    setPreviewBusy(true);
+    setLoadError(null);
+    try {
+      const blob = await buildFinalBlob();
+      const buf = await blob.arrayBuffer();
+      const b64 = uint8ToBase64(new Uint8Array(buf));
+      await standaloneClientToolbar.onPreview(b64);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreviewBusy(false);
+    }
+  }, [buildFinalBlob, standaloneClientToolbar]);
 
   const onApplySave = useCallback(async () => {
-    if (!doc) return;
     setSaveBusy(true);
     setLoadError(null);
     try {
       const blob = await buildFinalBlob();
       const buf = await blob.arrayBuffer();
       const b64 = uint8ToBase64(new Uint8Array(buf));
-      const res = await fetch("/api/documents/fix-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          application_id: applicationId,
-          document_id: doc.id,
-          image_type: "signature",
-          image_base64: b64,
-        }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Save failed");
-      await onSaved();
+      await onSave(b64);
       onClose();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaveBusy(false);
     }
-  }, [applicationId, doc, buildFinalBlob, onSaved, onClose]);
+  }, [buildFinalBlob, onSave, onClose]);
 
   const handleClose = useCallback(() => {
     cleanupUrls();
@@ -605,7 +636,7 @@ export function SignatureCropEditorModal({
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (!saveBusy) handleClose();
+        if (!saveBusy && !previewBusy) handleClose();
         return;
       }
       if (e.key === "r" || e.key === "R") {
@@ -622,7 +653,11 @@ export function SignatureCropEditorModal({
       if (e.key === "Enter") {
         e.preventDefault();
         if (meetsOciPortalExport && displayUrl && crop?.width) {
-          void onApplyDownload();
+          if (standaloneClientToolbar) {
+            void onApplyPreview();
+          } else {
+            void onApplyDownload();
+          }
         }
         return;
       }
@@ -687,15 +722,19 @@ export function SignatureCropEditorModal({
   }, [
     open,
     saveBusy,
+    previewBusy,
     handleClose,
     meetsOciPortalExport,
     displayUrl,
     crop?.width,
     onApplyDownload,
+    standaloneClientToolbar,
+    onApplyPreview,
   ]);
 
-  const shortcutsTitle =
-    "Shortcuts: Arrow keys nudge crop (Shift+Arrow 10px). R reset rotation. G toggle guides. Enter Apply & Download. Esc Cancel.";
+  const shortcutsTitle = standaloneClientToolbar
+    ? "Shortcuts: Arrow keys nudge crop (Shift+Arrow 10px). R reset rotation. G toggle guides. Enter Save preview. Esc Cancel."
+    : "Shortcuts: Arrow keys nudge crop (Shift+Arrow 10px). R reset rotation. G toggle guides. Enter Apply & Download. Esc Cancel.";
 
   const imgFilter = `brightness(${100 + brightness}%) contrast(${100 + contrast}%)`;
   const zoomScale = zoomPct / 100;
@@ -756,7 +795,9 @@ export function SignatureCropEditorModal({
               className="hidden"
               onLoad={onSourceImageLoad}
             />
-          ) : !loadError && open && doc ? (
+          ) : !loadError &&
+            open &&
+            (doc?.drive_file_id || imageSrc?.trim()) ? (
             <p className="text-sm text-slate-600">Loading image…</p>
           ) : null}
 
@@ -1109,32 +1150,102 @@ export function SignatureCropEditorModal({
           ) : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
-          <button
-            type="button"
-            disabled={
-              !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
-            }
-            onClick={() => {
-              void onApplyDownload();
-            }}
-            className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
-          >
-            Apply &amp; Download
-          </button>
+        <div className="border-t border-slate-200">
+          {standaloneClientToolbar ? (
+            <>
+              <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex min-w-0 max-w-md flex-1 flex-col gap-1">
+                  <label
+                    htmlFor="standalone-sig-client"
+                    className="text-xs font-medium text-slate-700"
+                  >
+                    Client (optional — used in download and Drive filenames)
+                  </label>
+                  <input
+                    id="standalone-sig-client"
+                    type="text"
+                    value={standaloneClientToolbar.clientLabel}
+                    onChange={(e) =>
+                      standaloneClientToolbar.onClientLabelChange(
+                        e.target.value
+                      )
+                    }
+                    placeholder="e.g. Priya Sharma"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-[11px] leading-snug text-slate-500 sm:max-w-xs sm:text-right">
+                  Save preview keeps the cropped JPEG in this browser session so
+                  you can review it, then download or upload to Drive.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 px-4 pb-3">
+                <button
+                  type="button"
+                  disabled={
+                    !displayUrl ||
+                    !crop?.width ||
+                    !meetsOciPortalExport ||
+                    saveBusy ||
+                    previewBusy
+                  }
+                  onClick={() => void onApplyPreview()}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {previewBusy ? "Saving preview…" : "Save preview"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                  }
+                  onClick={() => void onApplyDownload()}
+                  className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                  }
+                  onClick={() => void onApplySave()}
+                  className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
+                >
+                  {saveBusy ? "Saving…" : "Save to Drive"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-end gap-2 px-4 py-3">
+              <button
+                type="button"
+                disabled={
+                  !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                }
+                onClick={() => {
+                  void onApplyDownload();
+                }}
+                className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
+              >
+                Apply &amp; Download
+              </button>
 
-          <button
-            type="button"
-            disabled={
-              !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
-            }
-            onClick={() => {
-              void onApplySave();
-            }}
-            className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
-          >
-            {saveBusy ? "Saving…" : "Apply & Save to Drive"}
-          </button>
+              <button
+                type="button"
+                disabled={
+                  !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                }
+                onClick={() => {
+                  void onApplySave();
+                }}
+                className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
+              >
+                {saveBusy ? "Saving…" : "Apply & Save to Drive"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>,
