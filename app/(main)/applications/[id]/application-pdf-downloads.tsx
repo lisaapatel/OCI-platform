@@ -70,10 +70,46 @@ export function buildPortalPdfRows(app: AppLike): PortalPdfRow[] {
     });
   } else if (app.service_type === "passport_renewal") {
     rows.push({
+      id: "passport-renewal-annexure-e",
+      title: "Annexure E (mandatory)",
+      description:
+        "VFS passport renewal portal PDF (mandatory).",
+      enabled: true,
+      href: `/api/applications/${encodeURIComponent(app.id)}/pdfs/passport-renewal-annexure-e`,
+      downloadFilename: `passport_renewal_annexure_e_${app.app_number || app.id}.pdf`,
+    });
+    rows.push({
+      id: "passport-renewal-affidavit-appearance-signature",
+      title: "Affidavit for change in appearance and signature",
+      description:
+        "Auto-fills applicant name, passport number, and stamps applicant photo.",
+      enabled: true,
+      href: `/api/applications/${encodeURIComponent(app.id)}/pdfs/passport-renewal-affidavit-appearance-signature`,
+      downloadFilename: `passport_renewal_affidavit_change_appearance_signature_${app.app_number || app.id}.pdf`,
+    });
+    rows.push({
+      id: "passport-renewal-name-change-affidavit",
+      title: "Name change affidavit (notarized)",
+      description:
+        "Internal packet doc. Generate in portal-PDF workflow and send to applicant for notarized authorization.",
+      enabled: false,
+      disabledHint:
+        "Handled internally by case worker in portal PDF setup; not a customer upload item.",
+    });
+    rows.push({
+      id: "passport-renewal-joint-photo-declaration",
+      title: "Joint photo declaration (notarized)",
+      description:
+        "Internal packet doc used when spouse-name workflow requires declaration in lieu of marriage certificate.",
+      enabled: false,
+      disabledHint:
+        "Handled internally by case worker in portal PDF setup; not a customer upload item.",
+    });
+    rows.push({
       id: "fill-page-print",
       title: "Print-friendly fill summary",
       description:
-        "No separate government PDF for renewal yet — use Print this page on the fill form.",
+        "Use Print this page from Form fill to keep a typed copy for VFS submission.",
       enabled: false,
       disabledHint:
         "Open Form fill on this application and use Print this page (top right).",

@@ -1,6 +1,10 @@
 import "server-only";
 
-import { resolvePassportFullName } from "@/lib/form-fill-sections";
+import {
+  findRowByKeysAndSources,
+  getValueByKeysAndSources,
+  resolvePassportFullName,
+} from "@/lib/form-fill-sections";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { ExtractedField } from "@/lib/types";
 
@@ -50,4 +54,35 @@ export async function resolveApplicantFullNameForPortalPdfs(
   const fromPassport = resolvePassportFullName(fields).value.trim();
   if (fromPassport) return fromPassport;
   return fallbackCustomerName.trim();
+}
+
+/**
+ * Passport number from extracted fields, prioritizing current passport rows.
+ * Used by passport-renewal portal PDFs.
+ */
+export async function resolveApplicantPassportNumberForPortalPdfs(
+  applicationId: string,
+): Promise<string> {
+  const { data, error } = await supabaseAdmin
+    .from("extracted_fields")
+    .select("*")
+    .eq("application_id", applicationId);
+
+  if (error || !data?.length) return "";
+
+  const fields = data.map((row) =>
+    fieldFromRow(row as Record<string, unknown>),
+  );
+  const keys = ["passport_number", "passport_no", "passport_num"];
+  const fromCurrentPassport = getValueByKeysAndSources(fields, keys, [
+    "current_passport",
+  ]).trim();
+  if (fromCurrentPassport) return fromCurrentPassport;
+
+  const sourceOrder = [
+    ...new Set(fields.map((f) => String(f.source_doc_type ?? "").trim())),
+  ].filter(Boolean);
+  return (
+    findRowByKeysAndSources(fields, keys, sourceOrder)?.field_value?.trim() ?? ""
+  );
 }

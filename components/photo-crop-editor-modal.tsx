@@ -26,7 +26,8 @@ import {
 import {
   allPassportRenewalPhotoAutoChecksPass,
   evaluatePassportRenewalPhotoExportBlob,
-  PASSPORT_RENEWAL_EXPORT_PX,
+  PASSPORT_RENEWAL_EXPORT_HEIGHT_PX,
+  PASSPORT_RENEWAL_EXPORT_WIDTH_PX,
   PASSPORT_RENEWAL_PHOTO_SPECS,
   type PassportRenewalPhotoExportChecks,
 } from "@/lib/passport-photo-specs";
@@ -50,9 +51,13 @@ function ensureFaceApiLoaded(): Promise<void> {
   return faceApiLoadPromise;
 }
 
-function initialSquareCrop(mediaWidth: number, mediaHeight: number): Crop {
+function initialAspectCrop(
+  mediaWidth: number,
+  mediaHeight: number,
+  aspect: number
+): Crop {
   return centerCrop(
-    makeAspectCrop({ unit: "%", width: 80 }, 1, mediaWidth, mediaHeight),
+    makeAspectCrop({ unit: "%", width: 80 }, aspect, mediaWidth, mediaHeight),
     mediaWidth,
     mediaHeight
   );
@@ -107,31 +112,7 @@ async function compressCanvasToLimit(
   );
   if (last && last.size <= maxBytes) return last;
   throw new Error(
-    `Could not compress under portal limit (${Math.round(maxBytes / 1024)}KB).`
-  );
-}
-
-async function compressCanvasToByteRange(
-  canvas: HTMLCanvasElement,
-  minBytes: number,
-  maxBytes: number
-): Promise<Blob> {
-  let q = 0.88;
-  let lastBlob: Blob | null = null;
-  for (let i = 0; i < 28; i++) {
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", q)
-    );
-    if (!blob) throw new Error("toBlob failed");
-    lastBlob = blob;
-    if (blob.size <= maxBytes && blob.size >= minBytes) return blob;
-    if (blob.size > maxBytes) q -= 0.04;
-    else q += 0.03;
-    q = Math.max(0.28, Math.min(0.95, q));
-  }
-  if (lastBlob && lastBlob.size <= maxBytes) return lastBlob;
-  throw new Error(
-    `Could not produce JPEG between ${Math.round(minBytes / 1024)}KB and ${Math.round(maxBytes / 1024)}KB.`
+    `Could not compress under size limit (${Math.round(maxBytes / 1024)}KB).`
   );
 }
 
@@ -147,11 +128,12 @@ function uint8ToBase64(bytes: Uint8Array): string {
 function exportCroppedToCanvas(
   source: HTMLCanvasElement,
   pixelCrop: PixelCrop,
-  edgePx: number
+  exportWidthPx: number,
+  exportHeightPx: number
 ): HTMLCanvasElement {
   const out = document.createElement("canvas");
-  out.width = edgePx;
-  out.height = edgePx;
+  out.width = exportWidthPx;
+  out.height = exportHeightPx;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
   ctx.drawImage(
@@ -162,8 +144,8 @@ function exportCroppedToCanvas(
     pixelCrop.height,
     0,
     0,
-    edgePx,
-    edgePx
+    exportWidthPx,
+    exportHeightPx
   );
   return out;
 }
@@ -347,9 +329,15 @@ export function PhotoCropEditorModal({
     h: number;
   } | null>(null);
 
-  const exportEdgePx = photoSpecs
-    ? PASSPORT_RENEWAL_EXPORT_PX
+  const exportWidthPx = photoSpecs
+    ? PASSPORT_RENEWAL_EXPORT_WIDTH_PX
     : OCI_APPLICANT_PHOTO_EXPORT_PX;
+  const exportHeightPx = photoSpecs
+    ? PASSPORT_RENEWAL_EXPORT_HEIGHT_PX
+    : OCI_APPLICANT_PHOTO_EXPORT_PX;
+  const cropAspect = photoSpecs
+    ? photoSpecs.aspectRatio.width / photoSpecs.aspectRatio.height
+    : 1;
 
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
   const displayImgRef = useRef<HTMLImageElement | null>(null);
@@ -474,18 +462,23 @@ export function PhotoCropEditorModal({
     setMediaNatural({ w, h });
     if (lastDisplayUrlForCropRef.current !== displayUrl) {
       lastDisplayUrlForCropRef.current = displayUrl;
-      setCrop(initialSquareCrop(w, h));
+      setCrop(initialAspectCrop(w, h, cropAspect));
     }
-  }, [displayUrl]);
+  }, [displayUrl, cropAspect]);
 
   const buildFilteredExportCanvas = useCallback((): HTMLCanvasElement | null => {
     const src = rotatedCanvasRef.current;
     const img = displayImgRef.current;
     if (!src || !img?.naturalWidth || !crop?.width) return null;
     const pixel = convertToPixelCrop(crop, img.naturalWidth, img.naturalHeight);
-    const cropped = exportCroppedToCanvas(src, pixel, exportEdgePx);
+    const cropped = exportCroppedToCanvas(
+      src,
+      pixel,
+      exportWidthPx,
+      exportHeightPx
+    );
     return applyCanvasFilters(cropped, brightness, contrast);
-  }, [crop, brightness, contrast, exportEdgePx]);
+  }, [crop, brightness, contrast, exportWidthPx, exportHeightPx]);
 
   const updatePreview = useCallback(async () => {
     const filtered = buildFilteredExportCanvas();
@@ -518,21 +511,26 @@ export function PhotoCropEditorModal({
       });
     }
 
+    const previewWidth = 200;
+    const previewHeight = Math.max(
+      1,
+      Math.round((previewWidth * exportHeightPx) / exportWidthPx)
+    );
     const prev = document.createElement("canvas");
-    prev.width = 200;
-    prev.height = 200;
+    prev.width = previewWidth;
+    prev.height = previewHeight;
     const pctx = prev.getContext("2d");
     if (pctx) {
       pctx.drawImage(
         filtered,
         0,
         0,
-        exportEdgePx,
-        exportEdgePx,
+        exportWidthPx,
+        exportHeightPx,
         0,
         0,
-        200,
-        200
+        previewWidth,
+        previewHeight
       );
     }
     const prevBlob = await new Promise<Blob | null>((resolve) =>
@@ -548,13 +546,8 @@ export function PhotoCropEditorModal({
 
     try {
       if (photoSpecs) {
-        const minB = photoSpecs.minSizeKB * 1024;
         const maxB = photoSpecs.maxSizeKB * 1024;
-        const outBlob = await compressCanvasToByteRange(
-          filtered,
-          minB,
-          maxB
-        );
+        const outBlob = await compressCanvasToLimit(filtered, maxB);
         setFinalKb((outBlob.size / 1024).toFixed(1));
         setPassportExportChecks(
           await evaluatePassportRenewalPhotoExportBlob(
@@ -586,7 +579,7 @@ export function PhotoCropEditorModal({
       setPassportExportChecks(null);
       setCompressError(e instanceof Error ? e.message : String(e));
     }
-  }, [buildFilteredExportCanvas, photoSpecs]);
+  }, [buildFilteredExportCanvas, exportHeightPx, exportWidthPx, photoSpecs]);
 
   useEffect(() => {
     if (!open || !displayUrl) return;
@@ -622,21 +615,33 @@ export function PhotoCropEditorModal({
       const cur = convertToPixelCrop(crop, nw, nh);
       const cx = cur.x + cur.width / 2;
       const cy = cur.y + cur.height / 2;
-      let side = Math.min(nw, nh) * fraction;
-      side = Math.min(side, Math.min(nw, nh));
-      let left = cx - side / 2;
-      let top = cy - side / 2;
-      left = Math.max(0, Math.min(left, nw - side));
-      top = Math.max(0, Math.min(top, nh - side));
+      const maxCropWidth = Math.min(nw, nh * cropAspect);
+      let cropWidth = maxCropWidth * fraction;
+      cropWidth = Math.min(cropWidth, maxCropWidth);
+      let cropHeight = cropWidth / cropAspect;
+      if (cropHeight > nh) {
+        cropHeight = nh;
+        cropWidth = cropHeight * cropAspect;
+      }
+      let left = cx - cropWidth / 2;
+      let top = cy - cropHeight / 2;
+      left = Math.max(0, Math.min(left, nw - cropWidth));
+      top = Math.max(0, Math.min(top, nh - cropHeight));
       setCrop(
         convertToPercentCrop(
-          { unit: "px", x: left, y: top, width: side, height: side },
+          {
+            unit: "px",
+            x: left,
+            y: top,
+            width: cropWidth,
+            height: cropHeight,
+          },
           nw,
           nh
         )
       );
     },
-    [crop]
+    [crop, cropAspect]
   );
 
   const runFaceCenter = useCallback(async () => {
@@ -694,11 +699,7 @@ export function PhotoCropEditorModal({
     const filtered = buildFilteredExportCanvas();
     if (!filtered) throw new Error("Image or crop not ready.");
     if (photoSpecs) {
-      return compressCanvasToByteRange(
-        filtered,
-        photoSpecs.minSizeKB * 1024,
-        photoSpecs.maxSizeKB * 1024
-      );
+      return compressCanvasToLimit(filtered, photoSpecs.maxSizeKB * 1024);
     }
     return compressCanvasToLimit(filtered, PORTAL_IMAGE_MAX_BYTES);
   }, [buildFilteredExportCanvas, photoSpecs]);
@@ -977,7 +978,7 @@ export function PhotoCropEditorModal({
                     <ReactCrop
                       crop={crop}
                       onChange={(_, percentCrop) => setCrop(percentCrop)}
-                      aspect={1}
+                      aspect={cropAspect}
                       className="inline-block max-w-none"
                       renderSelectionAddon={
                         showGuides ? () => <PassportGuidesOverlay /> : undefined
@@ -1029,7 +1030,16 @@ export function PhotoCropEditorModal({
                     <p className="mb-1 text-[10px] font-medium text-[#64748b]">
                       Result
                     </p>
-                    <div className="h-[200px] w-[200px] overflow-hidden rounded-lg bg-slate-100">
+                    <div
+                      className="overflow-hidden rounded-lg bg-slate-100"
+                      style={{
+                        width: "200px",
+                        height: `${Math.max(
+                          1,
+                          Math.round((200 * exportHeightPx) / exportWidthPx)
+                        )}px`,
+                      }}
+                    >
                       {previewResultUrl ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
@@ -1046,7 +1056,7 @@ export function PhotoCropEditorModal({
                       )}
                     </div>
                     <p className="mt-1.5 text-[11px] text-[#64748b]">
-                      {exportEdgePx} × {exportEdgePx} px · ~{finalKb} KB
+                      {exportWidthPx} × {exportHeightPx} px · ~{finalKb} KB
                       {compressError ? (
                         <span className="ml-1 text-red-600">({compressError})</span>
                       ) : null}
@@ -1070,20 +1080,12 @@ export function PhotoCropEditorModal({
                         </p>
                         <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
                           <li>
-                            {pc?.square ? "✅" : "❌"} Square 1:1 (±
-                            {photoSpecs.squareTolerancePx}px)
+                            {pc?.exactDimensions ? "✅" : "❌"} Exact{" "}
+                            {photoSpecs.widthPx}×{photoSpecs.heightPx}px
                           </li>
                           <li>
-                            {pc?.minDim ? "✅" : "❌"} Min{" "}
-                            {photoSpecs.minWidth}×{photoSpecs.minHeight}px
-                          </li>
-                          <li>
-                            {pc?.maxDim ? "✅" : "❌"} Max{" "}
-                            {photoSpecs.maxWidth}×{photoSpecs.maxHeight}px
-                          </li>
-                          <li>
-                            {pc?.byteRangeOk ? "✅" : "❌"} File size{" "}
-                            {photoSpecs.minSizeKB}–{photoSpecs.maxSizeKB}KB
+                            {pc?.maxSizeOk ? "✅" : "❌"} File size ≤{" "}
+                            {photoSpecs.maxSizeKB}KB
                             {compressError ? (
                               <span className="ml-1 text-red-600">
                                 ({compressError})

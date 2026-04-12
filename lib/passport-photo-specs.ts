@@ -6,26 +6,23 @@ import {
 /** VFS / passport-style photo constraints (crop editor + validation). */
 export const PASSPORT_RENEWAL_PHOTO_SPECS = {
   format: "image/jpeg" as const,
-  minWidth: 350,
-  minHeight: 350,
-  maxWidth: 1000,
-  maxHeight: 1000,
-  aspectRatio: { width: 1, height: 1 },
-  maxSizeKB: 100,
-  minSizeKB: 20,
-  squareTolerancePx: 2,
+  widthPx: 630,
+  heightPx: 810,
+  aspectRatio: { width: 7, height: 9 },
+  maxSizeKB: 250,
   backgroundNote: "Plain white background required",
-  faceCoverageNote: "Face must fill 70–80% of photo",
+  faceCoverageNote: "Face should fill about 80% of photo",
 } as const;
 
-/** Square export size after crop (within 350–1000px). */
-export const PASSPORT_RENEWAL_EXPORT_PX = 600;
+/** Fixed export size required by Indian passport renewal flow. */
+export const PASSPORT_RENEWAL_EXPORT_WIDTH_PX =
+  PASSPORT_RENEWAL_PHOTO_SPECS.widthPx;
+export const PASSPORT_RENEWAL_EXPORT_HEIGHT_PX =
+  PASSPORT_RENEWAL_PHOTO_SPECS.heightPx;
 
 export type PassportRenewalPhotoExportChecks = {
-  square: boolean;
-  minDim: boolean;
-  maxDim: boolean;
-  byteRangeOk: boolean;
+  exactDimensions: boolean;
+  maxSizeOk: boolean;
   jpeg: boolean;
 };
 
@@ -35,21 +32,15 @@ export function evaluatePassportRenewalPhotoDimensionsAndSize(
   fileSizeBytes: number
 ): Pick<
   PassportRenewalPhotoExportChecks,
-  "square" | "minDim" | "maxDim" | "byteRangeOk"
+  "exactDimensions" | "maxSizeOk"
 > {
   const S = PASSPORT_RENEWAL_PHOTO_SPECS;
   const w = width;
   const h = height;
-  const tol = S.squareTolerancePx;
-  const square = w > 0 && h > 0 && Math.abs(w - h) <= tol;
-  const minB = S.minSizeKB * 1024;
   const maxB = S.maxSizeKB * 1024;
   return {
-    square,
-    minDim: w >= S.minWidth && h >= S.minHeight,
-    maxDim: w <= S.maxWidth && h <= S.maxHeight,
-    byteRangeOk:
-      fileSizeBytes >= minB && fileSizeBytes <= maxB && fileSizeBytes > 0,
+    exactDimensions: w === S.widthPx && h === S.heightPx,
+    maxSizeOk: fileSizeBytes > 0 && fileSizeBytes <= maxB,
   };
 }
 
@@ -74,5 +65,5 @@ export function allPassportRenewalPhotoAutoChecksPass(
   c: PassportRenewalPhotoExportChecks | null
 ): boolean {
   if (!c) return false;
-  return c.square && c.minDim && c.maxDim && c.byteRangeOk && c.jpeg;
+  return c.exactDimensions && c.maxSizeOk && c.jpeg;
 }

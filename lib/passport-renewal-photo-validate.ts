@@ -1,7 +1,8 @@
 import sharp from "sharp";
 
 import {
-  PASSPORT_RENEWAL_EXPORT_PX,
+  PASSPORT_RENEWAL_EXPORT_HEIGHT_PX,
+  PASSPORT_RENEWAL_EXPORT_WIDTH_PX,
   PASSPORT_RENEWAL_PHOTO_SPECS,
   evaluatePassportRenewalPhotoDimensionsAndSize,
 } from "@/lib/passport-photo-specs";
@@ -57,41 +58,14 @@ export async function validatePassportRenewalPhoto(
   );
 
   const checks = [
-    {
-      rule: `Square 1:1 (±${S.squareTolerancePx}px)`,
-      passed: dimChecks.square,
-    },
-    {
-      rule: `Min ${S.minWidth}×${S.minHeight}px`,
-      passed: dimChecks.minDim,
-    },
-    {
-      rule: `Max ${S.maxWidth}×${S.maxHeight}px`,
-      passed: dimChecks.maxDim,
-    },
-    {
-      rule: `File size ${S.minSizeKB}–${S.maxSizeKB}KB`,
-      passed: dimChecks.byteRangeOk,
-    },
+    { rule: `Exact ${S.widthPx}×${S.heightPx}px`, passed: dimChecks.exactDimensions },
+    { rule: `File size <= ${S.maxSizeKB}KB`, passed: dimChecks.maxSizeOk },
     { rule: "JPEG format", passed: fmt === "jpeg" },
   ];
 
-  if (!dimChecks.square) {
-    issues.push(`Not square: ${w}×${h} (width and height must be equal within ±${S.squareTolerancePx}px).`);
-  }
-  if (!dimChecks.minDim) {
+  if (!dimChecks.exactDimensions) {
     issues.push(
-      `Dimensions below minimum: need at least ${S.minWidth}×${S.minHeight}px.`
-    );
-  }
-  if (!dimChecks.maxDim) {
-    issues.push(
-      `Dimensions above maximum: at most ${S.maxWidth}×${S.maxHeight}px.`
-    );
-  }
-  if (buffer.length < S.minSizeKB * 1024) {
-    issues.push(
-      `File is ${sizeKb}KB; VFS-style target is at least ${S.minSizeKB}KB (increase quality or crop).`
+      `Invalid dimensions: got ${w}×${h}; expected exactly ${S.widthPx}×${S.heightPx}px.`
     );
   }
   if (buffer.length > S.maxSizeKB * 1024) {
@@ -110,7 +84,7 @@ export async function validatePassportRenewalPhoto(
   };
 }
 
-/** Auto-fix uploaded photo: square crop, resize to export px, JPEG within passport byte range. */
+/** Auto-fix uploaded photo: center crop, resize to required export, JPEG at max size limit. */
 export async function fixPassportRenewalPhotoFromBuffer(buffer: Buffer): Promise<{
   buffer: Buffer;
   width: number;
@@ -118,7 +92,6 @@ export async function fixPassportRenewalPhotoFromBuffer(buffer: Buffer): Promise
 }> {
   const S = PASSPORT_RENEWAL_PHOTO_SPECS;
   const maxB = S.maxSizeKB * 1024;
-  const minB = S.minSizeKB * 1024;
   const base = sharp(buffer, { failOn: "none" }).rotate();
   const meta = await base.metadata();
   const w = meta.width ?? 0;
@@ -137,7 +110,7 @@ export async function fixPassportRenewalPhotoFromBuffer(buffer: Buffer): Promise
     const { data, info } = await sharp(buffer, { failOn: "none" })
       .rotate()
       .extract({ left, top, width: side, height: side })
-      .resize(PASSPORT_RENEWAL_EXPORT_PX, PASSPORT_RENEWAL_EXPORT_PX, {
+      .resize(PASSPORT_RENEWAL_EXPORT_WIDTH_PX, PASSPORT_RENEWAL_EXPORT_HEIGHT_PX, {
         fit: "fill",
       })
       .jpeg({ quality, mozjpeg: true })
@@ -145,17 +118,16 @@ export async function fixPassportRenewalPhotoFromBuffer(buffer: Buffer): Promise
     last = data;
     lastW = info.width;
     lastH = info.height;
-    if (data.length <= maxB && data.length >= minB) {
+    if (data.length <= maxB) {
       return { buffer: data, width: lastW, height: lastH };
     }
     if (data.length > maxB) quality -= 4;
-    else quality += 3;
     quality = Math.max(28, Math.min(95, quality));
   }
   if (last && last.length <= maxB) {
     return { buffer: last, width: lastW, height: lastH };
   }
   throw new Error(
-    `Could not produce JPEG between ${S.minSizeKB}KB and ${S.maxSizeKB}KB.`
+    `Could not produce JPEG at or below ${S.maxSizeKB}KB.`
   );
 }

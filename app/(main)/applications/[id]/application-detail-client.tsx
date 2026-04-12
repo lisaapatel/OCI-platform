@@ -49,7 +49,13 @@ import {
   PARENT_PASSPORT_BANNER,
   minorParentPassportMet,
 } from "@/lib/parent-documents";
+import {
+  DEFAULT_PASSPORT_RENEWAL_APPLICABILITY,
+  getPassportRenewalChecklist,
+  type PassportRenewalApplicabilityFlags,
+} from "@/lib/passport-renewal-document-catalog";
 import { PASSPORT_RENEWAL_PHOTO_SPECS } from "@/lib/passport-photo-specs";
+import { PASSPORT_RENEWAL_SIGNATURE_SPECS } from "@/lib/passport-signature-specs";
 import type { Application, Document, ExtractSingleResultBody } from "@/lib/types";
 
 import { ApplicationPdfDownloadsForApplication } from "./application-pdf-downloads";
@@ -165,6 +171,40 @@ type PortalPrepDoc = {
   compressed_drive_url?: string | null;
   compressed_size_bytes?: number | null;
 };
+
+type PassportApplicabilityToggle = {
+  key: keyof PassportRenewalApplicabilityFlags;
+  label: string;
+  hint: string;
+};
+
+const PASSPORT_APPLICABILITY_TOGGLES: PassportApplicabilityToggle[] = [
+  {
+    key: "hasIndianAddressChange",
+    label: "Indian address change",
+    hint: "Show Indian address proof slot options.",
+  },
+  {
+    key: "hasSpouseNameChange",
+    label: "Spouse details change",
+    hint: "Show spouse-name change supporting document slots.",
+  },
+  {
+    key: "hasNameChange",
+    label: "Applicant name change",
+    hint: "Show name-change publication proof slots.",
+  },
+  {
+    key: "hasParentNameChange",
+    label: "Parent name change",
+    hint: "Show parent-name correction support documents.",
+  },
+  {
+    key: "hasDobChange",
+    label: "Date of birth change",
+    hint: "Show DOB correction evidence and court order slots.",
+  },
+];
 
 function formatKb(bytes: number | null): string {
   if (bytes == null || !Number.isFinite(bytes)) return "—";
@@ -461,6 +501,10 @@ export function ApplicationDetailClient({
   const [parentDocKindSavingId, setParentDocKindSavingId] = useState<
     string | null
   >(null);
+  const [passportApplicability, setPassportApplicability] =
+    useState<PassportRenewalApplicabilityFlags>(
+      DEFAULT_PASSPORT_RENEWAL_APPLICABILITY
+    );
 
   const docByType = useMemo(() => {
     const m = new Map<string, Document>();
@@ -478,20 +522,34 @@ export function ApplicationDetailClient({
         is_minor: application.is_minor === true,
       });
     }
+    if (st === "passport_renewal") {
+      return getPassportRenewalChecklist({
+        isMinor: application.is_minor === true,
+        applicability: passportApplicability,
+      });
+    }
     return getChecklistForServiceType(st);
   }, [
     application.service_type,
     application.is_minor,
     application.oci_intake_variant,
+    passportApplicability,
   ]);
-  const displayChecklist = useMemo(
-    () => getChecklistForApplication(application),
-    [
-      application.service_type,
-      application.is_minor,
-      application.oci_intake_variant,
-    ]
-  );
+  const displayChecklist = useMemo(() => {
+    if (application.service_type === "passport_renewal") {
+      return baseChecklist;
+    }
+    return getChecklistForApplication({
+      service_type: application.service_type,
+      is_minor: application.is_minor,
+      oci_intake_variant: application.oci_intake_variant,
+    });
+  }, [
+    application.service_type,
+    application.is_minor,
+    application.oci_intake_variant,
+    baseChecklist,
+  ]);
   const activeRequiredCount = useMemo(() => {
     const base = checklistRequiredCount(baseChecklist);
     return application.is_minor ? base + 2 : base;
@@ -554,7 +612,7 @@ export function ApplicationDetailClient({
           d.extraction_status === "failed",
       )
     );
-  }, [documents, isProcessing]);
+  }, [documents, isProcessing, application.service_type]);
 
   const extractionSummaryLine = useMemo(() => {
     if (documents.length === 0) return "";
@@ -587,7 +645,7 @@ export function ApplicationDetailClient({
       return "All eligible documents extracted — expand for history or to re-run";
     }
     return "Expand for extraction tools";
-  }, [documents, isProcessing]);
+  }, [documents, isProcessing, application.service_type]);
 
   const showPhotoSigCard =
     showDocumentChecklist ||
@@ -989,6 +1047,10 @@ export function ApplicationDetailClient({
     } finally {
       setMinorSaving(false);
     }
+  }
+
+  function togglePassportApplicability(key: keyof PassportRenewalApplicabilityFlags) {
+    setPassportApplicability((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function downloadTestPassportPdf() {
@@ -1403,7 +1465,7 @@ export function ApplicationDetailClient({
     if (!showPhotoSigCard) return null;
     const photoDoc = docByType.get("applicant_photo");
     const sigDoc = docByType.get("applicant_signature");
-    const passportPhotoKbRange = `${PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–${PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}`;
+    const passportPhotoMaxKb = PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB;
     const canEditSignature = isOciServiceType(application.service_type);
 
     function renderColumn(
@@ -1492,7 +1554,7 @@ export function ApplicationDetailClient({
               <p className="text-[11px] text-[#64748b]">
                 Saves a portal-ready JPEG (
                 {isPassportRenewalFlow
-                  ? `${passportPhotoKbRange}KB`
+                  ? `≤${passportPhotoMaxKb}KB`
                   : `≤${PORTAL_IMAGE_MAX_KB}KB`}
                 ) to Drive → <strong>Fixed</strong>. Then download for portal
                 upload.
@@ -1553,9 +1615,9 @@ export function ApplicationDetailClient({
         <p className="mt-2 text-xs leading-relaxed text-slate-600">
           {isPassportRenewalFlow ? (
             <>
-              Photo: JPEG, square {PASSPORT_RENEWAL_PHOTO_SPECS.minWidth}–
-              {PASSPORT_RENEWAL_PHOTO_SPECS.maxWidth}px, {passportPhotoKbRange}
-              KB. {PASSPORT_RENEWAL_PHOTO_SPECS.faceCoverageNote}.{" "}
+              Photo: JPEG, exactly {PASSPORT_RENEWAL_PHOTO_SPECS.widthPx}×
+              {PASSPORT_RENEWAL_PHOTO_SPECS.heightPx}px, ≤
+              {passportPhotoMaxKb}KB. {PASSPORT_RENEWAL_PHOTO_SPECS.faceCoverageNote}.{" "}
               {PASSPORT_RENEWAL_PHOTO_SPECS.backgroundNote} (confirm in crop
               editor).
             </>
@@ -1842,10 +1904,9 @@ export function ApplicationDetailClient({
           ) : isPassportRenewalHub ? (
             <>
               <li>
-                Passport photo: JPEG, square {PASSPORT_RENEWAL_PHOTO_SPECS.minWidth}
-                –
-                {PASSPORT_RENEWAL_PHOTO_SPECS.maxWidth}px,{" "}
-                {PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–
+                Passport photo: JPEG, exactly{" "}
+                {PASSPORT_RENEWAL_PHOTO_SPECS.widthPx}×
+                {PASSPORT_RENEWAL_PHOTO_SPECS.heightPx}px, ≤
                 {PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}KB (
                 {PASSPORT_RENEWAL_PHOTO_SPECS.backgroundNote.toLowerCase()}).
               </li>
@@ -1967,7 +2028,7 @@ export function ApplicationDetailClient({
               const uploaded = Boolean(doc);
               const kind =
                 isPassportRenewalFlow && item.doc_type === "applicant_photo"
-                  ? `JPEG · ${PASSPORT_RENEWAL_PHOTO_SPECS.minSizeKB}–${PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}KB`
+                  ? `JPEG · ${PASSPORT_RENEWAL_PHOTO_SPECS.widthPx}×${PASSPORT_RENEWAL_PHOTO_SPECS.heightPx}px · ≤${PASSPORT_RENEWAL_PHOTO_SPECS.maxSizeKB}KB`
                   : isPortalPdfChecklistItem(item)
                     ? `PDF · ≤${PORTAL_PDF_MAX_KB}KB`
                     : `JPEG · ≤${PORTAL_IMAGE_MAX_KB}KB`;
@@ -2408,10 +2469,51 @@ export function ApplicationDetailClient({
               {application.service_type === "passport_us_renewal_test"
                 ? "Upload current passport (PDF) and passport photo (JPEG). Generate the filled DS-82 from the header when ready."
                 : application.service_type === "passport_renewal"
-                  ? "Upload current Indian passport and passport photo (required). Add optional proofs when they apply."
+                  ? "Upload current Indian passport and passport photo (required). Enable optional adult-only bundles when they apply to this Indian reissue case."
                   : "Upload each required document. Optional items can be skipped."}
             </p>
           </div>
+
+          {application.service_type === "passport_renewal" ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Indian passport reissue (adult) conditional document bundles
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                These toggles only control which optional upload slots are shown.
+                They do not add hard requirements before AI extraction.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {PASSPORT_APPLICABILITY_TOGGLES.map((item) => {
+                  const on = passportApplicability[item.key];
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => togglePassportApplicability(item.key)}
+                      className={clsx(
+                        "rounded-lg border px-3 py-2 text-left transition-colors",
+                        on
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                          : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{item.label}</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wide">
+                          {on ? "On" : "Off"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                        {item.hint}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {documents.length > 0 ? (
             <nav
@@ -2486,21 +2588,21 @@ export function ApplicationDetailClient({
             >
               Document uploads
             </h3>
-            <div className="space-y-5">
-            {baseChecklist.map((item) => renderChecklistCardItem(item))}
-            {application.is_minor ? (
-              <>
-                <div
-                  className="rounded-lg border border-amber-100 bg-amber-50/90 px-4 py-3 text-sm leading-relaxed text-amber-950"
-                  role="status"
-                >
-                  {PARENT_PASSPORT_BANNER}
-                </div>
-                {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) =>
-                  renderChecklistCardItem(item)
-                )}
-              </>
-            ) : null}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              {baseChecklist.map((item) => renderChecklistCardItem(item))}
+              {application.is_minor ? (
+                <>
+                  <div
+                    className="rounded-lg border border-amber-100 bg-amber-50/90 px-4 py-3 text-sm leading-relaxed text-amber-950 lg:col-span-2 2xl:col-span-3"
+                    role="status"
+                  >
+                    {PARENT_PASSPORT_BANNER}
+                  </div>
+                  {PARENT_DOCUMENT_CHECKLIST_ITEMS.map((item) =>
+                    renderChecklistCardItem(item)
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -2703,6 +2805,11 @@ export function ApplicationDetailClient({
         onClose={() => setSignatureEditorDoc(null)}
         applicationId={application.id}
         document={signatureEditorDoc}
+        signatureSpecs={
+          application.service_type === "passport_renewal"
+            ? PASSPORT_RENEWAL_SIGNATURE_SPECS
+            : undefined
+        }
         onSave={async (image_base64) => {
           if (!signatureEditorDoc) throw new Error("No document to save.");
           const res = await fetch("/api/documents/fix-image", {
@@ -2779,12 +2886,12 @@ function DocumentChecklistCard({
   return (
     <div
       className={clsx(
-        "overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-150 hover:shadow-md",
+        "flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow duration-150 hover:shadow-md",
         uploaded && "border-l-4 border-l-emerald-500"
       )}
     >
-      <div className="p-5 pb-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="p-4">
+      <div className="flex flex-col gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-[#1e293b]">{item.label}</h3>
@@ -2793,14 +2900,18 @@ function DocumentChecklistCard({
                 Required
               </span>
             ) : (
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-800">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                 Optional
               </span>
             )}
           </div>
-          {item.optionalNote ? (
-            <p className="mt-1 text-xs text-black/50">{item.optionalNote}</p>
-          ) : null}
+          <div className="mt-1 min-h-[2rem]">
+            {item.optionalNote ? (
+              <p className="text-xs leading-relaxed text-slate-500">
+                {item.optionalNote}
+              </p>
+            ) : null}
+          </div>
           {parentKindSelector ? (
             <div className="mt-3">
               <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -2853,15 +2964,32 @@ function DocumentChecklistCard({
               ) : null}
             </div>
           ) : null}
-          <div className="mt-2">
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
             {uploaded ? (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                <span aria-hidden>✓</span> UPLOADED
+                <span aria-hidden>✓</span> Uploaded
               </span>
             ) : (
-              <span className="text-xs font-medium text-zinc-500">
-                NOT UPLOADED
-              </span>
+              <span className="text-xs font-medium text-zinc-500">Not uploaded</span>
+            )}
+            {uploaded && document ? (
+              <button
+                type="button"
+                disabled={removingId === document.id}
+                onClick={() => onRemove(document.id)}
+                className="inline-flex h-8 min-w-[92px] items-center justify-center rounded-lg border border-red-200 bg-white px-2.5 text-xs font-medium text-red-700 transition-colors duration-150 hover:bg-red-50 disabled:opacity-50"
+              >
+                {removingId === document.id ? "Removing…" : "Remove"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={() => open()}
+                className="inline-flex h-8 min-w-[92px] items-center justify-center rounded-lg border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {uploading ? "Uploading…" : "Choose file"}
+              </button>
             )}
           </div>
           {uploaded && document ? (
@@ -2937,47 +3065,26 @@ function DocumentChecklistCard({
             </div>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-          {uploaded && document ? (
-            <button
-              type="button"
-              disabled={removingId === document.id}
-              onClick={() => onRemove(document.id)}
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-[#dc2626] transition-colors duration-150 hover:bg-red-50 disabled:opacity-50"
-            >
-              {removingId === document.id ? "Removing…" : "Remove"}
-            </button>
-          ) : null}
-          {!uploaded ? (
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => open()}
-              className="inline-flex h-9 items-center justify-center rounded-lg bg-[#2563eb] px-3 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50"
-            >
-              {uploading ? "Uploading…" : "Upload"}
-            </button>
-          ) : null}
-        </div>
       </div>
       </div>
-      <div className="border-t border-slate-100 pt-4">
+      <div className="border-t border-slate-100 pt-3">
       <div
         {...getRootProps()}
         className={clsx(
-          "mx-5 mb-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm transition-colors duration-150",
+          "mx-4 mb-1 flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-3 py-3 text-center text-sm transition-colors duration-150",
           isDragActive
-            ? "border-[#2563eb] bg-[#eff6ff]"
-            : "border-slate-200 bg-slate-50/50 hover:border-slate-300 hover:bg-slate-50",
+            ? "border-slate-400 bg-slate-100"
+            : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-slate-100/70",
           uploading && "pointer-events-none opacity-50"
         )}
       >
         <input {...getInputProps()} />
         <p className="text-slate-600">
           {isDragActive
-            ? "Drop the file here…"
-            : "Drag and drop a file here, or use Upload"}
+            ? "Drop file to upload"
+            : "Drag and drop a file here"}
         </p>
+        <p className="mt-1 text-xs text-slate-500">or use Choose file</p>
       </div>
       </div>
       {uploading && progress != null ? (

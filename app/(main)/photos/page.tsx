@@ -19,7 +19,13 @@ import {
   OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX,
 } from "@/lib/oci-applicant-signature-rules";
 import {
-  PASSPORT_RENEWAL_EXPORT_PX,
+  PASSPORT_RENEWAL_SIGNATURE_EXPORT_HEIGHT_PX,
+  PASSPORT_RENEWAL_SIGNATURE_EXPORT_WIDTH_PX,
+  PASSPORT_RENEWAL_SIGNATURE_SPECS,
+} from "@/lib/passport-signature-specs";
+import {
+  PASSPORT_RENEWAL_EXPORT_HEIGHT_PX,
+  PASSPORT_RENEWAL_EXPORT_WIDTH_PX,
   PASSPORT_RENEWAL_PHOTO_SPECS,
 } from "@/lib/passport-photo-specs";
 import { PORTAL_IMAGE_MAX_BYTES, PORTAL_IMAGE_MAX_KB } from "@/lib/portal-constants";
@@ -90,37 +96,34 @@ function EditorBenchmarks({ category }: { category: StandalonePhotoCategoryId })
             ) : (
               <>
                 <li>
-                  Crop overlay: <strong>square 1:1</strong> (
+                  Crop overlay:{" "}
+                  <strong>
+                    {P.aspectRatio.width}:{P.aspectRatio.height}
+                  </strong>{" "}
+                  (
                   {P.aspectRatio.width}:{P.aspectRatio.height})
                 </li>
                 <li>
-                  Square check: up to{" "}
-                  <strong>±{P.squareTolerancePx}px</strong> width vs height.
-                </li>
-                <li>
-                  Exported JPEG dimensions:{" "}
+                  Required final size:{" "}
                   <strong>
-                    {PASSPORT_RENEWAL_EXPORT_PX}×{PASSPORT_RENEWAL_EXPORT_PX}px
-                  </strong>{" "}
-                  (editor export; must still fall within the min/max range below).
-                </li>
-                <li>
-                  Validated pixel range:{" "}
-                  <strong>
-                    {P.minWidth}×{P.minHeight}px
-                  </strong>{" "}
-                  through{" "}
-                  <strong>
-                    {P.maxWidth}×{P.maxHeight}px
+                    {P.widthPx}×{P.heightPx}px
                   </strong>
                   .
                 </li>
                 <li>
+                  Exported JPEG dimensions:{" "}
+                  <strong>
+                    {PASSPORT_RENEWAL_EXPORT_WIDTH_PX}×
+                    {PASSPORT_RENEWAL_EXPORT_HEIGHT_PX}px
+                  </strong>{" "}
+                  (exact required export).
+                </li>
+                <li>
                   JPEG file size:{" "}
                   <strong>
-                    {P.minSizeKB}–{P.maxSizeKB}KB
+                    at most {P.maxSizeKB}KB
                   </strong>{" "}
-                  (editor targets this band).
+                  (editor auto-compresses to this limit).
                 </li>
                 <li>
                   <strong>{P.faceCoverageNote}</strong>;{" "}
@@ -135,45 +138,82 @@ function EditorBenchmarks({ category }: { category: StandalonePhotoCategoryId })
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Signature
           </h3>
-          <p className="mt-2 text-xs leading-relaxed text-slate-600">
-            Both categories use the <strong>OCI portal</strong> signature editor
-            and limits (same as application flow).
-          </p>
-          <ul className="mt-2 list-disc space-y-1.5 pl-4 text-sm leading-snug text-slate-800">
-            <li>
-              Crop overlay: <strong>3:1</strong> width to height (wide
-              signature box).
-            </li>
-            <li>
-              Ratio check: within about <strong>±2%</strong> of an exact 3:1
-              ratio (same tolerance as server validation).
-            </li>
-            <li>
-              Exported JPEG dimensions:{" "}
-              <strong>
-                {OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX}×
-                {OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX}px
-              </strong>
-              .
-            </li>
-            <li>
-              Validated pixel range:{" "}
-              <strong>
-                {OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX}×
-                {OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX}px
-              </strong>{" "}
-              through{" "}
-              <strong>
-                {OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX}×
-                {OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX}px
-              </strong>
-              .
-            </li>
-            <li>
-              JPEG file size: <strong>at most {PORTAL_IMAGE_MAX_KB}KB</strong>{" "}
-              ({PORTAL_IMAGE_MAX_BYTES.toLocaleString()} bytes).
-            </li>
-          </ul>
+          {isOci ? (
+            <>
+              <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                OCI signature editor and limits.
+              </p>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 text-sm leading-snug text-slate-800">
+                <li>
+                  Crop overlay: <strong>3:1</strong> width to height (wide
+                  signature box).
+                </li>
+                <li>
+                  Ratio check: within about <strong>±2%</strong> of an exact 3:1
+                  ratio (same tolerance as server validation).
+                </li>
+                <li>
+                  Exported JPEG dimensions:{" "}
+                  <strong>
+                    {OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX}×
+                    {OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX}px
+                  </strong>
+                  .
+                </li>
+                <li>
+                  Validated pixel range:{" "}
+                  <strong>
+                    {OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX}×
+                    {OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX}px
+                  </strong>{" "}
+                  through{" "}
+                  <strong>
+                    {OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX}×
+                    {OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX}px
+                  </strong>
+                  .
+                </li>
+                <li>
+                  JPEG file size: <strong>at most {PORTAL_IMAGE_MAX_KB}KB</strong>{" "}
+                  ({PORTAL_IMAGE_MAX_BYTES.toLocaleString()} bytes).
+                </li>
+              </ul>
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-xs leading-relaxed text-slate-600">
+                Indian passport renewal signature editor and limits.
+              </p>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 text-sm leading-snug text-slate-800">
+                <li>
+                  Crop overlay:{" "}
+                  <strong>
+                    {PASSPORT_RENEWAL_SIGNATURE_SPECS.aspectRatio.width}:
+                    {PASSPORT_RENEWAL_SIGNATURE_SPECS.aspectRatio.height}
+                  </strong>
+                  .
+                </li>
+                <li>
+                  Exported JPEG dimensions:{" "}
+                  <strong>
+                    {PASSPORT_RENEWAL_SIGNATURE_EXPORT_WIDTH_PX}×
+                    {PASSPORT_RENEWAL_SIGNATURE_EXPORT_HEIGHT_PX}px
+                  </strong>{" "}
+                  (exact required export).
+                </li>
+                <li>
+                  JPEG file size:{" "}
+                  <strong>
+                    at most {PASSPORT_RENEWAL_SIGNATURE_SPECS.maxSizeKB}KB
+                  </strong>
+                  .
+                </li>
+                <li>
+                  {PASSPORT_RENEWAL_SIGNATURE_SPECS.targetSizeHint}.
+                </li>
+              </ul>
+            </>
+          )}
         </div>
       </div>
     </section>
@@ -396,8 +436,8 @@ export default function StandalonePhotosPage() {
         </select>
         <p className="text-xs text-slate-500">
           {category === "oci"
-            ? "Photo checks follow OCI portal rules (JPEG, size, square crop)."
-            : "Photo checks follow Indian passport renewal / VFS rules (including file size band and white background confirmation in the editor)."}
+            ? "Photo and signature checks follow OCI portal rules."
+            : "Photo and signature checks follow Indian passport renewal rules."}
         </p>
       </div>
 
@@ -440,8 +480,9 @@ export default function StandalonePhotosPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Signature</h2>
           <p className="mt-1 text-xs text-slate-600">
-            Same 3:1 signature editor as OCI applications. Preview, download, or
-            save to Drive from the editor.
+            {category === "oci"
+              ? "OCI signature editor. Preview, download, or save to Drive from the editor."
+              : "Indian passport renewal signature editor. Preview, download, or save to Drive from the editor."}
           </p>
           <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-600 hover:border-slate-400 hover:bg-slate-100">
             <span className="font-medium text-[#1e3a5f]">Choose signature image</span>
@@ -545,6 +586,11 @@ export default function StandalonePhotosPage() {
         open={sigOpen}
         onClose={closeSig}
         imageSrc={sigBlobUrl ?? undefined}
+        signatureSpecs={
+          category === "indian_passport"
+            ? PASSPORT_RENEWAL_SIGNATURE_SPECS
+            : undefined
+        }
         standaloneClientToolbar={sigToolbar}
         onSave={async (b64) => {
           setError(null);

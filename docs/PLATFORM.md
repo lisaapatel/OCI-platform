@@ -33,6 +33,8 @@
 
 **Routing checklist in code:** `getChecklistForServiceType()` in `lib/application-checklist.ts`.
 
+For `passport_renewal`, checklist rows are now sourced from a document catalog in `lib/passport-renewal-document-catalog.ts`, then adapted into `ChecklistItem[]` for compatibility.
+
 ---
 
 ## App routing and shell
@@ -93,6 +95,16 @@ If the needle is missing, the append is concatenated at the end (fallback). **OC
 - **Ready to submit:** minors must satisfy `minorParentDocumentsMet` (≥1 of father/mother passport + `parent_address_proof`) for **all** service types; non-minor OCI still uses legacy `ociParentRequirementMet` (parent passport / OCI / legacy bucket).
 - Portal readiness (`lib/portal-readiness-server.ts`) uses the same logic so “green” matches PATCH rules.
 
+## Indian passport renewal document catalog
+
+- The adult baseline follows the VFS reissue checklist model but is intentionally **non-blocking** for conditional bundles.
+- Data model lives in `lib/passport-renewal-document-catalog.ts`:
+  - `PassportRenewalDocumentGroup` for grouping + applicability.
+  - `PassportRenewalDocumentOption` for stable `doc_type`, extraction policy, and readiness impact.
+  - `PassportRenewalApplicabilityFlags` for conditional bundles (spouse/name/parent-name/DOB/address changes).
+- `app/(main)/applications/[id]/application-detail-client.tsx` exposes passport-only toggle controls to reveal conditional upload groups in UI.
+- New bundle doc types default to `photo_signature_skip` in `lib/extraction-profiles.ts` to keep extraction costs/noise low in phase 1.
+
 ---
 
 ## Images & PDFs (hard specs)
@@ -114,7 +126,7 @@ If the needle is missing, the append is concatenated at the end (fallback). **OC
 ### Indian passport renewal (`passport_renewal`) photo only
 
 - **Specs:** `PASSPORT_RENEWAL_PHOTO_SPECS` in `lib/passport-photo-specs.ts` (separate from OCI — **not** 500KB).
-- JPEG, **square 1:1**, **350–1000** px per side, **20–100 KB** file size; export default **600×600** (`PASSPORT_RENEWAL_EXPORT_PX`).
+- JPEG, **exactly 630×810** px, **at most 250KB**; export defaults to fixed `630×810` (`PASSPORT_RENEWAL_EXPORT_WIDTH_PX` / `PASSPORT_RENEWAL_EXPORT_HEIGHT_PX`).
 - **White background** is **not** auto-detected; UI uses a manual confirmation pattern. Auto checks: `allPassportRenewalPhotoAutoChecksPass()`.
 
 ### PDFs

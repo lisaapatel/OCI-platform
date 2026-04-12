@@ -33,13 +33,18 @@ import {
   OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX,
   OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX,
   OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX,
-  OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX as _unusedMinH,
 } from "@/lib/oci-applicant-signature-rules";
+import {
+  allPassportRenewalSignatureChecksPass,
+  evaluatePassportRenewalSignatureExportBlob,
+  PASSPORT_RENEWAL_SIGNATURE_EXPORT_HEIGHT_PX,
+  PASSPORT_RENEWAL_SIGNATURE_EXPORT_WIDTH_PX,
+  PASSPORT_RENEWAL_SIGNATURE_SPECS,
+  type PassportRenewalSignatureExportChecks,
+} from "@/lib/passport-signature-specs";
 
 import styles from "./photo-crop-editor-modal.module.css";
 
-const EXPORT_W = OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX;
-const EXPORT_H = OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX;
 const PORTAL_MAX_KB = Math.round(PORTAL_IMAGE_MAX_BYTES / 1024);
 
 async function canvasToObjectUrl(
@@ -108,11 +113,13 @@ function uint8ToBase64(bytes: Uint8Array): string {
 
 function exportCroppedToCanvas(
   source: HTMLCanvasElement,
-  pixelCrop: PixelCrop
+  pixelCrop: PixelCrop,
+  exportWidthPx: number,
+  exportHeightPx: number
 ): HTMLCanvasElement {
   const out = document.createElement("canvas");
-  out.width = EXPORT_W;
-  out.height = EXPORT_H;
+  out.width = exportWidthPx;
+  out.height = exportHeightPx;
   const ctx = out.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported");
 
@@ -124,8 +131,8 @@ function exportCroppedToCanvas(
     pixelCrop.height,
     0,
     0,
-    EXPORT_W,
-    EXPORT_H
+    exportWidthPx,
+    exportHeightPx
   );
   return out;
 }
@@ -232,6 +239,8 @@ export type SignatureCropEditorModalProps = {
   applicationId?: string;
   document?: Document | null;
   onSave: (imageBase64: string) => void | Promise<void>;
+  /** When set, uses passport-renewal signature export checks and dimensions. */
+  signatureSpecs?: typeof PASSPORT_RENEWAL_SIGNATURE_SPECS;
   standaloneClientToolbar?: StandaloneCropClientToolbar;
 };
 
@@ -242,6 +251,7 @@ export function SignatureCropEditorModal({
   applicationId,
   document: doc,
   onSave,
+  signatureSpecs,
   standaloneClientToolbar,
 }: SignatureCropEditorModalProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -264,6 +274,8 @@ export function SignatureCropEditorModal({
     underByteLimit: boolean;
     jpeg: boolean;
   } | null>(null);
+  const [passportExportChecks, setPassportExportChecks] =
+    useState<PassportRenewalSignatureExportChecks | null>(null);
 
   const [finalKb, setFinalKb] = useState<string>("—");
   const [compressError, setCompressError] = useState<string | null>(null);
@@ -280,6 +292,19 @@ export function SignatureCropEditorModal({
   const [mediaNatural, setMediaNatural] = useState<{ w: number; h: number } | null>(
     null
   );
+
+  const exportWidthPx = signatureSpecs
+    ? PASSPORT_RENEWAL_SIGNATURE_EXPORT_WIDTH_PX
+    : OCI_APPLICANT_SIGNATURE_EXPORT_WIDTH_PX;
+  const exportHeightPx = signatureSpecs
+    ? PASSPORT_RENEWAL_SIGNATURE_EXPORT_HEIGHT_PX
+    : OCI_APPLICANT_SIGNATURE_EXPORT_HEIGHT_PX;
+  const cropAspect = signatureSpecs
+    ? signatureSpecs.aspectRatio.width / signatureSpecs.aspectRatio.height
+    : 3;
+  const maxSizeBytes = signatureSpecs
+    ? signatureSpecs.maxSizeKB * 1024
+    : PORTAL_IMAGE_MAX_BYTES;
 
   const canvasScrollRef = useRef<HTMLDivElement | null>(null);
   const initialScrollDoneForUrl = useRef<string | null>(null);
@@ -325,6 +350,7 @@ export function SignatureCropEditorModal({
     setShowGuides(true);
     setCrop(undefined);
     setPortalExportChecks(null);
+    setPassportExportChecks(null);
     setFinalKb("—");
     setCompressError(null);
     cleanupUrls();
@@ -400,17 +426,21 @@ export function SignatureCropEditorModal({
     const img = sourceImgRef.current;
     if (!img?.naturalWidth || !sourceObjectUrl) return;
     rebuildRotatedDisplay(img, rotationDeg);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rotationDeg, sourceObjectUrl, rebuildRotatedDisplay]);
 
   const initialWideCrop = useCallback(
     (mediaWidth: number, mediaHeight: number): Crop =>
       centerCrop(
-        makeAspectCrop({ unit: "%", width: 80 }, 3, mediaWidth, mediaHeight),
+        makeAspectCrop(
+          { unit: "%", width: 80 },
+          cropAspect,
+          mediaWidth,
+          mediaHeight
+        ),
         mediaWidth,
         mediaHeight
       ),
-    []
+    [cropAspect]
   );
 
   const onDisplayImageLoad = useCallback(() => {
@@ -430,9 +460,14 @@ export function SignatureCropEditorModal({
     const img = displayImgRef.current;
     if (!src || !img?.naturalWidth || !crop?.width) return null;
     const pixel = convertToPixelCrop(crop, img.naturalWidth, img.naturalHeight);
-    const cropped = exportCroppedToCanvas(src, pixel);
+    const cropped = exportCroppedToCanvas(
+      src,
+      pixel,
+      exportWidthPx,
+      exportHeightPx
+    );
     return applyCanvasFilters(cropped, brightness, contrast);
-  }, [crop, brightness, contrast]);
+  }, [crop, brightness, contrast, exportWidthPx, exportHeightPx]);
 
   const updatePreview = useCallback(async () => {
     const filtered = buildFilteredExportCanvas();
@@ -464,13 +499,26 @@ export function SignatureCropEditorModal({
     }
 
     const PREVIEW_W = 200;
-    const PREVIEW_H = Math.round(PREVIEW_W / 3);
+    const PREVIEW_H = Math.max(
+      1,
+      Math.round((PREVIEW_W * exportHeightPx) / exportWidthPx)
+    );
     const prev = document.createElement("canvas");
     prev.width = PREVIEW_W;
     prev.height = PREVIEW_H;
     const pctx = prev.getContext("2d");
     if (pctx) {
-      pctx.drawImage(filtered, 0, 0, EXPORT_W, EXPORT_H, 0, 0, PREVIEW_W, PREVIEW_H);
+      pctx.drawImage(
+        filtered,
+        0,
+        0,
+        exportWidthPx,
+        exportHeightPx,
+        0,
+        0,
+        PREVIEW_W,
+        PREVIEW_H
+      );
     }
 
     const prevBlob = await new Promise<Blob | null>((resolve) =>
@@ -485,21 +533,41 @@ export function SignatureCropEditorModal({
     }
 
     try {
-      const outBlob = await compressCanvasToLimit(
-        filtered,
-        PORTAL_IMAGE_MAX_BYTES
-      );
+      const outBlob = await compressCanvasToLimit(filtered, maxSizeBytes);
       setFinalKb((outBlob.size / 1024).toFixed(1));
-      setPortalExportChecks(
-        await evaluateOciApplicantSignatureExportBlob(outBlob, EXPORT_W, EXPORT_H)
-      );
+      if (signatureSpecs) {
+        setPassportExportChecks(
+          await evaluatePassportRenewalSignatureExportBlob(
+            outBlob,
+            exportWidthPx,
+            exportHeightPx
+          )
+        );
+        setPortalExportChecks(null);
+      } else {
+        setPortalExportChecks(
+          await evaluateOciApplicantSignatureExportBlob(
+            outBlob,
+            exportWidthPx,
+            exportHeightPx
+          )
+        );
+        setPassportExportChecks(null);
+      }
       setCompressError(null);
     } catch (e) {
       setFinalKb("—");
       setPortalExportChecks(null);
+      setPassportExportChecks(null);
       setCompressError(e instanceof Error ? e.message : String(e));
     }
-  }, [buildFilteredExportCanvas]);
+  }, [
+    buildFilteredExportCanvas,
+    exportHeightPx,
+    exportWidthPx,
+    maxSizeBytes,
+    signatureSpecs,
+  ]);
 
   useEffect(() => {
     if (!open || !displayUrl) return;
@@ -542,16 +610,19 @@ export function SignatureCropEditorModal({
     return () => cancelAnimationFrame(id);
   }, [displayUrl]);
 
-  const meetsOciPortalExport = allOciApplicantSignatureChecksPass(
-    portalExportChecks
+  const meetsOciPortalExport = allOciApplicantSignatureChecksPass(portalExportChecks);
+  const meetsPassportExport = allPassportRenewalSignatureChecksPass(
+    passportExportChecks
   );
+  const meetsExport = signatureSpecs ? meetsPassportExport : meetsOciPortalExport;
   const c = portalExportChecks;
+  const pc = passportExportChecks;
 
   const buildFinalBlob = useCallback(async (): Promise<Blob> => {
     const filtered = buildFilteredExportCanvas();
     if (!filtered) throw new Error("Image or crop not ready.");
-    return compressCanvasToLimit(filtered, PORTAL_IMAGE_MAX_BYTES);
-  }, [buildFilteredExportCanvas]);
+    return compressCanvasToLimit(filtered, maxSizeBytes);
+  }, [buildFilteredExportCanvas, maxSizeBytes]);
 
   const onApplyDownload = useCallback(async () => {
     try {
@@ -652,7 +723,7 @@ export function SignatureCropEditorModal({
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (meetsOciPortalExport && displayUrl && crop?.width) {
+        if (meetsExport && displayUrl && crop?.width) {
           if (standaloneClientToolbar) {
             void onApplyPreview();
           } else {
@@ -724,7 +795,7 @@ export function SignatureCropEditorModal({
     saveBusy,
     previewBusy,
     handleClose,
-    meetsOciPortalExport,
+    meetsExport,
     displayUrl,
     crop?.width,
     onApplyDownload,
@@ -880,7 +951,7 @@ export function SignatureCropEditorModal({
                     <ReactCrop
                       crop={crop}
                       onChange={(_, percentCrop) => setCrop(percentCrop)}
-                      aspect={3}
+                      aspect={cropAspect}
                       className="inline-block max-w-none"
                       renderSelectionAddon={
                         showGuides
@@ -951,7 +1022,7 @@ export function SignatureCropEditorModal({
                       )}
                     </div>
                     <p className="mt-1.5 text-[11px] text-[#64748b]">
-                      {EXPORT_W} × {EXPORT_H} px · ~{finalKb} KB
+                      {exportWidthPx} × {exportHeightPx} px · ~{finalKb} KB
                       {compressError ? (
                         <span className="ml-1 text-red-600">
                           ({compressError})
@@ -961,36 +1032,60 @@ export function SignatureCropEditorModal({
                     <p
                       className={clsx(
                         "mt-1 text-xs font-medium",
-                        meetsOciPortalExport ? "text-green-700" : "text-red-700"
+                        meetsExport ? "text-green-700" : "text-red-700"
                       )}
                     >
-                      {meetsOciPortalExport
-                        ? "✅ Meets OCI requirements"
+                      {meetsExport
+                        ? signatureSpecs
+                          ? "✅ Meets passport renewal signature checks"
+                          : "✅ Meets OCI requirements"
                         : "❌ Adjust crop or brightness"}
                     </p>
-                    <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
-                      <li>{c?.ratio ? "✅" : "❌"} 3:1 ratio</li>
-                      <li>
-                        {c?.minDim ? "✅" : "❌"} Min{" "}
-                        {OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX}×
-                        {OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX}
-                      </li>
-                      <li>
-                        {c?.maxDim ? "✅" : "❌"} Max{" "}
-                        {OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX}×
-                        {OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX}
-                      </li>
-                      <li>
-                        {c?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}
-                        KB
-                        {compressError ? (
-                          <span className="ml-1 text-red-600">
-                            ({compressError})
-                          </span>
-                        ) : null}
-                      </li>
-                      <li>{c?.jpeg ? "✅" : "❌"} JPEG</li>
-                    </ul>
+                    {signatureSpecs ? (
+                      <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
+                        <li>
+                          {pc?.exactDimensions ? "✅" : "❌"} Exact{" "}
+                          {signatureSpecs.widthPx}×{signatureSpecs.heightPx}px
+                        </li>
+                        <li>
+                          {pc?.maxSizeOk ? "✅" : "❌"} File size ≤{" "}
+                          {signatureSpecs.maxSizeKB}KB
+                          {compressError ? (
+                            <span className="ml-1 text-red-600">
+                              ({compressError})
+                            </span>
+                          ) : null}
+                        </li>
+                        <li>{pc?.jpeg ? "✅" : "❌"} JPEG</li>
+                        <li className="pt-1 text-slate-600">
+                          {signatureSpecs.targetSizeHint}
+                        </li>
+                      </ul>
+                    ) : (
+                      <ul className="mt-2 space-y-0.5 text-[11px] leading-snug text-[#444]">
+                        <li>{c?.ratio ? "✅" : "❌"} 3:1 ratio</li>
+                        <li>
+                          {c?.minDim ? "✅" : "❌"} Min{" "}
+                          {OCI_APPLICANT_SIGNATURE_MIN_WIDTH_PX}×
+                          {OCI_APPLICANT_SIGNATURE_MIN_HEIGHT_PX}
+                        </li>
+                        <li>
+                          {c?.maxDim ? "✅" : "❌"} Max{" "}
+                          {OCI_APPLICANT_SIGNATURE_MAX_WIDTH_PX}×
+                          {OCI_APPLICANT_SIGNATURE_MAX_HEIGHT_PX}
+                        </li>
+                        <li>
+                          {c?.underByteLimit ? "✅" : "❌"} Under {PORTAL_MAX_KB}
+                          KB
+                          {compressError ? (
+                            <span className="ml-1 text-red-600">
+                              ({compressError})
+                            </span>
+                          ) : null}
+                        </li>
+                        <li>{c?.jpeg ? "✅" : "❌"} JPEG</li>
+                      </ul>
+                    )}
                   </div>
                 </div>
 
@@ -1186,7 +1281,7 @@ export function SignatureCropEditorModal({
                   disabled={
                     !displayUrl ||
                     !crop?.width ||
-                    !meetsOciPortalExport ||
+                    !meetsExport ||
                     saveBusy ||
                     previewBusy
                   }
@@ -1198,7 +1293,7 @@ export function SignatureCropEditorModal({
                 <button
                   type="button"
                   disabled={
-                    !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                    !displayUrl || !crop?.width || !meetsExport || saveBusy
                   }
                   onClick={() => void onApplyDownload()}
                   className="rounded-lg border border-[#1e3a5f] bg-white px-4 py-2 text-sm font-semibold text-[#1e3a5f] hover:bg-slate-50 disabled:opacity-50"
@@ -1208,7 +1303,7 @@ export function SignatureCropEditorModal({
                 <button
                   type="button"
                   disabled={
-                    !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                    !displayUrl || !crop?.width || !meetsExport || saveBusy
                   }
                   onClick={() => void onApplySave()}
                   className="rounded-lg bg-[#1e3a5f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2d4d73] disabled:opacity-50"
@@ -1222,7 +1317,7 @@ export function SignatureCropEditorModal({
               <button
                 type="button"
                 disabled={
-                  !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                  !displayUrl || !crop?.width || !meetsExport || saveBusy
                 }
                 onClick={() => {
                   void onApplyDownload();
@@ -1235,7 +1330,7 @@ export function SignatureCropEditorModal({
               <button
                 type="button"
                 disabled={
-                  !displayUrl || !crop?.width || !meetsOciPortalExport || saveBusy
+                  !displayUrl || !crop?.width || !meetsExport || saveBusy
                 }
                 onClick={() => {
                   void onApplySave();

@@ -7,6 +7,7 @@ import {
 } from "@/lib/oci-new-checklist";
 import { isOciServiceType } from "@/lib/oci-intake-variant";
 import { PARENT_DOCUMENT_CHECKLIST_ITEMS } from "@/lib/parent-documents";
+import { getPassportRenewalChecklistLabel } from "@/lib/passport-renewal-document-catalog";
 import { PASSPORT_RENEWAL_CHECKLIST } from "@/lib/passport-renewal-checklist";
 
 export type { ChecklistItem };
@@ -70,8 +71,8 @@ export function checklistRequiredCount(checklist: ChecklistItem[]): number {
 
 export function resolveDocTypeChecklistLabel(docType: string): string {
   const dt = docType.trim();
-  const pr = PASSPORT_RENEWAL_CHECKLIST.find((i) => i.doc_type === dt);
-  if (pr) return pr.label;
+  const prLabel = getPassportRenewalChecklistLabel(dt);
+  if (prLabel) return prLabel;
   const hit = PASSPORT_US_RENEWAL_TEST_CHECKLIST.find((i) => i.doc_type === dt);
   if (hit) return hit.label;
   const parent = PARENT_DOCUMENT_CHECKLIST_ITEMS.find((i) => i.doc_type === dt);
